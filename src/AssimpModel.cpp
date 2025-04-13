@@ -132,6 +132,9 @@ unsigned int AssimpTextureFromFile(const char *path, const std::string &director
     std::string filename = std::string(path);
     filename = directory + '/' + filename;
 
+    // Normalize path (replace backslashes with forward slashes for cross-platform compatibility)
+    std::replace(filename.begin(), filename.end(), '\\', '/');
+
     unsigned int textureID;
     glGenTextures(1, &textureID);
 
