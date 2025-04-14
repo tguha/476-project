@@ -71,7 +71,7 @@ public:
 	// character bounding box
 	glm::vec3 manAABBmin, manAABBmax;
 
-	AssimpModel *cube, *barrel;
+	AssimpModel *cube, *barrel, *wizard_hat;
 
 	AssimpModel *stickfigure_running, *stickfigure_standing;
 	Animation *stickfigure_anim, *stickfigure_idle;
@@ -256,14 +256,14 @@ public:
 
 			phi = phi - deltaY * sensitivity;
 
-			// if (phi > radians(-10.0f))
-			// {
-			// 	phi = radians(-10.0f);
-			// }
-			if (phi > radians(80.0f))
+			if (phi > radians(-10.0f))
 			{
-				phi = radians(80.0f);
+				phi = radians(-10.0f);
 			}
+			// if (phi > radians(80.0f))
+			// {
+			// 	phi = radians(80.0f);
+			// }
 			if (phi < radians(-80.0f))
 			{
 				phi = radians(-80.0f);
@@ -343,7 +343,7 @@ public:
 	void init(const std::string& resourceDirectory)
 	{
 		GLSL::checkVersion();
-		
+
 		// Set background color and enable z-buffer test
 		glClearColor(.12f, .34f, .56f, 1.0f);
 		glEnable(GL_DEPTH_TEST);
@@ -463,6 +463,21 @@ public:
 		for (size_t i = 0; i < barrel->getMeshCount(); i++) {
 			std::cout << "  Mesh " << i << " has " << barrel->getMeshSize(i) << " vertices" << std::endl;
 		}*/
+
+		wizard_hat = new AssimpModel(resourceDirectory + "/WizardHat/hat_LP.obj");
+
+		wizard_hat->assignTexture("texture_diffuse1", resourceDirectory + "/WizardHat/textures/diffuse.png");
+		wizard_hat->assignTexture("texture_roughness1", resourceDirectory + "/WizardHat/textures/roughness.png");
+		wizard_hat->assignTexture("texture_metalness1", resourceDirectory + "/WizardHat/textures/normal.png");
+
+
+
+		// add 2 instances of the barrel to the collectibles vector Collectible(<model>, <position>)
+		collectibles.push_back(Collectible(barrel, vec3(3.0f, 0.0f, 1.0f)));
+		collectibles.push_back(Collectible(barrel, vec3(-2.0f, 0.0f, 2.0f)));
+		collectibles.push_back(Collectible(wizard_hat, vec3(-10.0f, -4.0f, -2.0f)));
+		collectibles.push_back(Collectible(wizard_hat, vec3(10.0f, -4.0f, 2.0f)));
+
 
 		// add 2 instances of the barrel to the collectibles vector Collectible(<model>, <position>)
 		collectibles.push_back(Collectible(barrel, vec3(3.0f, 0.0f, 1.0f)));
