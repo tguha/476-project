@@ -3,6 +3,7 @@
 #include <iostream>
 #include "stb_image.h"
 #include "AssimpGLMHelpers.h"
+#include <filesystem>
 
 
 AssimpModel::AssimpModel(std::string const &path, bool gamma) : gammaCorrection(gamma) {
@@ -101,8 +102,8 @@ void AssimpModel::processNode(aiNode* node, const aiScene* scene) {
     // std::cout<<"Children processed"<<std::endl;
 }
 
-std::vector<AssimpTexture> AssimpModel::loadMaterialTextures(aiMaterial* mat, aiTextureType type, std::string typeName)
-{
+std::vector<AssimpTexture> AssimpModel::loadMaterialTextures(aiMaterial* mat, aiTextureType type, std::string typeName, const aiScene* scene) {
+    std::cout << "Material has " << mat->GetTextureCount(type) << " textures of type " << typeName << std::endl;
     std::vector<AssimpTexture> textures;
     for (unsigned int i = 0; i < mat->GetTextureCount(type); i++) {
         aiString str;
@@ -117,9 +118,18 @@ std::vector<AssimpTexture> AssimpModel::loadMaterialTextures(aiMaterial* mat, ai
         }
         if (!skip) {
             AssimpTexture texture;
-            texture.id = AssimpTextureFromFile(str.C_Str(), directory);
-            texture.type = typeName;
-            texture.path = str.C_Str();
+
+            // Check if the texture is embedded in the model
+            const aiTexture* embeddedTexture = scene->GetEmbeddedTexture(str.C_Str());
+            if (embeddedTexture) {
+                // Load the texture from embedded data
+                texture.id = loadEmbeddedTexture(embeddedTexture);
+            }
+            else {
+                // Load the texture from file
+                texture.id = AssimpTextureFromFile(str.C_Str(), directory);
+            }
+
             textures.push_back(texture);
             textures_loaded.push_back(texture);
         }
@@ -128,30 +138,54 @@ std::vector<AssimpTexture> AssimpModel::loadMaterialTextures(aiMaterial* mat, ai
     return textures;
 }
 
-unsigned int AssimpTextureFromFile(const char *path, const std::string &directory, bool gamma) {
-    std::string filename = std::string(path);
-    filename = directory + '/' + filename;
+unsigned int AssimpTextureFromFile(const char* path, const std::string& directory, bool gamma) {
+    std::string filename;
+    if (directory.empty() || path[0] == '/' || (path[0] != '\0' && path[1] == ':')) {
+        // Path is absolute or directory is empty
+        filename = std::string(path);
+    }
+    else {
+        // Path is relative, combine with directory
+        filename = directory + '/' + std::string(path);
+    }
 
     // Normalize path (replace backslashes with forward slashes for cross-platform compatibility)
     std::replace(filename.begin(), filename.end(), '\\', '/');
+
+    std::cout << "Attempting to load texture: " << filename << std::endl;
 
     unsigned int textureID;
     glGenTextures(1, &textureID);
 
     int width, height, nrComponents;
-    unsigned char *data = stbi_load(filename.c_str(), &width, &height, &nrComponents, 0);
+    unsigned char* data = stbi_load(filename.c_str(), &width, &height, &nrComponents, 0);
+
     if (data) {
         GLenum format;
+        GLenum internalFormat; // Add internal format for gamma correction
+
         if (nrComponents == 1) {
             format = GL_RED;
-        } else if (nrComponents == 3) {
+            internalFormat = GL_RED;
+        }
+        else if (nrComponents == 3) {
             format = GL_RGB;
-        } else if (nrComponents == 4) {
+            internalFormat = gamma ? GL_SRGB : GL_RGB; // Use sRGB for gamma correction
+        }
+        else if (nrComponents == 4) {
             format = GL_RGBA;
+            internalFormat = gamma ? GL_SRGB_ALPHA : GL_RGBA; // Use sRGB_ALPHA for gamma correction
+        }
+        else {
+            format = GL_RGB;
+            internalFormat = gamma ? GL_SRGB : GL_RGB;
+            std::cout << "Unusual number of components in image: " << nrComponents << std::endl;
         }
 
         glBindTexture(GL_TEXTURE_2D, textureID);
-        glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
+
+        // Use internalFormat to handle gamma correction properly
+        glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, width, height, 0, format, GL_UNSIGNED_BYTE, data);
         glGenerateMipmap(GL_TEXTURE_2D);
 
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
@@ -159,13 +193,128 @@ unsigned int AssimpTextureFromFile(const char *path, const std::string &director
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
+        std::cout << "Successfully loaded texture: " << filename << " (" << width << "x" << height
+            << ", " << nrComponents << " channels)" << std::endl;
+
         stbi_image_free(data);
-    } else {
-        std::cerr << "Texture failed to load at path: " << path << std::endl;
+    }
+    else {
+        std::cerr << "Texture failed to load at path: " << filename << std::endl;
+        std::cerr << "STB_Image error: " << stbi_failure_reason() << std::endl;
+
+        // Check if file exists
+        if (std::filesystem::exists(filename)) {
+            std::cerr << "File exists but could not be loaded as an image" << std::endl;
+        }
+        else {
+            std::cerr << "File does not exist or is not accessible" << std::endl;
+        }
+
         stbi_image_free(data);
     }
 
     return textureID;
+}
+
+unsigned int AssimpModel::loadEmbeddedTexture(const aiTexture* embeddedTexture) {
+    unsigned int textureID;
+    glGenTextures(1, &textureID);
+
+    // Check if texture is compressed
+    if (embeddedTexture->mHeight == 0) {
+        // Compressed texture data (like PNG, JPG, etc.)
+        int width, height, channels;
+        unsigned char* data = stbi_load_from_memory(
+            reinterpret_cast<const stbi_uc*>(embeddedTexture->pcData),
+            embeddedTexture->mWidth,  // mWidth contains the size in bytes for compressed textures
+            &width, &height, &channels, 0
+        );
+
+        if (data) {
+            GLenum format;
+            if (channels == 1) format = GL_RED;
+            else if (channels == 3) format = GL_RGB;
+            else if (channels == 4) format = GL_RGBA;
+            else format = GL_RGB;
+
+            glBindTexture(GL_TEXTURE_2D, textureID);
+            glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
+            glGenerateMipmap(GL_TEXTURE_2D);
+
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+            stbi_image_free(data);
+        }
+        else {
+            std::cerr << "Failed to load embedded compressed texture" << std::endl;
+            return 0;
+        }
+    }
+    else {
+        // Uncompressed texture data (raw pixels)
+        glBindTexture(GL_TEXTURE_2D, textureID);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA,
+            embeddedTexture->mWidth, embeddedTexture->mHeight,
+            0, GL_RGBA, GL_UNSIGNED_BYTE, embeddedTexture->pcData);
+        glGenerateMipmap(GL_TEXTURE_2D);
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    }
+
+    return textureID;
+}
+
+void AssimpModel::assignTexture(const std::string& type, const std::string& path) {
+    // Load the texture
+    unsigned int texID = AssimpTextureFromFile(path.c_str(), "", gammaCorrection);
+
+    // Create a texture object
+    AssimpTexture texture;
+    texture.id = texID;
+    texture.type = type;
+    texture.path = path;
+
+    // See if we've already loaded this texture
+    bool alreadyLoaded = false;
+    for (auto& tex : textures_loaded) {
+        if (tex.path == path) {
+            // Use the already loaded texture ID
+            texture.id = tex.id;
+            alreadyLoaded = true;
+            break;
+        }
+    }
+
+    if (!alreadyLoaded) {
+        // Add to loaded textures list
+        textures_loaded.push_back(texture);
+    }
+
+    // Assign to all meshes in the model
+    for (auto& mesh : meshes) {
+        bool found = false;
+        // Replace existing texture of this type if present
+        for (auto& tex : mesh.textures) {
+            if (tex.type == type) {
+                tex.id = texture.id;
+                tex.path = path;
+                found = true;
+                break;
+            }
+        }
+        // Add new texture if not found
+        if (!found) {
+            mesh.textures.push_back(texture);
+        }
+    }
+
+    std::cout << "Manually assigned texture: " << path << " as " << type << std::endl;
 }
 
 void AssimpModel::SetVertexBoneDataToDefault(Vertex& vertex) {
@@ -214,32 +363,32 @@ AssimpMesh AssimpModel::processMesh(aiMesh* mesh, const aiScene* scene) {
 
     aiMaterial* material = scene->mMaterials[mesh->mMaterialIndex];
 
-          // diffuse maps
-    std::vector<AssimpTexture> diffuseMaps = loadMaterialTextures(material, aiTextureType_DIFFUSE, "texture_diffuse");
+    // diffuse maps
+    std::vector<AssimpTexture> diffuseMaps = loadMaterialTextures(material, aiTextureType_DIFFUSE, "texture_diffuse", scene);
     textures.insert(textures.end(), diffuseMaps.begin(), diffuseMaps.end());
 
     // specular maps
-    std::vector<AssimpTexture> specularMaps = loadMaterialTextures(material, aiTextureType_SPECULAR, "texture_specular");
+    std::vector<AssimpTexture> specularMaps = loadMaterialTextures(material, aiTextureType_SPECULAR, "texture_specular", scene);
     textures.insert(textures.end(), specularMaps.begin(), specularMaps.end());
 
     // normal maps
-    std::vector<AssimpTexture> normalMaps = loadMaterialTextures(material, aiTextureType_HEIGHT, "texture_normal");
+    std::vector<AssimpTexture> normalMaps = loadMaterialTextures(material, aiTextureType_HEIGHT, "texture_normal", scene);
     textures.insert(textures.end(), normalMaps.begin(), normalMaps.end());
 
     // height maps
-    std::vector<AssimpTexture> heightMaps = loadMaterialTextures(material, aiTextureType_AMBIENT, "texture_height");
+    std::vector<AssimpTexture> heightMaps = loadMaterialTextures(material, aiTextureType_AMBIENT, "texture_height", scene);
     textures.insert(textures.end(), heightMaps.begin(), heightMaps.end());
 
     // roughness maps
-    std::vector<AssimpTexture> roughnessMaps = loadMaterialTextures(material, aiTextureType_SHININESS, "texture_roughness");
+    std::vector<AssimpTexture> roughnessMaps = loadMaterialTextures(material, aiTextureType_SHININESS, "texture_roughness", scene);
     textures.insert(textures.end(), roughnessMaps.begin(), roughnessMaps.end());
 
     // metalness maps
-    std::vector<AssimpTexture> metalnessMaps = loadMaterialTextures(material, aiTextureType_OPACITY, "texture_metalness");
+    std::vector<AssimpTexture> metalnessMaps = loadMaterialTextures(material, aiTextureType_OPACITY, "texture_metalness", scene);
     textures.insert(textures.end(), metalnessMaps.begin(), metalnessMaps.end());
 
     // emission maps
-    std::vector<AssimpTexture> emissionMaps = loadMaterialTextures(material, aiTextureType_EMISSIVE, "texture_emission");
+    std::vector<AssimpTexture> emissionMaps = loadMaterialTextures(material, aiTextureType_EMISSIVE, "texture_emission", scene);
     textures.insert(textures.end(), emissionMaps.begin(), emissionMaps.end());
 
     ExtractBoneWeightForVertices(vertices, mesh, scene);
@@ -330,3 +479,15 @@ void AssimpModel::calculateBoundingBox() {
         }
     }
 }
+
+int AssimpModel::getMeshCount() const {
+    return meshes.size();
+}
+
+int AssimpModel::getMeshSize(int meshIndex) const {
+    if (meshIndex >= 0 && meshIndex < meshes.size()) {
+        return meshes[meshIndex].vertices.size();
+    }
+    return 0; // Return 0 if mesh index is out of bounds
+}
+
