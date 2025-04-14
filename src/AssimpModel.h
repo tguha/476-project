@@ -44,12 +44,20 @@ class AssimpModel {
         glm::vec3 boundingBoxMin = glm::vec3(std::numeric_limits<float>::infinity());
         glm::vec3 boundingBoxMax;
 
+        void assignTexture(const std::string& type, const std::string& path);
+
+        glm::vec3 getBoundingBoxMin() const { return boundingBoxMin; }
+        glm::vec3 getBoundingBoxMax() const { return boundingBoxMax; }
+
+        int getMeshCount() const;
+        int getMeshSize(int meshIndex) const;
 
     private:
         void loadModel(std::string const &path);
         void processNode(aiNode *node, const aiScene *scene);
         AssimpMesh processMesh(aiMesh *mesh, const aiScene *scene);
-        std::vector<AssimpTexture> loadMaterialTextures(aiMaterial *mat, aiTextureType type, std::string typeName);
+        std::vector<AssimpTexture> loadMaterialTextures(aiMaterial *mat, aiTextureType type, std::string typeName, const aiScene *scene);
+        unsigned int loadEmbeddedTexture(const aiTexture* embeddedTexture);
 
     private:
 

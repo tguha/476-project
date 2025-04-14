@@ -1,18 +1,13 @@
 /*
- * Example two meshes and two shaders (could also be used for Program 2)
- * includes modifications to shape and initGeom in preparation to load
- * multi shape objects
- * CPE 471 Cal Poly Z. Wood + S. Sueda + I. Dunn
+ * The start of our wizarding adventure
  */
 
 #include <iostream>
 #include <glad/glad.h>
 #include <chrono>
 #include <thread>
-
 #include "GLSL.h"
 #include "Program.h"
-// #include "Shape.h"
 #include "MatrixStack.h"
 #include "WindowManager.h"
 #include "Texture.h"
@@ -21,9 +16,6 @@
 #include "AssimpModel.h"
 #include "Animator.h"
 #include "LightTrail.h"
-
-// #define TINYOBJLOADER_IMPLEMENTATION
-// #include <tiny_obj_loader/tiny_obj_loader.h>
 
 // value_ptr for glm
 #include <glm/gtc/type_ptr.hpp>
@@ -35,27 +27,34 @@ using namespace glm;
 #define NUM_LIGHTS 4
 #define MAX_BONES 200
 
+class Collectible {
+public:
+	AssimpModel* model;
+	glm::vec3 position;
+	glm::vec3 AABBmin;
+	glm::vec3 AABBmax;
+	bool collected;
+
+	Collectible(AssimpModel* model, const glm::vec3& position)
+		: model(model), position(position), collected(false)
+	{
+		// Get local bounding box from model
+		glm::vec3 localMin = model->getBoundingBoxMin();
+		glm::vec3 localMax = model->getBoundingBoxMax();
+
+		// Offset by world position
+		AABBmin = localMin + position;
+		AABBmax = localMax + position;
+	}
+};
+
 class Application : public EventCallbacks {
 
 public:
-
 	WindowManager * windowManager = nullptr;
 
-	// Our shader program
-	std::shared_ptr<Program> prog;
-
-	// Our shader program
-	std::shared_ptr<Program> solidColorProg;
-
-	std::shared_ptr<Program> prog2;
-
-	std::shared_ptr<Program> texProg;
-
-	std::shared_ptr<Program> skyProg;
-
-	std::shared_ptr<Program> assimptexProg;
-
-	GLuint skyMapTexture;
+	// Our shader programs
+	std::shared_ptr<Program> texProg, prog2, assimptexProg;
 
 	// ground data
 	GLuint GrndBuffObj, GrndNorBuffObj, GIndxBuffObj;
@@ -63,46 +62,27 @@ public:
 	GLuint GroundVertexArrayID;
 	float groundSize = 20.0f;
 
-	shared_ptr<Texture> sidewalkTexture;
+	// setup collectivles vector
+	std::vector<Collectible> collectibles;
+	int collectedCount = 0;
+	int totalCollectibles = 0;
+	float finishTime;
+	bool reset = false;
+	// character bounding box
+	glm::vec3 manAABBmin, manAABBmax;
 
-	shared_ptr<Texture> skyTexture;
+	AssimpModel *cube, *barrel;
 
-	shared_ptr<Texture> monitor1Texture;
-	shared_ptr<Texture> monitor2Texture;
-	shared_ptr<Texture> monitor3Texture;
-
-	// shared_ptr<Shape> sky; // big sphere
-
-	// shared_ptr<Shape> cube_sky;
-
-	// vector<shared_ptr<Shape>> mans;
-
-	AssimpModel *cube;
-
-	AssimpModel *vampire;
-
-	AssimpModel *wolf;
-
-	AssimpModel *stickfigure_running;
-
-	AssimpModel *stickfigure_standing;
-
-	Animation *stickfigure_anim;
-
-	Animation *stickfigure_idle;
-
+	AssimpModel *stickfigure_running, *stickfigure_standing;
+	Animation *stickfigure_anim, *stickfigure_idle;
 	Animator *stickfigure_animator;
 
 	float AnimDeltaTime = 0.0f;
 	float AnimLastFrame = 0.0f;
 
-	// vector<string> light_cycles_names;
-
-	//example data that might be useful when trying to compute bounds on multi-shape
 	vec3 gMin;
 
 	float lightTrans = -2;
-
 	int change_mat = 0;
 
 	//animation data
@@ -363,35 +343,34 @@ public:
 	void init(const std::string& resourceDirectory)
 	{
 		GLSL::checkVersion();
-
-		// Set background color.
+		
+		// Set background color and enable z-buffer test
 		glClearColor(.12f, .34f, .56f, 1.0f);
-		// Enable z-buffer test.
 		glEnable(GL_DEPTH_TEST);
 
-		// Initialize the GLSL program.
-		prog = make_shared<Program>();
-		prog->setVerbose(true);
-		prog->setShaderNames(resourceDirectory + "/simple_vert.glsl", resourceDirectory + "/simple_frag.glsl");
-		prog->init();
-		prog->addUniform("P");
-		prog->addUniform("V");
-		prog->addUniform("M");
-		prog->addAttribute("vertPos");
-		prog->addAttribute("vertNor");
+		// Initialize the GLSL program that we will use for texture mapping
+		texProg = make_shared<Program>();
+		texProg->setVerbose(true);
+		texProg->setShaderNames(resourceDirectory + "/tex_vert.glsl", resourceDirectory + "/tex_frag0.glsl");
+		texProg->init();
+		texProg->addUniform("P");
+		texProg->addUniform("V");
+		texProg->addUniform("M");
+		texProg->addUniform("Texture0");
+		texProg->addUniform("MatAmb");
+		texProg->addUniform("MatSpec");
+		texProg->addUniform("MatShine");
+		texProg->addUniform("numLights");
+		for (int i = 0; i < NUM_LIGHTS; i++) {
+			texProg->addUniform("lightPos[" + to_string(i) + "]");
+			texProg->addUniform("lightColor[" + to_string(i) + "]");
+			texProg->addUniform("lightIntensity[" + to_string(i) + "]");
+		}
+		texProg->addAttribute("vertPos");
+		texProg->addAttribute("vertNor");
+		texProg->addAttribute("vertTex");
 
-		// Initialize the GLSL program.
-		solidColorProg = make_shared<Program>();
-		solidColorProg->setVerbose(true);
-		solidColorProg->setShaderNames(resourceDirectory + "/simple_vert.glsl", resourceDirectory + "/solid_frag.glsl");
-		solidColorProg->init();
-		solidColorProg->addUniform("P");
-		solidColorProg->addUniform("V");
-		solidColorProg->addUniform("M");
-		solidColorProg->addUniform("solidColor");
-		solidColorProg->addAttribute("vertPos");
-		solidColorProg->addAttribute("vertNor");
-
+		// Initialize the GLSL program that we will use for rendering
 		prog2 = make_shared<Program>();
 		prog2->setVerbose(true);
 		prog2->setShaderNames(resourceDirectory + "/simple_light_vert.glsl", resourceDirectory + "/simple_light_frag.glsl");
@@ -421,195 +400,76 @@ public:
 		prog2->addUniform("randFloat3");
 		prog2->addUniform("randFloat4");
 
-		// Initialize the GLSL program that we will use for texture mapping
-		texProg = make_shared<Program>();
-		texProg->setVerbose(true);
-		texProg->setShaderNames(resourceDirectory + "/tex_vert.glsl", resourceDirectory + "/tex_frag0.glsl");
-		texProg->init();
-		texProg->addUniform("P");
-		texProg->addUniform("V");
-		texProg->addUniform("M");
-		texProg->addUniform("Texture0");
-		texProg->addAttribute("vertPos");
-		texProg->addAttribute("vertNor");
-		texProg->addAttribute("vertTex");
-		texProg->addUniform("MatAmb");
-		texProg->addUniform("MatSpec");
-		texProg->addUniform("MatShine");
-		for (int i = 0; i < NUM_LIGHTS; i++) {
-			texProg->addUniform("lightPos[" + to_string(i) + "]");
-			texProg->addUniform("lightColor[" + to_string(i) + "]");
-			texProg->addUniform("lightIntensity[" + to_string(i) + "]");
-		}
-
-		texProg->addUniform("numLights");
-
-		skyProg = make_shared<Program>();
-		skyProg->setVerbose(true);
-		skyProg->setShaderNames(resourceDirectory + "/cube_vert.glsl", resourceDirectory + "/cube_frag.glsl");
-		skyProg->init();
-		skyProg->addUniform("P");
-		skyProg->addUniform("V");
-		skyProg->addUniform("M");
-		skyProg->addUniform("skybox");
-		skyProg->addAttribute("vertPos");
-		skyProg->addAttribute("vertNor");
-		skyProg->addUniform("MatShine");
-		skyProg->addUniform("lightPos[0]");
-		// skyProg->addUniform("lightPos[1]");
-		skyProg->addUniform("lightColor[0]");
-		// skyProg->addUniform("lightColor[1]");
-		skyProg->addUniform("lightIntensity[0]");
-		// skyProg->addUniform("lightIntensity[1]");
-		// for (int i = 0; i < 1; i++) {
-		// 	skyProg->addUniform("lightPos[" + to_string(i) + "]");
-		// 	skyProg->addUniform("lightColor[" + to_string(i) + "]");
-		// 	skyProg->addUniform("lightIntensity[" + to_string(i) + "]");
-		// }
-		skyProg->addUniform("numLights");
-
-
+		// Initialize the GLSL program that we will use for assimp models
 		assimptexProg = make_shared<Program>();
-			assimptexProg->setVerbose(true);
-			assimptexProg->setShaderNames(resourceDirectory + "/assimp_tex_vert.glsl", resourceDirectory + "/assimp_tex_frag.glsl");
-			assimptexProg->init();
-			assimptexProg->addUniform("P");
-			assimptexProg->addUniform("V");
-			assimptexProg->addUniform("M");
-
-			assimptexProg->addUniform("texture_diffuse1");
-			assimptexProg->addUniform("texture_specular1");
-			// assimptexProg->addUniform("texture_normal1");
-			// assimptexProg->addUniform("texture_height1");
-			assimptexProg->addUniform("texture_roughness1");
-			assimptexProg->addUniform("texture_metalness1");
-			assimptexProg->addUniform("texture_emission1");
-			assimptexProg->addAttribute("vertPos");
-			assimptexProg->addAttribute("vertNor");
-			assimptexProg->addAttribute("vertTex");
-			// assimptexProg->addAttribute("vertTan");
-			// assimptexProg->addAttribute("vertBitan");
-			assimptexProg->addAttribute("boneIds");
-			assimptexProg->addAttribute("weights");
-			for (int i = 0; i < MAX_BONES; i++) {
-				assimptexProg->addUniform("finalBonesMatrices[" + to_string(i) + "]");
-			}
-			assimptexProg->addUniform("MatAmb");
-			assimptexProg->addUniform("MatDif");
-			assimptexProg->addUniform("MatSpec");
-			assimptexProg->addUniform("MatShine");
-			for (int i = 0; i < NUM_LIGHTS; i++) {
-				assimptexProg->addUniform("lightPos[" + to_string(i) + "]");
-				assimptexProg->addUniform("lightColor[" + to_string(i) + "]");
-				assimptexProg->addUniform("lightIntensity[" + to_string(i) + "]");
-			}
-			assimptexProg->addUniform("numLights");
-			assimptexProg->addUniform("hasTexture");
-
-
-		//read in a load the texture
-		// texture0 = make_shared<Texture>();
-		// texture0->setFilename(resourceDirectory + "/asphalt-texture-close-up.jpg");
-		// texture0->init();
-		// texture0->setUnit(0);
-		// texture0->setWrapModes(GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE);
-
+		assimptexProg->setVerbose(true);
+		assimptexProg->setShaderNames(resourceDirectory + "/assimp_tex_vert.glsl", resourceDirectory + "/assimp_tex_frag.glsl");
+		assimptexProg->init();
+		assimptexProg->addUniform("P");
+		assimptexProg->addUniform("V");
+		assimptexProg->addUniform("M");
+		assimptexProg->addUniform("texture_diffuse1");
+		assimptexProg->addUniform("texture_specular1");
+		assimptexProg->addUniform("texture_roughness1");
+		assimptexProg->addUniform("texture_metalness1");
+		assimptexProg->addUniform("texture_emission1");
+		assimptexProg->addAttribute("vertPos");
+		assimptexProg->addAttribute("vertNor");
+		assimptexProg->addAttribute("vertTex");
+		assimptexProg->addAttribute("boneIds");
+		assimptexProg->addAttribute("weights");
+		for (int i = 0; i < MAX_BONES; i++) {
+			assimptexProg->addUniform("finalBonesMatrices[" + to_string(i) + "]");
+		}
+		assimptexProg->addUniform("MatAmb");
+		assimptexProg->addUniform("MatDif");
+		assimptexProg->addUniform("MatSpec");
+		assimptexProg->addUniform("MatShine");
+		for (int i = 0; i < NUM_LIGHTS; i++) {
+			assimptexProg->addUniform("lightPos[" + to_string(i) + "]");
+			assimptexProg->addUniform("lightColor[" + to_string(i) + "]");
+			assimptexProg->addUniform("lightIntensity[" + to_string(i) + "]");
+		}
+		assimptexProg->addUniform("numLights");
+		assimptexProg->addUniform("hasTexture");
 		updateCameraVectors();
-
-
-
 	}
 
 	void initGeom(const std::string& resourceDirectory)
 	{
-
-		//EXAMPLE set up to read one shape from one obj file - convert to read several
-		// Initialize mesh
-		// Load geometry
- 		// Some obj files contain material information.We'll ignore them for this assignment.
  		string errStr;
 
-
-		// vector<tinyobj::shape_t> TOshapes4;
-		// vector<tinyobj::material_t> objMaterials4;
-
-		// bool rc = tinyobj::LoadObj(TOshapes4, objMaterials4, errStr, (resourceDirectory + "/rest_of_gaming_room.obj").c_str());
-
-
-		//read out information stored in the shape about its size - something like this...
-		//then do something with that information.....
-		// gMin.x = mesh->min.x;
-		// gMin.y = mesh->min.y;
-
-		// stickfigure_running = new AssimpModel(resourceDirectory + "/stickfigure_anim.fbx");
-		// stickfigure_anim = new Animation(resourceDirectory + "/stickfigure_anim.fbx", stickfigure_running, 0);
-		// stickfigure_animator = new Animator(stickfigure_anim);
-
-		// vampire = new AssimpModel(resourceDirectory + "/vampire/dancing_vampire.dae");
-		// stickfigure_running = new AssimpModel(resourceDirectory + "/wolf2.fbx");
+		// load the walking character model
 		stickfigure_running = new AssimpModel(resourceDirectory + "/Vanguard/Vanguard.fbx");
-		// stickfigure_running =  new AssimpModel(resourceDirectory + "/vampire/dancing_vampire.dae");
-		// stickfigure_running =  new AssimpModel(resourceDirectory + "/Walking/Walking.dae");
-
-		// cout << "gMax: x: " << stickfigure_running->boundingBoxMax.x << " y: " << stickfigure_running->boundingBoxMax.y << " z: " << stickfigure_running->boundingBoxMax.z << endl;
-		// cout << "gMin: x: " << stickfigure_running->boundingBoxMin.x << " y: " << stickfigure_running->boundingBoxMin.y << " z: " << stickfigure_running->boundingBoxMin.z << endl;
-		// stickfigure_anim = new Animation(resourceDirectory + "/wolf2.fbx", stickfigure_running, 0);
-		// stickfigure_idle = new Animation(resourceDirectory + "/wolf.fbx", stickfigure_running, 1);
-		// stickfigure_anim = new Animation(resourceDirectory + "/vampire/dancing_vampire.dae", stickfigure_running, 0);
-		// stickfigure_anim = new Animation(resourceDirectory + "/Walking/Walking.dae", stickfigure_running, 0);
 		stickfigure_anim = new Animation(resourceDirectory + "/Vanguard/Vanguard.fbx", stickfigure_running, 0);
 		stickfigure_idle = new Animation(resourceDirectory + "/Vanguard/Vanguard.fbx", stickfigure_running, 1);
 		stickfigure_animator = new Animator(stickfigure_anim);
 
+		// load the cube
 		cube = new AssimpModel(resourceDirectory + "/cube.obj");
 
+		// load the barrel
+		barrel = new AssimpModel(resourceDirectory + "/Barrel/Barrel_OBJ.obj");
+		// manually assign the barrel texture
+		// this is happening because the barrel does not have any embedded textures
+		// we could import to blender and then embed the textures as a remedy
+		barrel->assignTexture("texture_diffuse1", resourceDirectory + "/Barrel/textures/barrel_diffuse.png");
+		barrel->assignTexture("texture_roughness1", resourceDirectory + "/Barrel/textures/barrel_roughness.png");
+		barrel->assignTexture("texture_metalness1", resourceDirectory + "/Barrel/textures/barrel_metallic.png");
+		barrel->assignTexture("texture_normal1", resourceDirectory + "/Barrel/textures/barrel_normal.png");
 
-	}
+		// example debug for checking mesh count of a model, helps w multimesh and sanity checks
+		/*std::cout << "Barrel model has " << barrel->getMeshCount() << " meshes" << std::endl;
+		for (size_t i = 0; i < barrel->getMeshCount(); i++) {
+			std::cout << "  Mesh " << i << " has " << barrel->getMeshSize(i) << " vertices" << std::endl;
+		}*/
 
-	unsigned int createSky(string dir, vector<string> faces) {
-		unsigned int textureID;
-		glGenTextures(1, &textureID);
-		glBindTexture(GL_TEXTURE_CUBE_MAP, textureID);
-		int width, height, nrChannels;
-		stbi_set_flip_vertically_on_load(false);
-		for(GLuint i = 0; i < faces.size(); i++) {
-		unsigned char *data =
-		stbi_load((dir+faces[i]).c_str(), &width, &height, &nrChannels, 0);
-		if (data) {
-		glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i,
-		0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
-		} else {
-		cout << "failed to load: " << (dir+faces[i]).c_str() << endl;
-		}
-		}
-		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
-		// cout << " creating cube map any errors : " << glGetError() << endl;
-		return textureID;
-	}
+		// add 2 instances of the barrel to the collectibles vector Collectible(<model>, <position>)
+		collectibles.push_back(Collectible(barrel, vec3(3.0f, 0.0f, 1.0f)));
+		collectibles.push_back(Collectible(barrel, vec3(-2.0f, 0.0f, 2.0f)));
 
-	void SetMaterialMonitor(shared_ptr<Program> curS) {
-		glUniform3f(curS->getUniform("MatAmb"), 0.7f, 0.7f, 0.7f); // silver ambient
-		glUniform3f(curS->getUniform("MatDif"), 0.85f, 0.85f, 0.85f); // dark white diffuse
-		glUniform3f(curS->getUniform("MatSpec"), 1.0f, 1.0f, 1.0f); // white specular
-		glUniform1f(curS->getUniform("MatShine"), 60.0f); // medium shine
-	}
-
-	void SetMaterialGamingChair(shared_ptr<Program> curS) {
-		glUniform3f(curS->getUniform("MatAmb"), 0.0f, 0.0f, 0.0f); // black ambient
-		glUniform3f(curS->getUniform("MatDif"), 1.0f, 0.0f, 0.0f); // black diffuse
-		glUniform3f(curS->getUniform("MatSpec"), 0.5f, 0.5f, 0.5f); // grey specular
-		glUniform1f(curS->getUniform("MatShine"), 60.0f); // low shine
-	}
-
-	void SetMaterialGamingRoom(shared_ptr<Program> curS) {
-		glUniform3f(curS->getUniform("MatAmb"), 0.0f, 0.0f, 0.0f); // black ambient
-		glUniform3f(curS->getUniform("MatDif"), 0.05f, 0.05f, 0.05f); // black diffuse
-		glUniform3f(curS->getUniform("MatSpec"), 1.0f, 1.0f, 1.0f); // grey specular
-		glUniform1f(curS->getUniform("MatShine"), 60.0f); // low shine
+		// update total collectibles
+		totalCollectibles = collectibles.size();
 	}
 
 	void SetMaterialMan(shared_ptr<Program> curS, int i) {
@@ -655,7 +515,7 @@ public:
 	/* helper for sending top of the matrix strack to GPU */
 	void setModel(std::shared_ptr<Program> prog, std::shared_ptr<MatrixStack>M) {
 		glUniformMatrix4fv(prog->getUniform("M"), 1, GL_FALSE, value_ptr(M->topMatrix()));
-   }
+    }
 
 	/* helper function to set model trasnforms */
   	void setModel(shared_ptr<Program> curS, vec3 trans, float rotY, float rotX, float sc) {
@@ -666,11 +526,6 @@ public:
   		mat4 ctm = Trans*RotX*RotY*ScaleS;
   		glUniformMatrix4fv(curS->getUniform("M"), 1, GL_FALSE, value_ptr(ctm));
   	}
-
-	void initBboxpos() {
-		// lightcycle1_bbox_max += start_lightcycle1_pos;
-		// lightcycle1_bbox_min += start_lightcycle1_pos;
-	}
 
 	void updateBoundingBox(const glm::vec3& localMin, const glm::vec3& localMax, const glm::mat4& transform, glm::vec3& outWorldMin, glm::vec3& outWorldMax) {
 		// Initialize with extreme values
@@ -736,8 +591,8 @@ public:
 		glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(idx), idx, GL_STATIC_DRAW);
 	}
 
-      //code to draw the ground plane
-	  void drawGround(shared_ptr<Program> curS, std::shared_ptr<MatrixStack> Model) {
+    //code to draw the ground plane
+	void drawGround(shared_ptr<Program> curS, std::shared_ptr<MatrixStack> Model) {
 		curS->bind();
 		glBindVertexArray(GroundVertexArrayID);
 
@@ -769,18 +624,26 @@ public:
 		curS->unbind();
 	}
 
-
-	float randFloat(float l, float h)
-	{
+	float randFloat(float l, float h) {
 		float r = rand() / (float) RAND_MAX;
 		return (1.0f - r) * l + r * h;
 	}
 
-
-	bool isCollision(vec3 p1, vec3 p2) {
-		return (p2.x - p1.x <= 0.001) && (p2.z - p1.z <= 0.001);
+	bool checkAABBCollision(const glm::vec3& minA, const glm::vec3& maxA,
+		const glm::vec3& minB, const glm::vec3& maxB)
+	{
+		return (minA.x <= maxB.x && maxA.x >= minB.x) &&
+			(minA.y <= maxB.y && maxA.y >= minB.y) &&
+			(minA.z <= maxB.z && maxA.z >= minB.z);
 	}
 
+	void resetCollectibles() {
+		for (auto& collectible : collectibles) {
+			collectible.collected = false;
+		}
+		collectedCount = 0;
+		std::cout << "Game reset. Find all the collectibles again!" << std::endl;
+	}
 
 	void render(float frametime, float animTime) {
 		// Get current frame buffer size.
@@ -791,192 +654,162 @@ public:
 		// Clear framebuffer.
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-		//Use the matrix stack for Lab 6
 		float aspect = width/(float)height;
 
-		// Create the matrix stacks - please leave these alone for now
+		// Create the matrix stacks
 		auto Projection = make_shared<MatrixStack>();
 		auto View = make_shared<MatrixStack>();
 		auto Model = make_shared<MatrixStack>();
 
-		// Apply perspective projection.
+		// Apply perspective projection
 		Projection->pushMatrix();
+
 		// Projection->perspective(45.0f, aspect, 0.01f, 200.0f);
 		Projection->perspective(45.0f, aspect, 0.01f, 400.0f);
 
 		// View is global translation along negative z for now
 		View->pushMatrix();
-			View->loadIdentity();
-			// View->translate(vec3(0, 0, -5));
-			View->lookAt(eye, lookAt, vec3(0, 1, 0));
+		View->loadIdentity();
+		View->lookAt(eye, lookAt, vec3(0, 1, 0));
 
-
-			// }
-		// Draw a solid colored sphere
-		solidColorProg->bind();
-		//send the projetion and view for solid shader
-		glUniformMatrix4fv(solidColorProg->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
-		glUniformMatrix4fv(solidColorProg->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
-		//send in the color to use
-
-		glUniform3f(solidColorProg->getUniform("solidColor"), 1.0, 1.0, 1.0); // white light
-
-
-
-
-		// different color for different objects
-
-		solidColorProg->unbind();
-
-
+		// Draw the ground
 		prog2->bind();
 		glUniformMatrix4fv(prog2->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
 		glUniformMatrix4fv(prog2->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
-
 		glUniform3f(prog2->getUniform("lightColor[0]"), 1.0, 1.0, 1.0); // white light
 		glUniform1f(prog2->getUniform("lightIntensity[0]"), 1.0); // light intensity
 		glUniform3f(prog2->getUniform("lightPos[0]"), 0, 2, 0); // light position at the computer screen
-
 		glUniform1i(prog2->getUniform("numLights"), 1); // light position at the computer screen
-
-		// glUniform1i(prog2->getUniform("hasEmittance"), 1);
-		// glUniform3f(prog2->getUniform("MatEmitt"), 1.0, 1.0, 1.0); // white light
 		drawGround(prog2, Model);
-
-
-
-
 		prog2->unbind();
 
+		assimptexProg->bind();
+		glUniformMatrix4fv(assimptexProg->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
+		glUniformMatrix4fv(assimptexProg->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
+		glUniform3f(assimptexProg->getUniform("lightColor[0]"), 1.0, 1.0, 1.0); // white light
+		glUniform1f(assimptexProg->getUniform("lightIntensity[0]"), 0.0); // light intensity
+		glUniform3f(assimptexProg->getUniform("lightPos[0]"), 0, 10, 0); // light position at the computer screen
+		glUniform1i(assimptexProg->getUniform("numLights"), 1); // light position at the computer screen
+
+		// select animation for vanguard model
+		stickfigure_animator->UpdateAnimation(1.5 * animTime);
+		if (manState == WALKING) {
+			stickfigure_animator->SetCurrentAnimation(stickfigure_anim);
+		} else if (manState == STANDING) {
+			stickfigure_animator->SetCurrentAnimation(stickfigure_idle);
+		}
+
+		// update the bone matrices according to selected animation
+		vector<glm::mat4> transforms = stickfigure_animator->GetFinalBoneMatrices();
+		for (int i = 0; i < transforms.size(); ++i) {
+			glUniformMatrix4fv(assimptexProg->getUniform("finalBonesMatrices[" + std::to_string(i) + "]"), 1, GL_FALSE, value_ptr(transforms[i]));
+		}
+
+		// set the model matrix and draw the walking character model
+		Model->pushMatrix();
+			Model->loadIdentity();
+			Model->translate(manTrans);
+			Model->scale(0.01f);
+			Model->rotate(manRot.y, vec3(0, 1, 0));
+			Model->rotate(manRot.z, vec3(0, 0, 1));
+
+			// update the bounding box for collision detection
+			glm::mat4 manTransform = glm::translate(glm::mat4(1.0f), manTrans)
+				* glm::rotate(glm::mat4(1.0f), manRot.x, glm::vec3(1, 0, 0))
+				* glm::rotate(glm::mat4(1.0f), manRot.y, glm::vec3(0, 1, 0))
+				* glm::scale(glm::mat4(1.0f), manScale);
+			updateBoundingBox(stickfigure_running->getBoundingBoxMin(),
+				stickfigure_running->getBoundingBoxMax(),
+				manTransform,
+				manAABBmin,
+				manAABBmax);
+
+			glUniform1i(assimptexProg->getUniform("hasTexture"), 1);
+			SetMaterialMan(assimptexProg, 0);
+			setModel(assimptexProg, Model);
+			stickfigure_running->Draw(assimptexProg);
+		Model->popMatrix();
+
+		assimptexProg->unbind();
+
+		// Draw the collectibles with the simple texture shader
 		texProg->bind();
 		glUniformMatrix4fv(texProg->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
 		glUniformMatrix4fv(texProg->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
 
+		// Set lighting uniforms
+		glUniform3f(texProg->getUniform("lightColor[0]"), 1.0, 1.0, 1.0); // White light
+		glUniform1f(texProg->getUniform("lightIntensity[0]"), 5.0); // High intensity for visibility
+		glUniform3f(texProg->getUniform("lightPos[0]"), 0, 2, 0);
+		glUniform1i(texProg->getUniform("numLights"), 1);
 
-		glUniform3f(texProg->getUniform("lightColor[0]"), 1.0, 1.0, 1.0); // white light
-		glUniform1f(texProg->getUniform("lightIntensity[0]"), 1.0); // light intensity
-		glUniform3f(texProg->getUniform("lightPos[0]"), 0, 2, 0); // light position at the computer screen
+		// Set material properties
+		glUniform3f(texProg->getUniform("MatAmb"), 0.5, 0.5, 0.5); // Bright ambient
+		glUniform3f(texProg->getUniform("MatSpec"), 0.8, 0.8, 0.8); // Strong specular
+		glUniform1f(texProg->getUniform("MatShine"), 32.0f); // High shininess
 
-		glUniform1i(texProg->getUniform("numLights"), 1); // light position at the computer screen
-
-
-		texProg->unbind();
-
-		skyProg->bind();
-		glUniformMatrix4fv(skyProg->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
-		glUniformMatrix4fv(skyProg->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
-
-		skyProg->unbind();
-
-		assimptexProg->bind();
-			glUniformMatrix4fv(assimptexProg->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
-			glUniformMatrix4fv(assimptexProg->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
-
-
-			glUniform3f(assimptexProg->getUniform("lightColor[0]"), 1.0, 1.0, 1.0); // white light
-			glUniform1f(assimptexProg->getUniform("lightIntensity[0]"), 0.0); // light intensity
-			glUniform3f(assimptexProg->getUniform("lightPos[0]"), 0, 10, 0); // light position at the computer screen
-
-			glUniform1i(assimptexProg->getUniform("numLights"), 1); // light position at the computer screen
-
-			stickfigure_animator->UpdateAnimation(1.5 * animTime);
-			if (manState == WALKING) {
-				// stickfigure_animator->UpdateAnimation(1.5 * animTime);
-				stickfigure_animator->SetCurrentAnimation(stickfigure_anim);
-			} else if (manState == STANDING) {
-				// stickfigure_animator->UpdateAnimation(0);
-				stickfigure_animator->SetCurrentAnimation(stickfigure_idle);
+		// Check for collisions with collectibles
+		for (auto& collectible : collectibles) {
+			if (collectedCount >= totalCollectibles && !reset) {
+				std::cout << "All items collected! Resetting Game.\n";
+				finishTime = glfwGetTime();
+				reset = true;
+			} else if (collectedCount >= totalCollectibles && (glfwGetTime() - finishTime >= 1.0f)) {
+				resetCollectibles();
+				reset = false;
 			}
-
-			vector<glm::mat4> transforms = stickfigure_animator->GetFinalBoneMatrices();
-			for (int i = 0; i < transforms.size(); ++i) {
-				glUniformMatrix4fv(assimptexProg->getUniform("finalBonesMatrices[" + std::to_string(i) + "]"), 1, GL_FALSE, value_ptr(transforms[i]));
+			if (!collectible.collected &&
+				checkAABBCollision(manAABBmin, manAABBmax, collectible.AABBmin, collectible.AABBmax)) {
+				collectible.collected = true;
+				collectedCount++;
+				std::cout << "Collected an item! (" << collectedCount << "/" << totalCollectibles << ")\n";
 			}
+		}
 
+		// Draw collectibles
+		for (auto& collectible : collectibles) {
+			// Skip drawing if collected
+			if (collectible.collected) continue;
 
 			Model->pushMatrix();
 				Model->loadIdentity();
-				Model->translate(manTrans);
-				Model->scale(0.01f);
-				// Model->scale(1.0f);
-				// Model->rotate(radians(90.0f), vec3(0, 1, 0));
-				Model->rotate(manRot.y, vec3(0, 1, 0));
-				// Model->rotate(manRot.x, vec3(1, 0, 0));
-				Model->rotate(manRot.z, vec3(0, 0, 1));
+				Model->translate(collectible.position);
+				setModel(texProg, Model);
+				glUniformMatrix4fv(texProg->getUniform("M"), 1, GL_FALSE, value_ptr(Model->topMatrix()));
 
+				// Bind the diffuse texture to texture unit 0
+				glActiveTexture(GL_TEXTURE0);
 
-				// glm::mat4 transform = Model->topMatrix();
-
-				// glm::vec3 worldMin, worldMax;
-				// updateBoundingBox(stickfigure_running->boundingBoxMin, stickfigure_running->boundingBoxMax, transform, worldMin, worldMax);
-				// stickfigure_running->boundingBoxMin = worldMin;
-				// stickfigure_running->boundingBoxMax = worldMax;
-
-
-				glUniform1i(assimptexProg->getUniform("hasTexture"), 1);
-				SetMaterialMan(assimptexProg, 0);
-				setModel(assimptexProg, Model);
-				stickfigure_running->Draw(assimptexProg);
-
-
+				// draw the collectible
+				collectible.model->Draw(texProg);
 			Model->popMatrix();
+		}
 
-			// Model->pushMatrix();
-			// 	Model->loadIdentity();
-			// 	Model->translate(vec3(0, 0, 0));
-			// 	// Model->scale(0.25f);
-			// 	Model->scale(0.01f);
-			// 	glUniform1i(assimptexProg->getUniform("hasTexture"), 0);
-			// 	setModel(assimptexProg, Model);
-			// 	stickfigure_running->Draw(assimptexProg);
-			// Model->popMatrix();
+		// example of drawing a barrel
+		//Model->pushMatrix();
+		//	Model->loadIdentity();
 
-			// Model->pushMatrix();
-			// 	Model->loadIdentity();
-			// 	Model->translate(vec3(0, 0, 0));
-			// 	Model->scale(0.1f);
-			// 	glUniform1i(assimptexProg->getUniform("hasTexture"), 1);
-			// 	setModel(assimptexProg, Model);
-			// 	vampire->Draw(assimptexProg);
-			// Model->popMatrix();
+		//	// Position barrel
+		//	vec3 barrelPos = glm::vec3(0, 0, -5);
+		//	Model->translate(barrelPos);
 
-			// Model->pushMatrix();
-			// 	Model->loadIdentity();
-			// 	Model->translate(vec3(0, 0, 0));
-			// 	Model->scale(1.0f);
-			// 	glUniform1i(assimptexProg->getUniform("hasTexture"), 0);
-			// 	SetMaterialMan(assimptexProg, 1);
-			// 	setModel(assimptexProg, Model);
-			// 	wolf->Draw(assimptexProg);
-			// Model->popMatrix();
+		//	// Scale the barrel
+		//	Model->scale(vec3(1.0f));
 
-		// Model->pushMatrix();
-		// 	Model->loadIdentity();
-		// 	Model->translate(stickfigure_running->boundingBoxMax);
-		// 	Model->scale(0.1f);
-		// 	glUniform1i(assimptexProg->getUniform("hasTexture"), 0);
-		// 	SetMaterialMan(assimptexProg, 1);
-		// 	setModel(assimptexProg, Model);
-		// 	cube->Draw(assimptexProg);
-		// Model->popMatrix();
+		//	glUniformMatrix4fv(texProg->getUniform("M"), 1, GL_FALSE, value_ptr(Model->topMatrix()));
 
-		// Model->pushMatrix();
-		// 	Model->loadIdentity();
-		// 	Model->translate(stickfigure_running->boundingBoxMin);
-		// 	Model->scale(0.1f);
-		// 	glUniform1i(assimptexProg->getUniform("hasTexture"), 0);
-		// 	SetMaterialMan(assimptexProg, 1);
-		// 	setModel(assimptexProg, Model);
-		// 	cube->Draw(assimptexProg);
-		// Model->popMatrix();
+		//	// Bind the diffuse texture to texture unit 0
+		//	glActiveTexture(GL_TEXTURE0);
 
+		//	// draw the barrel
+		//	barrel->Draw(texProg);
+		//Model->popMatrix();
 
-		assimptexProg->unbind();
+		texProg->unbind();
 
-		// Pop matrix stacks.
+		// Pop matrix stacks
 		Projection->popMatrix();
 		View->popMatrix();
-
 	}
 };
 
@@ -998,7 +831,7 @@ int main(int argc, char *argv[])
 	Application *application = new Application();
 
 	// Your main will always include a similar set up to establish your window
-	// and GL context, etc.
+	// and GL context, etc
 
 	WindowManager *windowManager = new WindowManager();
 	windowManager->init(640, 480);
@@ -1006,7 +839,6 @@ int main(int argc, char *argv[])
 	application->windowManager = windowManager;
 
 	glfwSetInputMode(windowManager->getHandle(), GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
-	// glfwSetInputMode(windowManager->getHandle(), GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
 	glfwSetWindowUserPointer(windowManager->getHandle(), application);
 	glfwSetCursorPosCallback(windowManager->getHandle(), mouseMoveCallbackWrapper);
 
@@ -1016,7 +848,6 @@ int main(int argc, char *argv[])
 	application->init(resourceDir);
 	application->initGeom(resourceDir);
 	application->initGround();
-	application->initBboxpos();
 
 	auto lastTime = chrono::high_resolution_clock::now();
 
@@ -1039,13 +870,13 @@ int main(int argc, char *argv[])
 		// Render scene.
 		application->render(deltaTime, application->AnimDeltaTime);
 
-		// Swap front and back buffers.
+		// Swap front and back buffers
 		glfwSwapBuffers(windowManager->getHandle());
-		// Poll for and process events.
+		// Poll for and process events
 		glfwPollEvents();
 	}
 
-	// Quit program.
+	// Quit program
 	windowManager->shutdown();
 	return 0;
 }
