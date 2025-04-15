@@ -76,7 +76,7 @@ public:
 	// character bounding box
 	glm::vec3 manAABBmin, manAABBmax;
 
-	AssimpModel *cube, *barrel, *creeper, *alien, *wizard_hat, *fish;
+	AssimpModel *cube, *barrel, *creeper, *alien, *wizard_hat, *fish, *cylinder;
 
 	AssimpModel *stickfigure_running, *stickfigure_standing;
 	Animation *stickfigure_anim, *stickfigure_idle;
@@ -487,6 +487,10 @@ public:
 		fish = new AssimpModel(resourceDirectory + "/Fish/fish.obj");
 		fish->assignTexture("texture_diffuse1", resourceDirectory + "/Fish/textures/fishscale.jpg");
 
+		//load the cylinder
+		cylinder = new AssimpModel(resourceDirectory + "/Cylinder/Cylinder_Sci_Fi_1.obj");
+		cylinder->assignTexture("texture_diffuse1", resourceDirectory + "/Cylinder/textures/TX_Cylinder_Sci_Fi_1_1_Base_color.png");
+
 		// add 2 instances of the barrel to the collectibles vector Collectible(<model>, <position>)
 		//Max Collectables
 		collectibles.push_back(Collectible(barrel, vec3(3.0f, 0.0f, 1.0f), 1.0f));
@@ -504,6 +508,9 @@ public:
 
 		//Madeline Collectables
 		collectibles.push_back(Collectible(fish, vec3(5.0, 0.0, -5.0), 1.0f));
+
+		//Trisha Collectables
+		collectibles.push_back(Collectible(cylinder, vec3(10.0f, 0.0f, 10.0f), 0.01f));
 
 		// update total collectibles
 		totalCollectibles = collectibles.size();
