@@ -76,7 +76,7 @@ public:
 	// character bounding box
 	glm::vec3 manAABBmin, manAABBmax;
 
-	AssimpModel *cube, *barrel, *creeper, *alien, *wizard_hat;
+	AssimpModel *cube, *barrel, *creeper, *alien, *wizard_hat, *fish;
 
 	AssimpModel *stickfigure_running, *stickfigure_standing;
 	Animation *stickfigure_anim, *stickfigure_idle;
@@ -463,10 +463,11 @@ public:
 		barrel->assignTexture("texture_metalness1", resourceDirectory + "/Barrel/textures/barrel_metallic.png");
 		barrel->assignTexture("texture_normal1", resourceDirectory + "/Barrel/textures/barrel_normal.png");
 
+		// load the alien
 		alien = new AssimpModel(resourceDirectory + "/Alien/Alien_OBJ.obj");
 		alien->assignTexture("texture_diffuse1", resourceDirectory + "/Alien/textures/alien.jpg");
 
-		// load the cactus
+		// load the creeper
 		creeper = new AssimpModel(resourceDirectory + "/Creeper/Creeper.obj");
 		creeper->assignTexture("texture_deffuse1", resourceDirectory + "/Creeper/textures/creeper.jpg");
 
@@ -475,14 +476,16 @@ public:
 		for (size_t i = 0; i < barrel->getMeshCount(); i++) {
 			std::cout << "  Mesh " << i << " has " << barrel->getMeshSize(i) << " vertices" << std::endl;
 		}*/
-
+		//load the wizard hat
 		wizard_hat = new AssimpModel(resourceDirectory + "/WizardHat/hat_LP.obj");
 
 		wizard_hat->assignTexture("texture_diffuse1", resourceDirectory + "/WizardHat/textures/diffuse.png");
 		wizard_hat->assignTexture("texture_roughness1", resourceDirectory + "/WizardHat/textures/roughness.png");
 		wizard_hat->assignTexture("texture_metalness1", resourceDirectory + "/WizardHat/textures/normal.png");
 
-
+		//load the fish
+		fish = new AssimpModel(resourceDirectory + "/Fish/fish.obj");
+		fish->assignTexture("texture_diffuse1", resourceDirectory + "/Fish/textures/fishscale.jpg");
 
 		// add 2 instances of the barrel to the collectibles vector Collectible(<model>, <position>)
 		//Max Collectables
@@ -498,6 +501,9 @@ public:
 
 		//Aidan Collectables
 		collectibles.push_back(Collectible(creeper, vec3(2.0f, 0.8f, -7.0f), 1.0f));
+
+		//Madeline Collectables
+		collectibles.push_back(Collectible(fish, vec3(5.0, 0.0, -5.0), 1.0f));
 
 		// update total collectibles
 		totalCollectibles = collectibles.size();
