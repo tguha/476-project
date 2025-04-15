@@ -31,16 +31,21 @@ class Collectible {
 public:
 	AssimpModel* model;
 	glm::vec3 position;
+	float scale;
 	glm::vec3 AABBmin;
 	glm::vec3 AABBmax;
 	bool collected;
 
-	Collectible(AssimpModel* model, const glm::vec3& position)
-		: model(model), position(position), collected(false)
+	Collectible(AssimpModel* model, const glm::vec3& position, const float scale)
+		: model(model), position(position), scale(scale), collected(false)
 	{
 		// Get local bounding box from model
 		glm::vec3 localMin = model->getBoundingBoxMin();
 		glm::vec3 localMax = model->getBoundingBoxMax();
+
+		// Apply scale
+		localMin *= scale;
+		localMax *= scale;
 
 		// Offset by world position
 		AABBmin = localMin + position;
@@ -71,7 +76,7 @@ public:
 	// character bounding box
 	glm::vec3 manAABBmin, manAABBmax;
 
-	AssimpModel *cube, *barrel, *creeper;
+	AssimpModel *cube, *barrel, *creeper, *alien;
 
 	AssimpModel *stickfigure_running, *stickfigure_standing;
 	Animation *stickfigure_anim, *stickfigure_idle;
@@ -458,6 +463,9 @@ public:
 		barrel->assignTexture("texture_metalness1", resourceDirectory + "/Barrel/textures/barrel_metallic.png");
 		barrel->assignTexture("texture_normal1", resourceDirectory + "/Barrel/textures/barrel_normal.png");
 
+		alien = new AssimpModel(resourceDirectory + "/Alien/Alien_OBJ.obj");
+		alien->assignTexture("texture_diffuse1", resourceDirectory + "/Alien/textures/alien.jpg");
+
 		// load the cactus
 		creeper = new AssimpModel(resourceDirectory + "/Creeper/Creeper.obj");
 		creeper->assignTexture("texture_deffuse1", resourceDirectory + "/Creeper/textures/creeper.jpg");
@@ -468,10 +476,12 @@ public:
 			std::cout << "  Mesh " << i << " has " << barrel->getMeshSize(i) << " vertices" << std::endl;
 		}*/
 
-		// add 2 instances of the barrel to the collectibles vector Collectible(<model>, <position>)
-		collectibles.push_back(Collectible(barrel, vec3(3.0f, 0.0f, 1.0f)));
-		collectibles.push_back(Collectible(barrel, vec3(-2.0f, 0.0f, 2.0f)));
-		collectibles.push_back(Collectible(creeper, vec3(2.0f, 0.8f, -7.0f)));
+		// add 2 instances of the barrel to the collectibles vector Collectible(<model>, <position>, <scale>)
+		collectibles.push_back(Collectible(barrel, vec3(3.0f, 0.0f, 1.0f), 1.0f));
+		collectibles.push_back(Collectible(barrel, vec3(-2.0f, 0.0f, 2.0f), 1.0f));
+
+		collectibles.push_back(Collectible(alien, vec3(-2.0f, -0.2f, -2.0f), 0.1f));
+		collectibles.push_back(Collectible(creeper, vec3(2.0f, 0.8f, -7.0f), 1.0f));
 
 		// update total collectibles
 		totalCollectibles = collectibles.size();
@@ -779,6 +789,7 @@ public:
 			Model->pushMatrix();
 				Model->loadIdentity();
 				Model->translate(collectible.position);
+				Model->scale(collectible.scale);
 				setModel(texProg, Model);
 				glUniformMatrix4fv(texProg->getUniform("M"), 1, GL_FALSE, value_ptr(Model->topMatrix()));
 
