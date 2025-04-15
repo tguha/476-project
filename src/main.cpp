@@ -481,7 +481,7 @@ public:
 		collectibles.push_back(Collectible(barrel, vec3(-2.0f, 0.0f, 2.0f), 1.0f));
 
 		collectibles.push_back(Collectible(alien, vec3(-2.0f, -0.2f, -2.0f), 0.1f));
-		collectibles.push_back(Collectible(creeper, vec3(2.0f, 0.8f, -7.0f)));
+		collectibles.push_back(Collectible(creeper, vec3(2.0f, 0.8f, -7.0f), 1.0f));
 
 		// update total collectibles
 		totalCollectibles = collectibles.size();
