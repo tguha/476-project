@@ -485,13 +485,18 @@ public:
 
 
 		// add 2 instances of the barrel to the collectibles vector Collectible(<model>, <position>)
-		collectibles.push_back(Collectible(barrel, vec3(3.0f, 0.0f, 1.0f)));
-		collectibles.push_back(Collectible(barrel, vec3(-2.0f, 0.0f, 2.0f)));
-		collectibles.push_back(Collectible(wizard_hat, vec3(-10.0f, -4.0f, -2.0f)));
-		collectibles.push_back(Collectible(wizard_hat, vec3(10.0f, -4.0f, 2.0f)));
+		//Max Collectables
+		collectibles.push_back(Collectible(barrel, vec3(3.0f, 0.0f, 1.0f), 1.0f));
+		collectibles.push_back(Collectible(barrel, vec3(-2.0f, 0.0f, 2.0f), 1.0f));
+		
+		//Chris Collectables
+		collectibles.push_back(Collectible(wizard_hat, vec3(-10.0f, -4.0f, -2.0f), 1.0f));
+		collectibles.push_back(Collectible(wizard_hat, vec3(10.0f, -4.0f, 2.0f), 1.0f));
 
-
+		//Noah Collectables
 		collectibles.push_back(Collectible(alien, vec3(-2.0f, -0.2f, -2.0f), 0.1f));
+
+		//Aidan Collectables
 		collectibles.push_back(Collectible(creeper, vec3(2.0f, 0.8f, -7.0f), 1.0f));
 
 		// update total collectibles
