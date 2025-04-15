@@ -71,7 +71,7 @@ public:
 	// character bounding box
 	glm::vec3 manAABBmin, manAABBmax;
 
-	AssimpModel *cube, *barrel, *cactus;
+	AssimpModel *cube, *barrel, *creeper;
 
 	AssimpModel *stickfigure_running, *stickfigure_standing;
 	Animation *stickfigure_anim, *stickfigure_idle;
@@ -459,7 +459,8 @@ public:
 		barrel->assignTexture("texture_normal1", resourceDirectory + "/Barrel/textures/barrel_normal.png");
 
 		// load the cactus
-		cactus = new AssimpModel(resourceDirectory + "/Cactus/Cactus.obj");
+		creeper = new AssimpModel(resourceDirectory + "/Creeper/Creeper.obj");
+		creeper->assignTexture("texture_deffuse1", resourceDirectory + "/Creeper/textures/creeper.jpg");
 
 		// example debug for checking mesh count of a model, helps w multimesh and sanity checks
 		/*std::cout << "Barrel model has " << barrel->getMeshCount() << " meshes" << std::endl;
@@ -470,7 +471,7 @@ public:
 		// add 2 instances of the barrel to the collectibles vector Collectible(<model>, <position>)
 		collectibles.push_back(Collectible(barrel, vec3(3.0f, 0.0f, 1.0f)));
 		collectibles.push_back(Collectible(barrel, vec3(-2.0f, 0.0f, 2.0f)));
-		collectibles.push_back(Collectible(cactus, vec3(4.0f, -3.0f, 2.0f)));
+		collectibles.push_back(Collectible(creeper, vec3(2.0f, 0.8f, -7.0f)));
 
 		// update total collectibles
 		totalCollectibles = collectibles.size();
