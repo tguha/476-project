@@ -9,9 +9,9 @@ SpellSlot Player::getCurrentSpellSlot() {
 }
 
 void Player::equipSpell(Spell *spell, int spellSlot) {
-    if (spellSlot == SLOT_ONE) {
+    if (spellSlot == SpellSlot::SLOT_ONE) {
         spellInventory[0] = *spell;
-    } else if (spellSlot == SLOT_TWO) {
+    } else if (spellSlot == SpellSlot::SLOT_TWO) {
         spellInventory[1] = *spell;
     }
 }

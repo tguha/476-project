@@ -12,9 +12,11 @@ typedef enum {
 class Player : public Entity {
     private:
         Spell *currentSpell;
+
+        // Init spell inventory with two empty slots
         Spell spellInventory[MAX_SPELLS] = {
-            Spell(NO_SPELL, 0, 0, 0, 0, NO_SPELL),
-            Spell(NO_SPELL, 0, 0, 0, 0, NO_SPELL)
+            Spell(SpellType::NO_SPELL, 0, 0, 0, 0, SpellType::NO_SPELL),
+            Spell(SpellType::NO_SPELL, 0, 0, 0, 0, SpellType::NO_SPELL)
         };
 
         SpellSlot currentSpellSlot;
