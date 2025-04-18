@@ -25,3 +25,8 @@ void Entity::takeDamage(float damage) {
 bool Entity::isAlive() const {
     return hitpoints > 0;
 }
+
+void Entity::move(const glm::vec3& direction) {
+    position += direction * moveSpeed;
+    // Add any additional logic for movement (e.g., collision detection)
+}
