@@ -22,7 +22,7 @@ class Player : public Entity {
         SpellSlot currentSpellSlot;
 
     public:
-        Player(AssimpModel* model, Texture *texture, const glm::vec3& position, float hitpoints, float moveSpeed);
+        Player(const glm::vec3& position, float hitpoints, float moveSpeed);
 
         SpellSlot getCurrentSpellSlot();
         void setCurrentSpellSlot(SpellSlot slot);

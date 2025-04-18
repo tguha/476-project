@@ -1,7 +1,7 @@
 #include "Player.h"
 
-Player::Player(AssimpModel *model, Texture *texture, const glm::vec3& position, float hitpoints, float moveSpeed)
-    : Entity(model, texture, position, hitpoints, moveSpeed) {
+Player::Player(const glm::vec3& position, float hitpoints, float moveSpeed)
+    : Entity(position, hitpoints, moveSpeed) {
     }
 
 SpellSlot Player::getCurrentSpellSlot() {
