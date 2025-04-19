@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.10...3.23)
 include("${CMAKE_SOURCE_DIR}/FindGfxLibs.cmake")
 
 # Name of the project
-project(10Percent)
+project(LibraryGame)
 
 # Enforce use of C++17
 set(CMAKE_CXX_STANDARD_REQUIRED 17)

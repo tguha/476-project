@@ -132,6 +132,14 @@ public:
 	int debug = 0;
 	int debug_pos = 0;
 
+	//Movement Variables (Maybe move?)
+	bool movingForward = false;
+	bool movingBackward = false;
+	bool movingLeft = false;
+	bool movingRight = false;
+
+	bool cursor_visable = true;
+
 	enum Man_State {
 		WALKING,
 		STANDING,
@@ -141,10 +149,6 @@ public:
 
 	void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods)
 	{
-		if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
-		{
-			glfwSetWindowShouldClose(window, GL_TRUE);
-		}
 		if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
 		{
 			glfwSetWindowShouldClose(window, GL_TRUE);
@@ -250,6 +254,15 @@ public:
 		if (key == GLFW_KEY_Z && action == GLFW_RELEASE) {
 			glPolygonMode( GL_FRONT_AND_BACK, GL_FILL );
 		}
+		if (key == GLFW_KEY_L && action == GLFW_PRESS){
+			cursor_visable = !cursor_visable;
+			if (cursor_visable) {
+				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+			}
+			else {
+				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+			}
+		}
 	}
 
 	void scrollCallback(GLFWwindow *window, double deltaX, double deltaY)
@@ -327,7 +340,7 @@ public:
 
 
 	}
-
+	
 	void mouseCallback(GLFWwindow *window, int button, int action, int mods)
 	{
 		double posX, posY;
@@ -843,7 +856,7 @@ int main(int argc, char *argv[])
 	{
 		resourceDir = argv[1];
 	}
-
+	
 	Application *application = new Application();
 
 	// Your main will always include a similar set up to establish your window
@@ -854,7 +867,7 @@ int main(int argc, char *argv[])
 	windowManager->setEventCallbacks(application);
 	application->windowManager = windowManager;
 
-	glfwSetInputMode(windowManager->getHandle(), GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
+	glfwSetInputMode(windowManager->getHandle(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 	glfwSetWindowUserPointer(windowManager->getHandle(), application);
 	glfwSetCursorPosCallback(windowManager->getHandle(), mouseMoveCallbackWrapper);
 
