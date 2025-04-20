@@ -16,6 +16,8 @@
 #include "AssimpModel.h"
 #include "Animator.h"
 #include "LightTrail.h"
+#include "LibraryGen.h"
+// #include "Grid.h"
 
 // value_ptr for glm
 #include <glm/gtc/type_ptr.hpp>
@@ -138,6 +140,10 @@ public:
 	};
 
 	Man_State manState = STANDING;
+
+
+	LibraryGen *library = new LibraryGen();
+	// Grid<LibraryGen::CellType>& grid;
 
 	void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods)
 	{
@@ -438,6 +444,12 @@ public:
 		assimptexProg->addUniform("numLights");
 		assimptexProg->addUniform("hasTexture");
 		updateCameraVectors();
+
+		cout << "Shaders initialized" << endl;
+		library->generate(glm::ivec2(100, 100), glm::ivec2(0, 0));
+		cout << "Library generated" << endl;
+		// grid = library->getGrid();
+
 	}
 
 	void initGeom(const std::string& resourceDirectory)
@@ -495,7 +507,7 @@ public:
 		//Max Collectables
 		collectibles.push_back(Collectible(barrel, vec3(3.0f, 0.0f, 1.0f), 1.0f));
 		collectibles.push_back(Collectible(barrel, vec3(-2.0f, 0.0f, 2.0f), 1.0f));
-		
+
 		//Chris Collectables
 		collectibles.push_back(Collectible(wizard_hat, vec3(-10.0f, -4.0f, -2.0f), 1.0f));
 		collectibles.push_back(Collectible(wizard_hat, vec3(10.0f, -4.0f, 2.0f), 1.0f));
@@ -773,6 +785,33 @@ public:
 			setModel(assimptexProg, Model);
 			stickfigure_running->Draw(assimptexProg);
 		Model->popMatrix();
+
+		for (int z = 0; z < library->getGrid().getSize().y; ++z) {
+			for (int x = 0; x < library->getGrid().getSize().x; ++x) {
+				glm::ivec2 pos(x, z);
+				LibraryGen::CellType cell = library->getGrid().getCell(pos);
+
+				if (cell == LibraryGen::SHELF) {
+					Model->pushMatrix();
+						Model->loadIdentity();
+						Model->translate(vec3(x, 0, z));
+						Model->scale(vec3(2.0f));
+						SetMaterialMan(assimptexProg, 1);
+						setModel(assimptexProg, Model);
+						cube->Draw(assimptexProg);
+					Model->popMatrix();
+				} else if (cell == LibraryGen::PATH) {
+					Model->pushMatrix();
+						Model->loadIdentity();
+						Model->translate(vec3(x, 0, z));
+						Model->scale(vec3(2.0f));
+						SetMaterialMan(assimptexProg, 2);
+						setModel(assimptexProg, Model);
+						cube->Draw(assimptexProg);
+					Model->popMatrix();
+				}
+			}
+		}
 
 		assimptexProg->unbind();
 
