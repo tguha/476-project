@@ -143,7 +143,7 @@ public:
 
 
 	LibraryGen *library = new LibraryGen();
-	// Grid<LibraryGen::CellType>& grid;
+	Grid<LibraryGen::CellType> grid;
 
 	void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods)
 	{
@@ -445,10 +445,8 @@ public:
 		assimptexProg->addUniform("hasTexture");
 		updateCameraVectors();
 
-		cout << "Shaders initialized" << endl;
-		library->generate(glm::ivec2(100, 100), glm::ivec2(0, 0));
-		cout << "Library generated" << endl;
-		// grid = library->getGrid();
+		library->generate(glm::ivec2(100, 100));
+		grid = library->getGrid();
 
 	}
 
@@ -786,16 +784,16 @@ public:
 			stickfigure_running->Draw(assimptexProg);
 		Model->popMatrix();
 
-		for (int z = 0; z < library->getGrid().getSize().y; ++z) {
-			for (int x = 0; x < library->getGrid().getSize().x; ++x) {
-				glm::ivec2 pos(x, z);
-				LibraryGen::CellType cell = library->getGrid().getCell(pos);
+		for (int z = 0; z < grid.getSize().y; ++z) {
+			for (int x = 0; x < grid.getSize().x; ++x) {
+				glm::ivec2 pos(x - grid.getOffset().x, z - grid.getOffset().y);
+				LibraryGen::CellType cell = grid.at(x, z);
 
 				if (cell == LibraryGen::SHELF) {
 					Model->pushMatrix();
 						Model->loadIdentity();
 						Model->translate(vec3(x, 0, z));
-						Model->scale(vec3(2.0f));
+						Model->scale(vec3(2.0f, 10.0f, 2.0f));
 						SetMaterialMan(assimptexProg, 1);
 						setModel(assimptexProg, Model);
 						cube->Draw(assimptexProg);

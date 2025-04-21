@@ -31,7 +31,7 @@ class LibraryGen {
         void generatePaths();
         void addShelfWalls();
 
-        PathCost calcCost(const glm::ivec2& from, const glm::ivec2& to);
+        Pathfinder::PathCost calcCost(const glm::ivec2& from, const glm::ivec2& to);
 };
 
 #endif // LIBRARYGEN_H

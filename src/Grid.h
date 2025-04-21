@@ -8,8 +8,9 @@
 template<typename T>
 class Grid {
     public:
-        Grid(glm::ivec2 size = {1, 1}, glm::ivec2 offset = {0, 0}, T defaultValue = T())
-            : size(size), offset(offset), data(size.x * size.y, defaultValue) {
+        Grid(const glm::ivec2 size = glm::ivec2(1, 1),const  glm::ivec2 offset = glm::ivec2(0, 0), T defaultValue = T())
+            : size(size), offset(offset) {
+                data.resize(size.x * size.y, defaultValue); // Initialize the grid with default values
                 if (size.x <= 0 || size.y <= 0) {
                     throw std::invalid_argument("Grid size must be positive!");
                 }
@@ -21,31 +22,48 @@ class Grid {
         Grid(Grid&&) = default; // Move constructor
         Grid& operator=(Grid&&) = default; // Move assignment operator
 
-        // Copy assignment operator
-        // Grid<T>& operator=(const Grid<T>& other) {
-        //     if (this != &other) {
-        //         size = other.size;
-        //         offset = other.offset;
-        //         data = other.data;
-        //     }
-        //     return *this;
-        // }
-
         // Bounds-checked access operator
         T& operator[](const glm::ivec2& pos) {
-            glm::ivec2 adjusted = pos + offset;
-            return data[adjusted.y * size.x + adjusted.x];
+            // int x = pos.x - offset.x;
+            // int y = pos.y - offset.y;
+            // return data[y * size.x + x];
+            int x = pos.x + offset.x;
+            int y = pos.y + offset.y;
+            return data[y * size.x + x];
         }
 
         const T& operator[](const glm::ivec2& pos) const {
-            glm::ivec2 adjusted = pos + offset;
-            return data[adjusted.y * size.x + adjusted.x];
+            // int x = pos.x - offset.x;
+            // int y = pos.y - offset.y;
+            // return data[y * size.x + x];
+            int x = pos.x + offset.x;
+            int y = pos.y + offset.y;
+            return data[y * size.x + x];
+        }
+
+        // at() method for bounds-checked access
+        T& at(int x, int y) {
+            // x -= offset.x;
+            // y -= offset.y;
+            // return data[y * size.x + x];
+            x += offset.x;
+            y += offset.y;
+            return data[y * size.x + x];
+        }
+
+        const T& at(int x, int y) const {
+            // x -= offset.x;
+            // y -= offset.y;
+            // return data[y * size.x + x];
+            x += offset.x;
+            y += offset.y;
+            return data[y * size.x + x];
         }
 
         bool inBounds(const glm::ivec2& pos) const {
-            glm::ivec2 adjusted = pos + offset;
-            return adjusted.x >= 0 && adjusted.x < size.x &&
-                   adjusted.y >= 0 && adjusted.y < size.y;
+            int x = pos.x - offset.x;
+            int y = pos.y - offset.y;
+            return x >= 0 && x < size.x && y >= 0 && y < size.y;
         }
 
         void printGrid() const {

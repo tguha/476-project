@@ -19,9 +19,14 @@ void LibraryGen::generate(glm::ivec2 size, glm::ivec2 offset) {
 
     std::cout << "Generating library layout..." << std::endl;
 
+    std::cout << "offset: " << grid.getOffset().x << ", " << grid.getOffset().y << std::endl;
+
     seedGen.seed(std::random_device()());
 
-    placeClusters(size.x * size.y / 50); // Destiny controls the number of clusters
+    int numberOfClusters = size.x * size.y / 200; // Destiny controls the number of clusters
+    // int numberOfClusters = 10;
+
+    placeClusters(numberOfClusters);
 
     std::cout << "Placed " << clusterCenters.size() << " clusters." << std::endl;
 
@@ -31,7 +36,7 @@ void LibraryGen::generate(glm::ivec2 size, glm::ivec2 offset) {
 
     // generatePaths();
 
-    // std::cout << "Generated paths." << std::endl;
+    std::cout << "Generated paths." << std::endl;
 
     // addShelfWalls();
 }
@@ -53,7 +58,7 @@ void LibraryGen::placeClusters(int count) {
 
         // Check if the position is already occupied or too close to existing clusters
         for (const auto& center : clusterCenters) {
-            if (glm::distance(glm::vec2(center), glm::vec2(pos)) < 5.0f) { // Adjust this number for spacing
+            if (glm::distance(glm::vec2(center), glm::vec2(pos)) < 10.0f) { // Adjust this number for spacing
                 valid = false;
                 break;
             }
@@ -64,7 +69,7 @@ void LibraryGen::placeClusters(int count) {
             // if the position is valid, add it to the cluster centers
             clusterCenters.push_back(pos);
 
-            // Place 3x3 cluster around the center
+            // Controls whats inside the cluster - currently just a 3x3 square
             for (int y = -1; y <= 1; y++) {
                 for (int x = -1; x <= 1; x++) {
                     glm::ivec2 shelfPos = pos + glm::ivec2(x, y);
@@ -74,55 +79,6 @@ void LibraryGen::placeClusters(int count) {
                 }
             }
         }
-    }
-}
-
-void LibraryGen::generatePaths() {
-    // Check if there are enough centers to create paths
-    if (clusterCenters.size() <= 1) {
-        std::cerr << "Not enough cluster centers to generate paths." << std::endl;
-        return;
-    }
-
-    std::cout << "Generating paths between clusters..." << std::endl;
-
-
-    Pathfinder pathfinder;
-
-    // Connect all clusters with paths
-    for (size_t i = 1; i < clusterCenters.size(); i++) {
-        std::cout << "Finding path from cluster " << i - 1 << " to cluster " << i << std::endl;
-
-        glm::ivec2 start = glm::ivec2(glm::round(clusterCenters[i-1]));
-        glm::ivec2 end = glm::ivec2(glm::round(clusterCenters[i]));
-
-        // Ensure the start and end points are in bounds
-        if (!grid.inBounds(start) || !grid.inBounds(end)) {
-            std::cerr << "Start or end point out of bounds: " << start.x << ", " << start.y << " to " << end.x << ", " << end.y << std::endl;
-            continue;
-        }
-
-
-        auto path = pathfinder.findPath(start, end, [this](const glm::ivec2& from, const glm::ivec2& to) {
-            return calcCost(from, to);
-            }
-        );
-
-        if (path.empty()) {
-            std::cerr << "No path found from " << start.x << ", " << start.y << " to " << end.x << ", " << end.y << std::endl;
-            continue;
-        }
-
-        // Mark the path in the grid
-        for (const auto& pos : path) {
-            if (grid[pos] == NONE) {
-                grid[pos] = PATH;
-            } else {
-                std::cerr << "Path overlaps with existing shelf at: " << pos.x << ", " << pos.y << std::endl;
-            }
-        }
-
-        std::cout << "Path found with " << path.size() << " steps." << std::endl;
     }
 }
 
@@ -190,10 +146,59 @@ void LibraryGen::triangulateClusters() {
             glm::ivec2(clusterCenters[uId]),
             glm::ivec2(clusterCenters[vId])
         );
-        std::cout << "Edge added: " << uId << ", " << vId << std::endl;
+        std::cout << "Edge added: " << edge.u.position.x << ", " << edge.u.position.y << " to "
+                  << edge.v.position.x << ", " << edge.v.position.y << std::endl;
     }
 
     std::cout << "Selected " << selectedEdges.size() << " edges for path generation." << std::endl;
+}
+
+void LibraryGen::generatePaths() {
+    // Check if there are enough centers to create paths
+    if (selectedEdges.empty()) {
+        std::cerr << "No edges selected for path generation." << std::endl;
+        return;
+    }
+
+    std::cout << "Generating paths for " << selectedEdges.size() << " edges." << std::endl;
+
+
+    Pathfinder pathfinder(grid.getSize());
+
+    // Connect all clusters with paths
+    for (const auto& edge : selectedEdges) {
+        glm::ivec2 start = edge.first;
+        glm::ivec2 end = edge.second;
+
+        // Ensure the start and end points are in bounds
+        if (!grid.inBounds(start) || !grid.inBounds(end)) {
+            std::cerr << "Start or end point out of bounds: " << start.x << ", " << start.y << " to " << end.x << ", " << end.y << std::endl;
+            continue;
+        }
+
+        std::cout << "Finding path from " << start.x << ", " << start.y << " to " << end.x << ", " << end.y << std::endl;
+
+        auto path = pathfinder.findPath(start, end, [this](Pathfinder::Node* from, Pathfinder::Node* to) {
+            return calcCost(from->position, to->position);
+            }
+        );
+
+        if (path.empty()) {
+            std::cerr << "No path found from " << start.x << ", " << start.y << " to " << end.x << ", " << end.y << std::endl;
+            continue;
+        }
+
+        // Mark the path in the grid
+        for (const auto& pos : path) {
+            if (grid[pos] == NONE) {
+                grid[pos] = PATH;
+            } else {
+                std::cerr << "Path overlaps with existing shelf at: " << pos.x << ", " << pos.y << std::endl;
+            }
+        }
+
+        std::cout << "Path found with " << path.size() << " steps." << std::endl;
+    }
 }
 
 void LibraryGen::addShelfWalls() {
@@ -253,8 +258,8 @@ void LibraryGen::addShelfWalls() {
 }
 
 
-PathCost LibraryGen::calcCost(const glm::ivec2& from, const glm::ivec2& to) {
-    PathCost cost;
+Pathfinder::PathCost LibraryGen::calcCost(const glm::ivec2& from, const glm::ivec2& to) {
+    Pathfinder::PathCost cost;
     cost.traversable = grid.inBounds(to) && grid[to] != SHELF;
 
     if (grid[to] == PATH) {

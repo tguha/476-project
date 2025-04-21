@@ -2,73 +2,138 @@
 #define PATHFINDER_H
 
 #include <vector>
-#include <functional>
 #include <queue>
-#include <unordered_map>
-#include <memory>
+#include <unordered_set>
+#include <stack>
+#include <functional>
+#include <iostream>
 #include <glm/glm.hpp>
+#include <limits>
+#include "Grid.h"
 
-namespace std {
-    template<>
-    struct hash<glm::ivec2> {
-        size_t operator()(const glm::ivec2& vec) const {
-            size_t h1 = std::hash<int>()(vec.x);
-            size_t h2 = std::hash<int>()(vec.y);
-
-            return h1 ^ (h2 << 1); // XOR and shift to combine hashes
+// a simple priority queue implementation for the pathfinding algorithm
+template<typename T>
+class SimplePriorityQueue {
+    public:
+        void enqueue(T* item, float priority) {
+            priorities[item] = priority;
+            queue.push(PriorityItem{*item, priority});
         }
-    };
-};
 
-struct PathCost {
-    bool traversable;
-    float cost;
-};
+        T dequeue() {
+            while (!queue.empty()) {
+                PriorityItem item = queue.top();
+                queue.pop();
+
+                auto it = priorities.find(&item.item);
+                if (it != priorities.end() && std::abs(it->second - item.priority) < 0.001f) {
+                    priorities.erase(it); // Remove the item from the map
+                    return item.item; // Return the item
+                }
+            }
+            return Pathfinder::Node(); // Return a default node if the queue is empty
+        }
+
+        bool tryGetPriority(T* item, float& outPriority) {
+            auto it = priorities.find(item);
+            if (it != priorities.end()) {
+                outPriority = it->second;
+                return true;
+            }
+            return false;
+        }
+
+        void updatePriority(T* item, float newPriority) {
+            // Since we can't update the priority of an item in the queue, we need to remove it and reinsert it
+            priorities[item] = newPriority;
+            queue.push(PriorityItem{*item, newPriority});
+        }
+
+        void clear() {
+            while (!queue.empty()) {
+                queue.pop();
+            }
+            priorities.clear();
+        }
+
+        size_t count() const {
+            return priorities.size();
+        }
+
+        bool isEmpty() const {
+            return priorities.empty();
+        }
+    private:
+        struct PriorityItem {
+            T item;
+            float priority;
+
+            bool operator<(const PriorityItem& other) const {
+                return priority > other.priority; // reverse for min-heap
+            }
+        };
+
+        std::priority_queue<PriorityItem> queue;
+        std::unordered_map<T*, float> priorities;
+    };
 
 class Pathfinder {
     public:
-        using CostFunc = std::function<PathCost(const glm::ivec2&, const glm::ivec2&)>;
+        class Node {
+            public:
+                glm::ivec2 position;
+                Node* previous;
+                float cost;
 
-        std::vector<glm::ivec2> findPath(
-            const glm::ivec2& start,
-            const glm::ivec2& end,
-            CostFunc constFunc
-        );
-    private:
-        struct Node {
-            glm::ivec2 position;
+                Node(const glm::ivec2& pos = glm::ivec2(0, 0))
+                    : position(pos), previous(nullptr), cost(std::numeric_limits<float>::infinity()) {}
+
+                // For use in hash containers
+                bool operator==(const Node& other) const {
+                    return position == other.position;
+                }
+        };
+
+        struct NodeHash {
+            size_t operator()(const Node& node) const {
+                return std::hash<int>()(node.position.x) ^
+                    (std::hash<int>()(node.position.y) << 1);
+            }
+
+            size_t operator()(const Node* node) const {
+                return std::hash<int>()(node->position.x) ^
+                    (std::hash<int>()(node->position.y) << 1);
+            }
+        };
+
+        struct NodeEqual {
+            bool operator()(const Node* left, const Node* right) const {
+                return left->position == right->position;
+            }
+        };
+
+        struct PathCost {
+            bool traversable;
             float cost;
-            float heuristic;
-            Node* parent;
-            bool closed;
-
-            // Required for priority queue
-            struct Compare {
-                bool operator()(Node* a, Node* b) {
-                    return (a->cost + a->heuristic) > (b->cost + b->heuristic);
-                }
-            };
         };
 
-        struct NodePool {
-            std::unordered_map<glm::ivec2, std::unique_ptr<Node>> nodes;
+        public:
+            Pathfinder(const glm::ivec2& size);
+            void resetNodes();
+            std::vector<glm::ivec2> findPath(
+                const glm::ivec2& start,
+                const glm::ivec2& end,
+                std::function<PathCost(Node*, Node*)> costFunc
+            );
+        private:
+            static const std::vector<glm::ivec2> neighbors;
+            Grid<Node> grid;
+            SimplePriorityQueue<Node> queue;
+            std::unordered_set<Node*, NodeHash, NodeEqual> closed;
+            std::stack<glm::ivec2> stack;
 
-            Node* getOrCreate(const glm::ivec2& pos) {
-                auto& node = nodes[pos];
-                if (!node) {
-                    node = std::make_unique<Node>();
-                    node->position = pos;
-                    node->closed = false;
-                }
-                return node.get();
-            }
-
-            void clear() {
-                nodes.clear();
-            }
-        };
-
-        NodePool nodePool;
+            std::vector<glm::ivec2> reconstructPath(Node* node);
 };
+
 
 #endif // PATHFINDER_H
