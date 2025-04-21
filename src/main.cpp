@@ -27,29 +27,205 @@ using namespace glm;
 #define NUM_LIGHTS 4
 #define MAX_BONES 200
 
+float randFloat(float l, float h) {
+	float r = rand() / (float)RAND_MAX;
+	return (1.0f - r) * l + r * h;
+}
+
+// Enum for book states
+enum class BookState {
+	ON_SHELF,
+	FALLING,
+	LANDED,
+	OPENING,
+	OPENED
+};
+
+enum class OrbState {
+	SPAWNING,  // Initial state right after creation
+	LEVITATING,// Moving upwards
+	IDLE,      // Stationary, ready for collection
+	COLLECTED // Visually attached to player (handled by drawing logic)
+};
+
+class Book {
+public:
+	vec3 initialPosition; // Where the book starts
+	vec3 position;        // Current position (updated by spline or stays initial)
+	vec3 scale;           // Base scale for the book
+	quat orientation;     // Initial orientation (using quaternion is often easier for complex rotations)
+	// Alternatively, use glm::vec3 for Euler angles if you prefer
+
+	BookState state = BookState::ON_SHELF;
+	Spline* fallSpline = nullptr; // Pointer to the spline for falling animation
+	float fallStartTime = 0.0f;   // Time the fall started
+
+	float openAngle = 0.0f;       // Current angle for opening animation (radians)
+	float maxOpenAngle = glm::radians(80.0f); // How far the book opens
+	float openSpeed = glm::radians(120.0f); // Speed of opening in radians per second
+
+	AssimpModel* bookModel; // Pointer to the cube model
+	AssimpModel* orbModel;  // Pointer to the sphere model
+
+	vec3 orbColor;
+	float orbScale = 0.1f; // Scale of the spell orb
+	bool orbSpawned = false;
+
+	// Constructor
+	Book(AssimpModel* bookMdl, AssimpModel* orbMdl, const glm::vec3& pos, const glm::vec3& scl, const glm::quat& orient, const glm::vec3& orbClr)
+		: initialPosition(pos), position(pos), scale(scl), orientation(orient),
+		bookModel(bookMdl), orbModel(orbMdl), orbColor(orbClr) {
+	}
+
+	// Destructor to clean up spline if needed
+	~Book() {
+		delete fallSpline;
+	}
+
+	// Method to start the fall
+	void startFalling(float groundY) {
+		if (state == BookState::ON_SHELF) {
+			state = BookState::FALLING;
+			fallStartTime = glfwGetTime();
+
+			glm::vec3 endPosition = position;
+			endPosition.y = groundY + (scale.y * 0.5f); // Land flat on the ground based on scale
+
+			// Add some randomness to landing spot and arc
+			float offsetX = randFloat(-0.5f, 0.5f);
+			float offsetZ = randFloat(-0.5f, 0.5f);
+			endPosition.x += offsetX;
+			endPosition.z += offsetZ;
+
+			// Simple control point for a basic arc
+			glm::vec3 controlPoint = (initialPosition + endPosition) * 0.5f; // Midpoint
+			controlPoint.y += 2.0f; // Arc upwards
+			controlPoint.x += randFloat(-1.0f, 1.0f); // Random horizontal arc deviation
+
+			// Create spline (quadratic example, cubic needs another control point)
+			delete fallSpline; // Delete old one if any (shouldn't happen in this flow)
+			fallSpline = new Spline(initialPosition, controlPoint, endPosition, 0.25f); // 0.25 second fall duration
+		}
+	}
+
+	// Method to update the book's state and position
+	void update(float deltaTime, float groundY) {
+		switch (state) {
+		case BookState::FALLING:
+			if (fallSpline) {
+				fallSpline->update(deltaTime);
+				position = fallSpline->getPosition();
+				// Optional: Add rotation during fall here
+
+				if (fallSpline->isDone()) {
+					state = BookState::LANDED; // Transition to landed state
+					position.y = groundY + (scale.y * 0.5f); // Ensure it's exactly on the ground
+					delete fallSpline;
+					fallSpline = nullptr;
+					// Set orientation flat on the ground if needed
+					orientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f); // Reset orientation or calculate landing angle
+				}
+			}
+			break;
+
+		case BookState::LANDED:
+			// Optional delay before opening?
+			state = BookState::OPENING; // Immediately start opening after landing
+			break;
+
+		case BookState::OPENING:
+			openAngle += openSpeed * deltaTime;
+			if (openAngle >= maxOpenAngle) {
+				openAngle = maxOpenAngle;
+				state = BookState::OPENED;
+			}
+			break;
+
+		case BookState::OPENED:
+			// Book remains open, orb is visible
+			break;
+
+		case BookState::ON_SHELF:
+		default:
+			// Do nothing
+			break;
+		}
+	}
+};
+
 class Collectible {
 public:
-	AssimpModel* model;
-	glm::vec3 position;
+	AssimpModel* model; // Will always be the sphere model
+	glm::vec3 position; // CURRENT position (animated during levitation)
 	float scale;
 	glm::vec3 AABBmin;
 	glm::vec3 AABBmax;
 	bool collected;
+	glm::vec3 color;
 
-	Collectible(AssimpModel* model, const glm::vec3& position, const float scale)
-		: model(model), position(position), scale(scale), collected(false)
+	// --- Levitation Members ---
+	OrbState state = OrbState::SPAWNING; // Start in SPAWNING state
+	glm::vec3 spawnPosition;             // Where the orb initially appears
+	glm::vec3 idlePosition;              // Target position after levitating
+	float levitationHeight = 0.6f;       // How far up it moves
+	float levitationStartTime = 0.0f;
+	float levitationDuration = 0.75f;     // Duration of the levitation animation (seconds)
+
+
+	// Updated constructor for Orbs
+	Collectible(AssimpModel* model, const glm::vec3& spawnPos, const float scale, const glm::vec3& clr)
+		: model(model),
+		position(spawnPos), // Initial position is spawn position
+		scale(scale),
+		collected(false),
+		color(clr),
+		state(OrbState::LEVITATING), // Immediately start levitating after spawn
+		spawnPosition(spawnPos)
 	{
-		// Get local bounding box from model
+		// Calculate target idle position
+		idlePosition = spawnPosition + glm::vec3(0.0f, levitationHeight, 0.0f);
+
+		// Record start time for animation
+		levitationStartTime = glfwGetTime();
+
+		// Initial AABB calculation (based on spawn position initially)
+		updateAABB(); // Use a helper function for AABB updates
+	}
+
+	// Helper function to update AABB based on current position
+	void updateAABB() {
 		glm::vec3 localMin = model->getBoundingBoxMin();
 		glm::vec3 localMax = model->getBoundingBoxMax();
-
-		// Apply scale
 		localMin *= scale;
 		localMax *= scale;
+		AABBmin = localMin + position; // Use current position
+		AABBmax = localMax + position; // Use current position
+	}
 
-		// Offset by world position
-		AABBmin = localMin + position;
-		AABBmax = localMax + position;
+	// Function to update levitation animation
+	void updateLevitation(float currentTime) {
+		if (state == OrbState::LEVITATING) {
+			float elapsedTime = currentTime - levitationStartTime;
+			float t = glm::clamp(elapsedTime / levitationDuration, 0.0f, 1.0f);
+
+			// Apply an easing function for smoother start/end (optional)
+			// t = glm::sineEaseInOut(t); // Example using easing functions (requires #include <glm/gtx/easing.hpp>)
+			t = t * t * (3.0f - 2.0f * t); // Manual smoothstep calculation
+
+			// Interpolate position
+			position = glm::mix(spawnPosition, idlePosition, t);
+
+			// Update AABB as the orb moves
+			updateAABB();
+
+			// Check if animation finished
+			if (t >= 1.0f) {
+				state = OrbState::IDLE;
+				position = idlePosition; // Ensure it's exactly at the target
+				updateAABB();           // Final AABB update
+				// std::cout << "Orb reached IDLE state." << std::endl; // Debug output
+			}
+		}
 	}
 };
 
@@ -67,16 +243,18 @@ public:
 	GLuint GroundVertexArrayID;
 	float groundSize = 20.0f;
 
-	// setup collectivles vector
-	std::vector<Collectible> collectibles;
-	int collectedCount = 0;
-	int totalCollectibles = 0;
+	// setup collectibles vector
+	std::vector<Collectible> orbCollectibles;
+	int orbsCollectedCount = 0;
 	float finishTime;
 	bool reset = false;
 	// character bounding box
 	glm::vec3 manAABBmin, manAABBmax;
 
-	AssimpModel *cube, *barrel, *creeper, *alien, *wizard_hat, *fish, *cylinder;
+	AssimpModel *cube, *barrel, *creeper, *alien, *wizard_hat, *fish, *cylinder, *sphere;
+
+	//  vector of books
+	vector<Book> books;
 
 	AssimpModel *stickfigure_running, *stickfigure_standing;
 	Animation *stickfigure_anim, *stickfigure_idle;
@@ -249,6 +427,9 @@ public:
 		}
 		if (key == GLFW_KEY_Z && action == GLFW_RELEASE) {
 			glPolygonMode( GL_FRONT_AND_BACK, GL_FILL );
+		}
+		if (key == GLFW_KEY_F && action == GLFW_PRESS) { // Interaction Key
+			interactWithBooks();
 		}
 	}
 
@@ -450,70 +631,29 @@ public:
 		stickfigure_idle = new Animation(resourceDirectory + "/Vanguard/Vanguard.fbx", stickfigure_running, 1);
 		stickfigure_animator = new Animator(stickfigure_anim);
 
-		// load the cube
+		// load the cube (books)
 		cube = new AssimpModel(resourceDirectory + "/cube.obj");
 
-		// load the barrel
-		barrel = new AssimpModel(resourceDirectory + "/Barrel/Barrel_OBJ.obj");
-		// manually assign the barrel texture
-		// this is happening because the barrel does not have any embedded textures
-		// we could import to blender and then embed the textures as a remedy
-		barrel->assignTexture("texture_diffuse1", resourceDirectory + "/Barrel/textures/barrel_diffuse.png");
-		barrel->assignTexture("texture_roughness1", resourceDirectory + "/Barrel/textures/barrel_roughness.png");
-		barrel->assignTexture("texture_metalness1", resourceDirectory + "/Barrel/textures/barrel_metallic.png");
-		barrel->assignTexture("texture_normal1", resourceDirectory + "/Barrel/textures/barrel_normal.png");
+		// load the sphere (spell)
+		sphere = new AssimpModel(resourceDirectory + "/SmoothSphere.obj");
 
-		// load the alien
-		alien = new AssimpModel(resourceDirectory + "/Alien/Alien_OBJ.obj");
-		alien->assignTexture("texture_diffuse1", resourceDirectory + "/Alien/textures/alien.jpg");
+		books.emplace_back(cube, sphere,
+			glm::vec3(5.0f, 2.0f, 0.0f),  // Initial Position (on a shelf)
+			glm::vec3(0.8f, 1.0f, 0.2f),  // Scale (Width, Height, Thickness)
+			glm::angleAxis(glm::radians(0.0f), glm::vec3(0, 1, 0)), // Orientation (upright)
+			glm::vec3(1.0f, 0.0f, 0.0f)); // Orb Color (Red)
 
-		// load the creeper
-		creeper = new AssimpModel(resourceDirectory + "/Creeper/Creeper.obj");
-		creeper->assignTexture("texture_deffuse1", resourceDirectory + "/Creeper/textures/creeper.jpg");
+		books.emplace_back(cube, sphere,
+			glm::vec3(5.0f, 2.0f, 0.5f),  // Position
+			glm::vec3(0.8f, 1.0f, 0.2f),  // Scale
+			glm::angleAxis(glm::radians(10.0f), glm::vec3(0, 1, 0)), // Slightly rotated
+			glm::vec3(0.0f, 0.0f, 1.0f)); // Orb Color (Blue)
 
-		// example debug for checking mesh count of a model, helps w multimesh and sanity checks
-		/*std::cout << "Barrel model has " << barrel->getMeshCount() << " meshes" << std::endl;
-		for (size_t i = 0; i < barrel->getMeshCount(); i++) {
-			std::cout << "  Mesh " << i << " has " << barrel->getMeshSize(i) << " vertices" << std::endl;
-		}*/
-		//load the wizard hat
-		wizard_hat = new AssimpModel(resourceDirectory + "/WizardHat/hat_LP.obj");
-
-		wizard_hat->assignTexture("texture_diffuse1", resourceDirectory + "/WizardHat/textures/diffuse.png");
-		wizard_hat->assignTexture("texture_roughness1", resourceDirectory + "/WizardHat/textures/roughness.png");
-		wizard_hat->assignTexture("texture_metalness1", resourceDirectory + "/WizardHat/textures/normal.png");
-
-		//load the fish
-		fish = new AssimpModel(resourceDirectory + "/Fish/fish.obj");
-		fish->assignTexture("texture_diffuse1", resourceDirectory + "/Fish/textures/fishscale.jpg");
-
-		//load the cylinder
-		cylinder = new AssimpModel(resourceDirectory + "/Cylinder/Cylinder_Sci_Fi_1.obj");
-		cylinder->assignTexture("texture_diffuse1", resourceDirectory + "/Cylinder/textures/TX_Cylinder_Sci_Fi_1_1_Base_color.png");
-
-		// add 2 instances of the barrel to the collectibles vector Collectible(<model>, <position>)
-		//Max Collectables
-		collectibles.push_back(Collectible(barrel, vec3(3.0f, 0.0f, 1.0f), 1.0f));
-		collectibles.push_back(Collectible(barrel, vec3(-2.0f, 0.0f, 2.0f), 1.0f));
-		
-		//Chris Collectables
-		collectibles.push_back(Collectible(wizard_hat, vec3(-10.0f, -4.0f, -2.0f), 1.0f));
-		collectibles.push_back(Collectible(wizard_hat, vec3(10.0f, -4.0f, 2.0f), 1.0f));
-
-		//Noah Collectables
-		collectibles.push_back(Collectible(alien, vec3(-2.0f, -0.2f, -2.0f), 0.1f));
-
-		//Aidan Collectables
-		collectibles.push_back(Collectible(creeper, vec3(2.0f, 0.8f, -7.0f), 1.0f));
-
-		//Madeline Collectables
-		collectibles.push_back(Collectible(fish, vec3(5.0, 0.0, -5.0), 1.0f));
-
-		//Trisha Collectables
-		collectibles.push_back(Collectible(cylinder, vec3(10.0f, 0.0f, 10.0f), 0.01f));
-
-		// update total collectibles
-		totalCollectibles = collectibles.size();
+		books.emplace_back(cube, sphere,
+			glm::vec3(5.0f, 1.0f, -0.5f), // Lower shelf
+			glm::vec3(0.6f, 0.8f, 0.15f), // Smaller book
+			glm::angleAxis(glm::radians(-5.0f), glm::vec3(0, 1, 0)),
+			glm::vec3(0.0f, 1.0f, 0.0f)); // Orb Color (Green)
 	}
 
 	void SetMaterialMan(shared_ptr<Program> curS, int i) {
@@ -668,9 +808,192 @@ public:
 		curS->unbind();
 	}
 
-	float randFloat(float l, float h) {
-		float r = rand() / (float) RAND_MAX;
-		return (1.0f - r) * l + r * h;
+	void drawPlayer(shared_ptr<Program> curS, shared_ptr<MatrixStack> Model, float animTime) {
+		curS->bind();
+		
+		// select animation for vanguard model
+		stickfigure_animator->UpdateAnimation(1.5 * animTime);
+		if (manState == WALKING) {
+			stickfigure_animator->SetCurrentAnimation(stickfigure_anim);
+		}
+		else if (manState == STANDING) {
+			stickfigure_animator->SetCurrentAnimation(stickfigure_idle);
+		}
+
+		// update the bone matrices according to selected animation
+		vector<glm::mat4> transforms = stickfigure_animator->GetFinalBoneMatrices();
+		for (int i = 0; i < transforms.size(); ++i) {
+			glUniformMatrix4fv(curS->getUniform("finalBonesMatrices[" + std::to_string(i) + "]"), 1, GL_FALSE, value_ptr(transforms[i]));
+		}
+
+		// set the model matrix and draw the walking character model
+		Model->pushMatrix();
+		Model->loadIdentity();
+		Model->translate(manTrans);
+		Model->scale(0.01f);
+		Model->rotate(manRot.y, vec3(0, 1, 0));
+		Model->rotate(manRot.z, vec3(0, 0, 1));
+
+		// update the bounding box for collision detection
+		glm::mat4 manTransform = glm::translate(glm::mat4(1.0f), manTrans)
+			* glm::rotate(glm::mat4(1.0f), manRot.x, glm::vec3(1, 0, 0))
+			* glm::rotate(glm::mat4(1.0f), manRot.y, glm::vec3(0, 1, 0))
+			* glm::scale(glm::mat4(1.0f), manScale);
+		updateBoundingBox(stickfigure_running->getBoundingBoxMin(),
+			stickfigure_running->getBoundingBoxMax(),
+			manTransform,
+			manAABBmin,
+			manAABBmax);
+
+		glUniform1i(curS->getUniform("hasTexture"), 1);
+		SetMaterialMan(curS, 0);
+		setModel(curS, Model);
+		stickfigure_running->Draw(curS);
+		Model->popMatrix();
+
+		curS->unbind();
+	}
+
+	void drawBooks(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
+		shader->bind();
+
+		for (const auto& book : books) {
+			// Common values for book halves
+			float halfThickness = book.scale.z * 0.5f;
+			glm::vec3 halfScaleVec = glm::vec3(book.scale.x, book.scale.y, halfThickness);
+
+			// Set Material (e.g., brown for cover) - Apply once if same for both halves
+			glUniform3f(shader->getUniform("MatAmb"), 0.15f, 0.08f, 0.03f);
+			glUniform3f(shader->getUniform("MatDif"), 0.6f, 0.3f, 0.1f);
+			glUniform3f(shader->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f);
+			glUniform1f(shader->getUniform("MatShine"), 4.0f);
+			glUniform1i(shader->getUniform("hasEmittance"), 0);
+
+			// --- Draw Left Cover/Pages ---
+			Model->pushMatrix(); // SAVE current stack state
+			{
+				// 1. Apply base world transformation
+				Model->translate(book.position);
+				// Apply orientation - Use multMatrix if orientation is a quat
+				Model->multMatrix(glm::mat4_cast(book.orientation));
+				// If using Euler angles (vec3 rot), apply multiple Model->rotate(...) here
+
+				// 2. Apply opening rotation (relative to book's local Y)
+				if (book.state == BookState::OPENING || book.state == BookState::OPENED) {
+					Model->rotate(-book.openAngle * 0.5f, glm::vec3(0, 1, 0));
+				}
+
+				// 3. Apply offset for this half (relative to spine)
+				Model->translate(glm::vec3(0, 0, -halfThickness * 0.5f));
+
+				// 4. Apply scale for this half
+				Model->scale(halfScaleVec);
+
+				// 5. Set the uniform with the final matrix from the stack top
+				setModel(shader, Model); // Assumes setModel uses Model->topMatrix()
+
+				// 6. Draw
+				book.bookModel->Draw(shader);
+			}
+			Model->popMatrix(); // RESTORE saved stack state
+
+			// --- Draw Right Cover/Back ---
+			Model->pushMatrix(); // SAVE current stack state
+			{
+				// 1. Apply base world transformation
+				Model->translate(book.position);
+				Model->multMatrix(glm::mat4_cast(book.orientation));
+
+				// 2. Apply opening rotation
+				if (book.state == BookState::OPENING || book.state == BookState::OPENED) {
+					Model->rotate(book.openAngle * 0.5f, glm::vec3(0, 1, 0));
+				}
+
+				// 3. Apply offset for this half
+				Model->translate(glm::vec3(0, 0, halfThickness * 0.5f));
+
+				// 4. Apply scale for this half
+				Model->scale(halfScaleVec);
+
+				// 5. Set the uniform
+				setModel(shader, Model);
+
+				// 6. Draw
+				book.bookModel->Draw(shader);
+			}
+			Model->popMatrix(); // RESTORE saved stack state
+		}
+
+		shader->unbind();
+	}
+
+	void Application::drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
+
+		// --- Collision Check Logic ---
+		for (auto& orb : orbCollectibles) {
+			// Perform collision check ONLY if not collected AND in the IDLE state
+			if (!orb.collected && orb.state == OrbState::IDLE && // <<<--- ADD STATE CHECK
+				checkAABBCollision(manAABBmin, manAABBmax, orb.AABBmin, orb.AABBmax)) {
+				orb.collected = true;
+				// orb.state = OrbState::COLLECTED; // Optionally set state
+				orbsCollectedCount++;
+				std::cout << "Collected a Spell Orb! (" << orbsCollectedCount << ")\n";
+			}
+		}
+
+		// --- Drawing Logic ---
+		simpleShader->bind();
+
+		int collectedOrbDrawIndex = 0;
+
+		for (auto& orb : orbCollectibles) {
+
+			glm::vec3 currentDrawPosition;
+			float currentDrawScale = orb.scale; // Use base scale
+
+			if (orb.collected) {
+				// Calculate position behind the player (same logic as before)
+				float backOffset = 0.4f;
+				float upOffsetBase = 0.6f;
+				float stackOffset = orb.scale * 2.5f;
+				float sideOffset = 0.15f;
+				glm::vec3 playerForward = normalize(manMoveDir);
+				glm::vec3 playerUp = glm::vec3(0.0f, 1.0f, 0.0f);
+				glm::vec3 playerRight = normalize(cross(playerForward, playerUp));
+				float currentUpOffset = upOffsetBase + (collectedOrbDrawIndex * stackOffset);
+				float currentSideOffset = (collectedOrbDrawIndex % 2 == 0 ? -sideOffset : sideOffset);
+				currentDrawPosition = manTrans - playerForward * backOffset
+					+ playerUp * currentUpOffset
+					+ playerRight * currentSideOffset;
+				collectedOrbDrawIndex++;
+				// currentDrawScale = orb.scale * 0.8f; // Optional: shrink collected orbs
+			}
+			else {
+				// Use the orb's current position (potentially animated by updateOrbs)
+				currentDrawPosition = orb.position;
+			}
+
+			// --- Set up transformations ---
+			Model->pushMatrix();
+			Model->loadIdentity();
+			Model->translate(currentDrawPosition);
+			Model->scale(currentDrawScale); // Use current scale
+
+			// --- Set Material & Draw ---
+			// (Material setting code remains the same)
+			glUniform3f(simpleShader->getUniform("MatAmb"), orb.color.r * 0.2f, orb.color.g * 0.2f, orb.color.b * 0.2f);
+			glUniform3f(simpleShader->getUniform("MatDif"), orb.color.r * 0.8f, orb.color.g * 0.8f, orb.color.b * 0.8f);
+			glUniform3f(simpleShader->getUniform("MatSpec"), 0.8f, 0.8f, 0.8f);
+			glUniform1f(simpleShader->getUniform("MatShine"), 32.0f);
+			glUniform1i(simpleShader->getUniform("hasEmittance"), 0);
+
+			setModel(simpleShader, Model);
+			orb.model->Draw(simpleShader);
+
+			Model->popMatrix();
+		} // End drawing loop
+
+		simpleShader->unbind();
 	}
 
 	bool checkAABBCollision(const glm::vec3& minA, const glm::vec3& maxA,
@@ -681,12 +1004,63 @@ public:
 			(minA.z <= maxB.z && maxA.z >= minB.z);
 	}
 
-	void resetCollectibles() {
-		for (auto& collectible : collectibles) {
-			collectible.collected = false;
+	void updateBooks(float deltaTime) { // deltaTime might not be needed if using glfwGetTime()
+		for (auto& book : books) {
+			book.update(deltaTime, 0.0f);
+
+			if (book.state == BookState::OPENED && !book.orbSpawned) {
+				glm::mat4 baseRotation = glm::mat4_cast(book.orientation);
+				// Spawn slightly above the book center to avoid immediate ground collision?
+				glm::vec3 orbOffset = glm::vec3(0.0f, book.scale.y * 0.1f + 0.05f, 0.0f); // Small initial Y offset
+				glm::vec3 orbSpawnPos = book.position + glm::vec3(baseRotation * glm::vec4(orbOffset, 0.0f));
+
+				// Constructor handles setting state to LEVITATING and calculating idlePosition
+				orbCollectibles.emplace_back(sphere, orbSpawnPos, book.orbScale, book.orbColor);
+
+				book.orbSpawned = true;
+				cout << "Orb Spawned! State: LEVITATING" << endl;
+			}
 		}
-		collectedCount = 0;
-		std::cout << "Game reset. Find all the collectibles again!" << std::endl;
+	}
+
+	void interactWithBooks() {
+
+		// Player's AABB (manAABBmin, manAABBmax) is assumed to be updated from drawPlayer
+		for (auto& book : books) {
+			// Only check for interaction if the book is on the shelf
+			if (book.state == BookState::ON_SHELF) {
+
+				// 1. Define the Book's Local AABB (Approximation when closed)
+				// We approximate the closed book as a single box with dimensions book.scale
+				// centered at the origin.
+				glm::vec3 bookLocalMin = -book.scale * 0.5f;
+				glm::vec3 bookLocalMax = book.scale * 0.5f;
+
+				// 2. Calculate the Book's World Transformation Matrix
+				glm::mat4 bookWorldTransform = glm::translate(glm::mat4(1.0f), book.position) *
+					glm::mat4_cast(book.orientation);
+
+				// 3. Calculate the Book's World AABB
+				glm::vec3 bookWorldMin, bookWorldMax;
+				updateBoundingBox(bookLocalMin, bookLocalMax, bookWorldTransform, bookWorldMin, bookWorldMax);
+
+				// 4. Perform AABB Collision Check
+				if (checkAABBCollision(manAABBmin, manAABBmax, bookWorldMin, bookWorldMax)) {
+					// Collision detected! Trigger the fall.
+					book.startFalling(0);
+					break; // break here so we only trigger one book
+				}
+			}
+		}
+	}
+
+	void updateOrbs(float currentTime) {
+		for (auto& orb : orbCollectibles) {
+			// Update levitation only if not already collected
+			if (!orb.collected) {
+				orb.updateLevitation(currentTime);
+			}
+		}
 	}
 
 	void render(float frametime, float animTime) {
@@ -705,6 +1079,9 @@ public:
 		auto View = make_shared<MatrixStack>();
 		auto Model = make_shared<MatrixStack>();
 
+		updateBooks(frametime);
+		updateOrbs(glfwGetTime());
+
 		// Apply perspective projection
 		Projection->pushMatrix();
 
@@ -716,7 +1093,7 @@ public:
 		View->loadIdentity();
 		View->lookAt(eye, lookAt, vec3(0, 1, 0));
 
-		// Draw the ground
+		// Setup Shaders
 		prog2->bind();
 		glUniformMatrix4fv(prog2->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
 		glUniformMatrix4fv(prog2->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
@@ -724,7 +1101,6 @@ public:
 		glUniform1f(prog2->getUniform("lightIntensity[0]"), 1.0); // light intensity
 		glUniform3f(prog2->getUniform("lightPos[0]"), 0, 2, 0); // light position at the computer screen
 		glUniform1i(prog2->getUniform("numLights"), 1); // light position at the computer screen
-		drawGround(prog2, Model);
 		prog2->unbind();
 
 		assimptexProg->bind();
@@ -734,123 +1110,27 @@ public:
 		glUniform1f(assimptexProg->getUniform("lightIntensity[0]"), 0.0); // light intensity
 		glUniform3f(assimptexProg->getUniform("lightPos[0]"), 0, 10, 0); // light position at the computer screen
 		glUniform1i(assimptexProg->getUniform("numLights"), 1); // light position at the computer screen
-
-		// select animation for vanguard model
-		stickfigure_animator->UpdateAnimation(1.5 * animTime);
-		if (manState == WALKING) {
-			stickfigure_animator->SetCurrentAnimation(stickfigure_anim);
-		} else if (manState == STANDING) {
-			stickfigure_animator->SetCurrentAnimation(stickfigure_idle);
-		}
-
-		// update the bone matrices according to selected animation
-		vector<glm::mat4> transforms = stickfigure_animator->GetFinalBoneMatrices();
-		for (int i = 0; i < transforms.size(); ++i) {
-			glUniformMatrix4fv(assimptexProg->getUniform("finalBonesMatrices[" + std::to_string(i) + "]"), 1, GL_FALSE, value_ptr(transforms[i]));
-		}
-
-		// set the model matrix and draw the walking character model
-		Model->pushMatrix();
-			Model->loadIdentity();
-			Model->translate(manTrans);
-			Model->scale(0.01f);
-			Model->rotate(manRot.y, vec3(0, 1, 0));
-			Model->rotate(manRot.z, vec3(0, 0, 1));
-
-			// update the bounding box for collision detection
-			glm::mat4 manTransform = glm::translate(glm::mat4(1.0f), manTrans)
-				* glm::rotate(glm::mat4(1.0f), manRot.x, glm::vec3(1, 0, 0))
-				* glm::rotate(glm::mat4(1.0f), manRot.y, glm::vec3(0, 1, 0))
-				* glm::scale(glm::mat4(1.0f), manScale);
-			updateBoundingBox(stickfigure_running->getBoundingBoxMin(),
-				stickfigure_running->getBoundingBoxMax(),
-				manTransform,
-				manAABBmin,
-				manAABBmax);
-
-			glUniform1i(assimptexProg->getUniform("hasTexture"), 1);
-			SetMaterialMan(assimptexProg, 0);
-			setModel(assimptexProg, Model);
-			stickfigure_running->Draw(assimptexProg);
-		Model->popMatrix();
-
 		assimptexProg->unbind();
 
-		// Draw the collectibles with the simple texture shader
 		texProg->bind();
 		glUniformMatrix4fv(texProg->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
 		glUniformMatrix4fv(texProg->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
-
-		// Set lighting uniforms
 		glUniform3f(texProg->getUniform("lightColor[0]"), 1.0, 1.0, 1.0); // White light
 		glUniform1f(texProg->getUniform("lightIntensity[0]"), 5.0); // High intensity for visibility
 		glUniform3f(texProg->getUniform("lightPos[0]"), 0, 2, 0);
 		glUniform1i(texProg->getUniform("numLights"), 1);
-
-		// Set material properties
 		glUniform3f(texProg->getUniform("MatAmb"), 0.5, 0.5, 0.5); // Bright ambient
 		glUniform3f(texProg->getUniform("MatSpec"), 0.8, 0.8, 0.8); // Strong specular
 		glUniform1f(texProg->getUniform("MatShine"), 32.0f); // High shininess
-
-		// Check for collisions with collectibles
-		for (auto& collectible : collectibles) {
-			if (collectedCount >= totalCollectibles && !reset) {
-				std::cout << "All items collected! Resetting Game.\n";
-				finishTime = glfwGetTime();
-				reset = true;
-			} else if (collectedCount >= totalCollectibles && (glfwGetTime() - finishTime >= 1.0f)) {
-				resetCollectibles();
-				reset = false;
-			}
-			if (!collectible.collected &&
-				checkAABBCollision(manAABBmin, manAABBmax, collectible.AABBmin, collectible.AABBmax)) {
-				collectible.collected = true;
-				collectedCount++;
-				std::cout << "Collected an item! (" << collectedCount << "/" << totalCollectibles << ")\n";
-			}
-		}
-
-		// Draw collectibles
-		for (auto& collectible : collectibles) {
-			// Skip drawing if collected
-			if (collectible.collected) continue;
-
-			Model->pushMatrix();
-				Model->loadIdentity();
-				Model->translate(collectible.position);
-				Model->scale(collectible.scale);
-				setModel(texProg, Model);
-				glUniformMatrix4fv(texProg->getUniform("M"), 1, GL_FALSE, value_ptr(Model->topMatrix()));
-
-				// Bind the diffuse texture to texture unit 0
-				glActiveTexture(GL_TEXTURE0);
-
-				// draw the collectible
-				collectible.model->Draw(texProg);
-			Model->popMatrix();
-		}
-
-		// example of drawing a barrel
-		//Model->pushMatrix();
-		//	Model->loadIdentity();
-
-		//	// Position barrel
-		//	vec3 barrelPos = glm::vec3(0, 0, -5);
-		//	Model->translate(barrelPos);
-
-		//	// Scale the barrel
-		//	Model->scale(vec3(1.0f));
-
-		//	glUniformMatrix4fv(texProg->getUniform("M"), 1, GL_FALSE, value_ptr(Model->topMatrix()));
-
-		//	// Bind the diffuse texture to texture unit 0
-		//	glActiveTexture(GL_TEXTURE0);
-
-		//	// draw the barrel
-		//	barrel->Draw(texProg);
-		//Model->popMatrix();
-
 		texProg->unbind();
+
+		drawGround(prog2, Model);
+
+		drawPlayer(assimptexProg, Model, animTime);
+		
+		drawOrbs(prog2, Model);
+
+		drawBooks(prog2, Model);
 
 		// Pop matrix stacks
 		Projection->popMatrix();
