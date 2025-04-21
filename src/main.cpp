@@ -755,7 +755,6 @@ public:
 			//Character Movement - REFACTOR
 			charMove();
 			Model->translate(characterMovement);
-			
 			Model->scale(0.01f);
 			Model->rotate(characterRotation, vec3(0, 1, 0));
 			//Model->rotate(manRot.z, vec3(0, 0, 1));			
@@ -831,26 +830,6 @@ public:
 				collectible.model->Draw(texProg);
 			Model->popMatrix();
 		}
-
-		// example of drawing a barrel
-		//Model->pushMatrix();
-		//	Model->loadIdentity();
-
-		//	// Position barrel
-		//	vec3 barrelPos = glm::vec3(0, 0, -5);
-		//	Model->translate(barrelPos);
-
-		//	// Scale the barrel
-		//	Model->scale(vec3(1.0f));
-
-		//	glUniformMatrix4fv(texProg->getUniform("M"), 1, GL_FALSE, value_ptr(Model->topMatrix()));
-
-		//	// Bind the diffuse texture to texture unit 0
-		//	glActiveTexture(GL_TEXTURE0);
-
-		//	// draw the barrel
-		//	barrel->Draw(texProg);
-		//Model->popMatrix();
 
 		texProg->unbind();
 
