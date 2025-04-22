@@ -23,6 +23,10 @@
 // value_ptr for glm
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtx/quaternion.hpp> // For glm::quat and glm::rotation
+#include <glm/gtx/vector_angle.hpp> // Also sometimes needed for glm::rotation
+#include <algorithm>              // For std::remove_if
+#include <limits>                 // For std::numeric_limits (used in updateBoundingBox)
 
 using namespace std;
 using namespace glm;
@@ -49,6 +53,27 @@ enum class OrbState {
 	LEVITATING,// Moving upwards
 	IDLE,      // Stationary, ready for collection
 	COLLECTED // Visually attached to player (handled by drawing logic)
+};
+
+// --- SpellProjectile Struct ---
+struct SpellProjectile {
+	glm::vec3 position;
+	glm::vec3 direction;
+	glm::vec3 scale = glm::vec3(0.05f, 0.05f, 0.6f);
+	float speed = 20.0f;
+	float lifetime = 2.0f;
+	float spawnTime = 0.0f;
+	bool active = true;
+	AssimpModel* model = nullptr;
+
+	glm::vec3 aabbMin;
+	glm::vec3 aabbMax;
+	glm::mat4 transform; // Still useful for drawing
+
+	SpellProjectile(glm::vec3 startPos, glm::vec3 dir, float time, AssimpModel* mdl)
+		: position(startPos), direction(normalize(dir)), spawnTime(time), model(mdl), transform(1.0f) // Initialize transform
+	{
+	}
 };
 
 class Book {
@@ -86,29 +111,58 @@ public:
 	}
 
 	// Method to start the fall
-	void startFalling(float groundY) {
-		if (state == BookState::ON_SHELF) {
-			state = BookState::FALLING;
-			fallStartTime = glfwGetTime();
-
-			glm::vec3 endPosition = position;
-			endPosition.y = groundY + (scale.y * 0.5f); // Land flat on the ground based on scale
-
-			// Add some randomness to landing spot and arc
-			float offsetX = randFloat(-0.5f, 0.5f);
-			float offsetZ = randFloat(-0.5f, 0.5f);
-			endPosition.x += offsetX;
-			endPosition.z += offsetZ;
-
-			// Simple control point for a basic arc
-			glm::vec3 controlPoint = (initialPosition + endPosition) * 0.5f; // Midpoint
-			controlPoint.y += 2.0f; // Arc upwards
-			controlPoint.x += randFloat(-1.0f, 1.0f); // Random horizontal arc deviation
-
-			// Create spline (quadratic example, cubic needs another control point)
-			delete fallSpline; // Delete old one if any (shouldn't happen in this flow)
-			fallSpline = new Spline(initialPosition, controlPoint, endPosition, 0.25f); // 0.25 second fall duration
+	void startFalling(float groundY, const glm::vec3& playerPos) {
+		// Check state BEFORE accessing initialPosition etc.
+		if (state != BookState::ON_SHELF) {
+			return; // Already falling or in another state
 		}
+
+		state = BookState::FALLING;
+		fallStartTime = (float)glfwGetTime(); // Cast to float
+
+		// --- Calculate Landing Position (End Point) ---
+		glm::vec3 endPosition;
+		endPosition.y = groundY + (scale.y * 0.5f); // Land flat based on book scale
+
+		// Calculate direction away from player towards the book's spawn point
+		// Flatten the direction to the XZ plane to avoid influencing landing Y
+		glm::vec3 dirToBook = playerPos - initialPosition;
+		dirToBook.y = 0.0f; // Ignore vertical difference for landing direction
+
+		// Handle case where player is exactly at the spawn point (or very close)
+		float distSq = dot(dirToBook, dirToBook); // Use dot product for squared length
+		if (distSq < 0.01f) { // If too close, pick a default direction (e.g., positive Z)
+			dirToBook = glm::vec3(0.0f, 0.0f, 1.0f);
+		}
+		else {
+			dirToBook = normalize(dirToBook); // Normalize the direction vector
+		}
+
+		// Define how far the book should land
+		float landingDistance = 3.0f; // <-- ADJUST this value to throw further
+		float randomSpread = 0.75f; // <-- Randomness around the target landing spot
+
+		// Calculate landing X and Z based on direction and distance + randomness
+		endPosition.x = initialPosition.x + dirToBook.x * landingDistance + randFloat(-randomSpread, randomSpread);
+		endPosition.z = initialPosition.z + dirToBook.z * landingDistance + randFloat(-randomSpread, randomSpread);
+
+
+		// --- Calculate Control Point for the Arc ---
+		glm::vec3 controlPoint = (initialPosition + endPosition) * 0.5f; // Midpoint between start and end
+		// Make the arc higher relative to the start position
+		controlPoint.y = initialPosition.y + 3.0f; // <-- ADJUST arc height (relative to start)
+		// Add some sideways deviation to the arc's peak
+		controlPoint.x += randFloat(-1.5f, 1.5f); // More horizontal arc randomness
+
+		// --- Create the Spline ---
+		float fallDuration = 0.4f; // <-- ADJUST fall duration if needed
+		delete fallSpline;
+		fallSpline = new Spline(initialPosition, controlPoint, endPosition, fallDuration);
+
+		// Debug output (optional)
+		// cout << "Book Falling: Start=" << initialPosition.x << "," << initialPosition.y << "," << initialPosition.z
+		//      << " End=" << endPosition.x << "," << endPosition.y << "," << endPosition.z
+		//      << " Dir=" << dirToBook.x << "," << dirToBook.z << endl;
 	}
 
 	// Method to update the book's state and position
@@ -263,6 +317,12 @@ public:
 	int orbsCollectedCount = 0;
 	std::vector<Enemy*> enemies;
 
+	// --- Spell Projectiles ---
+	std::vector<SpellProjectile> activeSpells;
+	glm::vec3 baseSphereLocalAABBMin; // Store base sphere AABB once
+	glm::vec3 baseSphereLocalAABBMax;
+	bool sphereAABBCalculated = false;
+
 	// character bounding box
 	glm::vec3 manAABBmin, manAABBmax;
 
@@ -335,7 +395,6 @@ public:
 	float characterRotation = 0.0f;
 
 	Man_State manState = STANDING;
-
 
 	LibraryGen *library = new LibraryGen();
 	Grid<LibraryGen::CellType> grid;
@@ -523,8 +582,7 @@ public:
 
 		if (action == GLFW_PRESS)
 		{
-			 glfwGetCursorPos(window, &posX, &posY);
-			 cout << "Pos X " << posX << " Pos Y " << posY << endl;
+			shootSpell();
 		}
 	}
 
@@ -641,6 +699,10 @@ public:
 		stickfigure_running = new AssimpModel(resourceDirectory + "/Vanguard/Vanguard.fbx");
 		stickfigure_anim = new Animation(resourceDirectory + "/Vanguard/Vanguard.fbx", stickfigure_running, 0);
 		stickfigure_idle = new Animation(resourceDirectory + "/Vanguard/Vanguard.fbx", stickfigure_running, 1);
+
+		// --- Calculate Player Collision Box NOW that model is loaded ---
+		calculatePlayerLocalAABB();
+
 		stickfigure_animator = new Animator(stickfigure_anim);
 
 		// load the cube (books)
@@ -654,33 +716,27 @@ public:
 		// load the sphere (spell)
 		sphere = new AssimpModel(resourceDirectory + "/SmoothSphere.obj");
 
-		//load in the border (circle of bookshelves and doors)
-		border = new AssimpModel(resourceDirectory + "/border.obj");
+		baseSphereLocalAABBMin = sphere->getBoundingBoxMin();
+		baseSphereLocalAABBMax = sphere->getBoundingBoxMax();
+		sphereAABBCalculated = true;
+		cout << "[DEBUG] Stored Base Sphere Local AABB." << endl;
 
-		books.emplace_back(cube, sphere,
-			glm::vec3(5.0f, 2.0f, 0.0f),  // Initial Position (on a shelf)
-			glm::vec3(0.8f, 1.0f, 0.2f),  // Scale (Width, Height, Thickness)
-			glm::angleAxis(glm::radians(0.0f), glm::vec3(0, 1, 0)), // Orientation (upright)
-			glm::vec3(1.0f, 0.0f, 0.0f)); // Orb Color (Red)
+		// --- Initialize Enemy(s) ---
+		cout << "Initializing enemies..." << endl;
+		// Use the scale factor used in drawEnemies
+		// Body scale was (0.5f, bodyBaseScaleY * 1.6f, 0.5f) where bodyBaseScaleY = 0.8f => (0.5, 1.28, 0.5)
+		glm::vec3 enemyCollisionScale = glm::vec3(0.5f, 1.28f, 0.5f); // Define the scale
+		vec3 bossSpawnPos = bossAreaCenter + vec3(0.0f, 0.8f, 0.0f);
 
-		books.emplace_back(cube, sphere,
-			glm::vec3(5.0f, 2.0f, 0.5f),  // Position
-			glm::vec3(0.8f, 1.0f, 0.2f),  // Scale
-			glm::angleAxis(glm::radians(10.0f), glm::vec3(0, 1, 0)), // Slightly rotated
-			glm::vec3(0.0f, 0.0f, 1.0f)); // Orb Color (Blue)
-
-		books.emplace_back(cube, sphere,
-			glm::vec3(5.0f, 1.0f, -0.5f), // Lower shelf
-			glm::vec3(0.6f, 0.8f, 0.15f), // Smaller book
-			glm::angleAxis(glm::radians(-5.0f), glm::vec3(0, 1, 0)),
-			glm::vec3(0.0f, 1.0f, 0.0f)); // Orb Color (Green)
-
-		// --- Initialize Enemies ---
-		// Create one enemy instance at position (e.g., 5, 1, 5) with 100 HP and 0 move speed (static for now)
-		// The vertical pill shape means the base sphere should be scaled more in Y.
-		vec3 bossStartPos = bossAreaCenter;
-		bossStartPos.y = 1.0f;
-		enemies.push_back(new Enemy(bossAreaCenter, 100.0f, 0.0f)); // Pos, HP, Speed
+		// Check if sphere model is loaded before creating enemies that use it
+		if (sphere) {
+			enemies.push_back(new Enemy(bossSpawnPos, 200.0f, 0.0f, sphere, enemyCollisionScale)); // <<-- Pass sphere and scale
+			cout << " Enemy placed at boss area: (" << bossSpawnPos.x << ", " << bossSpawnPos.y << ", " << bossSpawnPos.z << ")" << endl;
+			enemies.push_back(new Enemy(libraryCenter + vec3(-5.0f, 0.8f, 8.0f), 50.0f, 0.0f, sphere, enemyCollisionScale)); // <<-- Pass sphere and scale
+		}
+		else {
+			cerr << "ERROR: Sphere model not loaded, cannot create enemies." << endl;
+		}
 	}
 
 	void SetMaterialMan(shared_ptr<Program> curS, int i) {
@@ -870,50 +926,52 @@ public:
 	}
 
 	void drawPlayer(shared_ptr<Program> curS, shared_ptr<MatrixStack> Model, float animTime) {
+		if (!curS || !Model || !stickfigure_running || !stickfigure_animator || !stickfigure_anim || !stickfigure_idle) {
+			cerr << "Error: Null pointer in drawPlayer." << endl;
+			return;
+		}
 		curS->bind();
 
-		// select animation for vanguard model
-		stickfigure_animator->UpdateAnimation(1.5 * animTime);
+		// Animation update
+		stickfigure_animator->UpdateAnimation(1.5f * animTime);
 		if (manState == WALKING) {
 			stickfigure_animator->SetCurrentAnimation(stickfigure_anim);
 		}
-		else if (manState == STANDING) {
+		else {
 			stickfigure_animator->SetCurrentAnimation(stickfigure_idle);
 		}
 
-		// update the bone matrices according to selected animation
+		// Update bone matrices
 		vector<glm::mat4> transforms = stickfigure_animator->GetFinalBoneMatrices();
-		for (int i = 0; i < transforms.size(); ++i) {
-			glUniformMatrix4fv(curS->getUniform("finalBonesMatrices[" + std::to_string(i) + "]"), 1, GL_FALSE, value_ptr(transforms[i]));
+		int numBones = std::min((int)transforms.size(), MAX_BONES);
+		for (int i = 0; i < numBones; ++i) {
+			string uniformName = "finalBonesMatrices[" + std::to_string(i) + "]";
+			glUniformMatrix4fv(curS->getUniform(uniformName), 1, GL_FALSE, value_ptr(transforms[i]));
 		}
 
-		// set the model matrix and draw the walking character model
+		// Model matrix setup
 		Model->pushMatrix();
 		Model->loadIdentity();
+		Model->translate(characterMovement); // Use final player position
+		// *** USE CAMERA ROTATION FOR MODEL ***
+		Model->rotate(manRot.y, vec3(0, 1, 0)); // <<-- FIXED ROTATION
+		Model->scale(manScale);
 
-    //Character Movement - REFACTOR
-		charMove();
-		Model->translate(characterMovement);
-		Model->scale(0.01f);
-		Model->rotate(characterRotation, vec3(0, 1, 0));
-
-		// update the bounding box for collision detection
-		glm::mat4 manTransform = glm::translate(glm::mat4(1.0f), charMove())
-			* glm::rotate(glm::mat4(1.0f), manRot.x, glm::vec3(1, 0, 0))
-			* glm::rotate(glm::mat4(1.0f), manRot.y, glm::vec3(0, 1, 0))
-			* glm::scale(glm::mat4(1.0f), manScale);
+		// Update VISUAL bounding box (can be different from collision box if needed)
+		// Using the same AABB calculation logic as before for consistency
+		glm::mat4 manTransform = Model->topMatrix();
 		updateBoundingBox(stickfigure_running->getBoundingBoxMin(),
 			stickfigure_running->getBoundingBoxMax(),
 			manTransform,
-			manAABBmin,
+			manAABBmin, // This is the visual/interaction AABB
 			manAABBmax);
 
+		// Set uniforms and draw
 		glUniform1i(curS->getUniform("hasTexture"), 1);
-		SetMaterialMan(curS, 0);
 		setModel(curS, Model);
 		stickfigure_running->Draw(curS);
-		Model->popMatrix();
 
+		Model->popMatrix();
 		curS->unbind();
 	}
 
@@ -1293,33 +1351,60 @@ public:
 	}
 
 	void interactWithBooks() {
+		float interactionRadius = 5.0f;
+		float interactionRadiusSq = interactionRadius * interactionRadius;
 
-		// Player's AABB (manAABBmin, manAABBmax) is assumed to be updated from drawPlayer
-		for (auto& book : books) {
-			// Only check for interaction if the book is on the shelf
-			if (book.state == BookState::ON_SHELF) {
+		float gridWorldWidth = groundSize * 2.0f;
+		float gridWorldDepth = groundSize * 2.0f;
+		float cellWidth = gridWorldWidth / (float)grid.getSize().x;
+		float cellDepth = gridWorldDepth / (float)grid.getSize().y;
 
-				// 1. Define the Book's Local AABB (Approximation when closed)
-				// We approximate the closed book as a single box with dimensions book.scale
-				// centered at the origin.
-				glm::vec3 bookLocalMin = -book.scale * 0.5f;
-				glm::vec3 bookLocalMax = book.scale * 0.5f;
+		bool interacted = false;
 
-				// 2. Calculate the Book's World Transformation Matrix
-				glm::mat4 bookWorldTransform = glm::translate(glm::mat4(1.0f), book.position) *
-					glm::mat4_cast(book.orientation);
+		for (int z = 0; z < grid.getSize().y && !interacted; ++z) {
+			for (int x = 0; x < grid.getSize().x && !interacted; ++x) {
+				glm::ivec2 gridPos(x, z);
+				if (grid[gridPos] == LibraryGen::SHELF) {
+					float shelfWorldX = libraryCenter.x - gridWorldWidth * 0.5f + (x + 0.5f) * cellWidth;
+					float shelfWorldZ = libraryCenter.z - gridWorldDepth * 0.5f + (z + 0.5f) * cellDepth;
+					glm::vec3 shelfCenterPos = glm::vec3(shelfWorldX, groundY + 1.0f, shelfWorldZ);
 
-				// 3. Calculate the Book's World AABB
-				glm::vec3 bookWorldMin, bookWorldMax;
-				updateBoundingBox(bookLocalMin, bookLocalMax, bookWorldTransform, bookWorldMin, bookWorldMax);
+					glm::vec3 diff = shelfCenterPos - characterMovement;
+					diff.y = 0.0f; // Ignore Y difference for interaction distance
+					float distSq = dot(diff, diff); // Use dot product for squared distance
 
-				// 4. Perform AABB Collision Check
-				if (checkAABBCollision(manAABBmin, manAABBmax, bookWorldMin, bookWorldMax)) {
-					// Collision detected! Trigger the fall.
-					book.startFalling(0);
-					break; // break here so we only trigger one book
+					if (distSq <= interactionRadiusSq) {
+
+						// --- ADJUST Spawn Height ---
+						float minSpawnHeight = 1.8f; // Minimum height above groundY
+						float maxSpawnHeight = 2.8f; // Maximum height above groundY
+						float spawnHeight = groundY + randFloat(minSpawnHeight, maxSpawnHeight); // <-- ADJUSTED height range
+
+						glm::vec3 spawnPos = glm::vec3(shelfWorldX, spawnHeight, shelfWorldZ);
+
+						glm::vec3 bookScale = glm::vec3(0.7f, 0.9f, 0.2f);
+						glm::quat bookOrientation = glm::angleAxis(glm::radians(randFloat(-10.f, 10.f)), glm::vec3(0, 1, 0));
+						glm::vec3 orbColor = glm::vec3(randFloat(0.2f, 1.0f), randFloat(0.2f, 1.0f), randFloat(0.2f, 1.0f));
+
+						books.emplace_back(cube, sphere, spawnPos, bookScale, bookOrientation, orbColor);
+
+						Book& newBook = books.back();
+
+						// --- PASS Player Position to startFalling ---
+						newBook.startFalling(groundY, characterMovement); // <<-- MODIFIED call
+
+						interacted = true;
+						break;
+					}
 				}
 			}
+		}
+
+		if (interacted) {
+			cout << "Book spawned and falling." << endl;
+		}
+		else {
+			cout << "No shelf nearby to interact with." << endl;
 		}
 	}
 
@@ -1335,53 +1420,318 @@ public:
 	void updateEnemies(float deltaTime) {
 		// TODO: Add enemy movement, AI, attack logic later
 		for (auto* enemy : enemies) {
-			if (!enemy || !enemy->isAlive()) continue;
+			if (!enemy || !enemy->isAlive()) enemy->setPosition(enemy->getPosition() - vec3(0.0f, 3.0f, 0.0f));
 			// Example: Simple bobbing motion
 			// float bobSpeed = 2.0f;
 			// float bobHeight = 0.05f;
 			// glm::vec3 currentPos = enemy->getPosition();
 			// enemy->setPosition(glm::vec3(currentPos.x, 0.8f + sin(glfwGetTime() * bobSpeed) * bobHeight, currentPos.z));
-
 			 // IMPORTANT: Update enemy AABB if it moves
 			 // enemy->updateAABB(); // Need to add AABB members and update method to Enemy/Entity class
 		}
 	}
 
+	// --- Player Collision ---
+	// Store player's local AABB (scaled) for easier access
+	glm::vec3 playerLocalAABBMin;
+	glm::vec3 playerLocalAABBMax;
+	bool playerAABBCalculated = false; // Flag to calculate once
+
+	// Helper to calculate player's local AABB
+	void calculatePlayerLocalAABB() {
+		if (!stickfigure_running || playerAABBCalculated) return;
+
+		// Get base AABB from the *standing* or *running* model (choose one representative)
+		// Using stickfigure_running as it's loaded first
+		glm::vec3 baseMin = stickfigure_running->getBoundingBoxMin();
+		glm::vec3 baseMax = stickfigure_running->getBoundingBoxMax();
+
+		// Apply the player's base scale
+		playerLocalAABBMin = baseMin * manScale.x; // Assuming uniform scale for collision box
+		playerLocalAABBMax = baseMax * manScale.x;
+
+		// Optional: Add padding or adjust Y if needed
+		// Example: Make collision box slightly taller or ensure base is at y=0 locally
+		// playerLocalAABBMin.y = 0.0f; // If player origin is at feet
+
+		playerAABBCalculated = true;
+		// cout << "[DEBUG] Calculated Player Local AABB Min: (" << playerLocalAABBMin.x << "," << playerLocalAABBMin.y << "," << playerLocalAABBMin.z << ")" << endl;
+		// cout << "[DEBUG] Calculated Player Local AABB Max: (" << playerLocalAABBMax.x << "," << playerLocalAABBMax.y << "," << playerLocalAABBMax.z << ")" << endl;
+	}
+
+
+	// --- Collision Checking Helper ---
+	bool checkCollisionAt(const glm::vec3& checkPos, const glm::quat& playerOrientation) {
+		if (!playerAABBCalculated || !book_shelf1 || grid.getSize().x == 0) return false; // Need data
+
+		// 1. Calculate Player's World AABB at checkPos
+		glm::mat4 playerTransform = glm::translate(glm::mat4(1.0f), checkPos) * glm::mat4_cast(playerOrientation);
+		// Note: We use the PRE-SCALED local AABB calculated earlier
+		glm::vec3 playerWorldMin, playerWorldMax;
+		updateBoundingBox(playerLocalAABBMin, playerLocalAABBMax, playerTransform, playerWorldMin, playerWorldMax);
+
+		// 2. Iterate through grid for shelves
+		float gridWorldWidth = groundSize * 2.0f;
+		float gridWorldDepth = groundSize * 2.0f;
+		float cellWidth = gridWorldWidth / (float)grid.getSize().x;
+		float cellDepth = gridWorldDepth / (float)grid.getSize().y;
+		// Use the same scale factor as drawLibrary
+		float shelfScaleFactor = 1.8f;
+		glm::vec3 shelfVisScale = vec3(shelfScaleFactor * cellWidth * 1.5f,
+			shelfScaleFactor * 1.8f,
+			shelfScaleFactor * cellDepth * 1.5f);
+		// --- Get shelf model's local AABB ONCE ---
+		glm::vec3 shelfLocalMin = book_shelf1->getBoundingBoxMin();
+		glm::vec3 shelfLocalMax = book_shelf1->getBoundingBoxMax();
+		// --- Apply visual scale to shelf local AABB for collision ---
+		// Important: Scale the AABB min/max points correctly
+		glm::vec3 collisionShelfLocalMin = shelfLocalMin * shelfVisScale;
+		glm::vec3 collisionShelfLocalMax = shelfLocalMax * shelfVisScale;
+		// Handle potential inversion if scale is negative (unlikely here)
+		for (int i = 0; i < 3; ++i) {
+			if (collisionShelfLocalMin[i] > collisionShelfLocalMax[i]) std::swap(collisionShelfLocalMin[i], collisionShelfLocalMax[i]);
+		}
+
+		for (int z = 0; z < grid.getSize().y; ++z) {
+			for (int x = 0; x < grid.getSize().x; ++x) {
+				glm::ivec2 gridPos(x, z);
+				if (grid[gridPos] == LibraryGen::SHELF) {
+					// 3. Calculate this shelf's World AABB
+					float worldX = libraryCenter.x - gridWorldWidth * 0.5f + (x + 0.5f) * cellWidth;
+					float worldZ = libraryCenter.z - gridWorldDepth * 0.5f + (z + 0.5f) * cellDepth;
+					glm::vec3 shelfPos = vec3(worldX, libraryCenter.y, worldZ); // Base position on ground
+
+					// Shelf transform (Position only, assuming no rotation for collision)
+					// The scale is applied to the local AABB above
+					glm::mat4 shelfTransform = glm::translate(glm::mat4(1.0f), shelfPos);
+
+					glm::vec3 shelfWorldMin, shelfWorldMax;
+					updateBoundingBox(collisionShelfLocalMin, collisionShelfLocalMax, shelfTransform, shelfWorldMin, shelfWorldMax);
+
+					// 4. Check for Overlap
+					if (checkAABBCollision(playerWorldMin, playerWorldMax, shelfWorldMin, shelfWorldMax)) {
+						// cout << "[DEBUG] Collision DETECTED with shelf at grid (" << x << "," << z << ")" << endl;
+						return true; // Collision found
+					}
+				}
+			}
+		}
+
+		return false; // No collision found
+	}
+
+	// --- Modified charMove ---
 	vec3 charMove() {
-		float moveSpeed = 0.045;
-		vec3 moveDir = vec3(0.0f, 0.0f, 0.0f);
-
-		if (movingForward) {
-			characterMovement += manMoveDir * moveSpeed;
-			eye += manMoveDir * moveSpeed;
-			lookAt = characterMovement;
-
-			characterRotation = manRot.y + 0.0f;
-
+		// Calculate player's local AABB once if not done yet
+		if (!playerAABBCalculated) {
+			calculatePlayerLocalAABB();
 		}
-		else if (movingBackward) {
-			characterMovement -= manMoveDir * moveSpeed;
-			eye -= manMoveDir * moveSpeed;
-			lookAt = characterMovement;
 
-			characterRotation = manRot.y + 3.14f;
-		}
-		if (movingRight) {
-			characterMovement += right * moveSpeed;
-			eye += right * moveSpeed;
-			lookAt = characterMovement;
+		float moveSpeed = 4.5f * AnimDeltaTime; // Use frame-rate independent speed
+		vec3 desiredMoveDelta = vec3(0.0f);
 
-			characterRotation = manRot.y + 4.71;
-		}
-		else if (movingLeft) {
-			characterMovement -= right * moveSpeed;
-			eye -= right * moveSpeed;
-			lookAt = characterMovement;
+		// Calculate desired movement direction based on input
+		if (movingForward)  desiredMoveDelta += manMoveDir;
+		if (movingBackward) desiredMoveDelta -= manMoveDir;
+		if (movingLeft)     desiredMoveDelta -= right;
+		if (movingRight)    desiredMoveDelta += right;
 
-			characterRotation = manRot.y + 1.57;
+		// Normalize and scale movement delta
+		float moveLength = length(desiredMoveDelta);
+		if (moveLength > 0.0f) {
+			desiredMoveDelta = (desiredMoveDelta / moveLength) * moveSpeed;
 		}
-		//normalize(characterMovement);
-		return characterMovement;
+		else {
+			return characterMovement; // No movement input, stay put
+		}
+
+		// --- Collision Detection and Resolution ---
+		vec3 currentPos = characterMovement;
+		vec3 nextPos = currentPos + desiredMoveDelta;
+		nextPos.y = groundY; // Keep player on the ground plane
+
+		// Player orientation for AABB calculation
+		glm::quat playerOrientation = glm::angleAxis(manRot.y, glm::vec3(0, 1, 0));
+
+		// --- Simple Stop Method ---
+		/*
+		if (checkCollisionAt(nextPos, playerOrientation)) {
+			 // Don't update characterMovement, effectively stopping before collision
+			 cout << "[DEBUG] Collision prevented movement." << endl;
+			 return currentPos; // Return current position
+		} else {
+			 // No collision detected, allow full movement
+			 characterMovement = nextPos;
+		}
+		*/
+
+		// --- Sliding Method (Separate Axes) ---
+		vec3 allowedPos = currentPos; // Start with current position
+
+		// Try moving along X only
+		vec3 nextPosX = vec3(nextPos.x, currentPos.y, currentPos.z);
+		if (!checkCollisionAt(nextPosX, playerOrientation)) {
+			allowedPos.x = nextPos.x; // Allow X movement
+		}
+		else {
+			cout << "[DEBUG] X-Collision prevented." << endl;
+		}
+
+
+		// Try moving along Z only (starting from potentially updated X)
+		vec3 nextPosZ = vec3(allowedPos.x, currentPos.y, nextPos.z); // Use allowedPos.x
+		if (!checkCollisionAt(nextPosZ, playerOrientation)) {
+			allowedPos.z = nextPos.z; // Allow Z movement
+		}
+		else {
+			cout << "[DEBUG] Z-Collision prevented." << endl;
+		}
+
+
+		// Final position is the allowed position after checking both axes
+		characterMovement = allowedPos;
+		characterMovement.y = groundY; // Ensure Y stays correct
+
+
+		// Update camera based on final position (done in render)
+		return characterMovement; // Return the final, potentially adjusted, position
+	}
+
+	// --- Shooting Function ---
+	void shootSpell() {
+		cout << "[DEBUG] shootSpell() called. Orbs: " << orbsCollectedCount << endl;
+		if (orbsCollectedCount <= 0 || !sphere || !sphereAABBCalculated) {
+			cout << "[DEBUG] Cannot shoot: No orbs or sphere model not ready." << endl;
+			return; // Need orbs and the sphere model/AABB
+		}
+
+		// Consume an orb
+		orbsCollectedCount--;
+		// Remove visual orb logic... (find first collected orb and erase)
+		for (auto it = orbCollectibles.begin(); it != orbCollectibles.end(); ++it) {
+			if (it->collected) {
+				orbCollectibles.erase(it);
+				break;
+			}
+		}
+
+		// *** Use Character's Forward Direction ***
+		// 'manMoveDir' is updated in updateCameraVectors based on manRot.y (which matches theta)
+		vec3 shootDir = manMoveDir; // Already normalized and horizontal
+
+		// *** Use Character's Right Vector ***
+		// Calculate the horizontal right vector based on manMoveDir
+		vec3 playerRight = normalize(cross(manMoveDir, vec3(0.0f, 1.0f, 0.0f)));
+
+
+		// Spawn Position Calculation (relative to character's position and orientation)
+		float forwardOffset = 0.5f; // How far in front of player center
+		float upOffset = 0.8f;      // Height relative to player base (groundY)
+		float rightOffset = 0.2f;   // Offset to the side (e.g., right hand)
+
+		vec3 spawnPos = characterMovement
+			+ vec3(0.0f, upOffset, 0.0f) // Vertical offset from base
+			+ shootDir * forwardOffset   // Forward offset along character's facing direction
+			+ playerRight * rightOffset; // Sideways offset along character's right
+
+		// Create and add projectile
+		activeSpells.emplace_back(spawnPos, shootDir, (float)glfwGetTime(), sphere);
+		cout << "[DEBUG] Spell Fired! Start:(" << spawnPos.x << "," << spawnPos.y << "," << spawnPos.z
+			<< ") Dir: (" << shootDir.x << "," << shootDir.y << "," << shootDir.z // y should be 0
+			<< "). Active spells: " << activeSpells.size() << endl;
+	}
+
+	// --- updateProjectiles ---
+	void updateProjectiles(float deltaTime) {
+		if (!sphereAABBCalculated) return;
+
+		float damageAmount = 25.0f;
+
+		// Iterate using index for potential removal
+		for (int i = 0; i < activeSpells.size(); ++i) {
+			if (!activeSpells[i].active) continue;
+
+			SpellProjectile& proj = activeSpells[i]; // Use reference
+
+			// Check lifetime
+			if (glfwGetTime() - proj.spawnTime > proj.lifetime) {
+				proj.active = false;
+				// cout << "[DEBUG] Spell lifetime expired." << endl;
+				continue;
+			}
+
+			// Update position
+			proj.position += proj.direction * proj.speed * deltaTime;
+
+			// Calculate transform HERE
+			glm::quat rotation = glm::rotation(glm::vec3(0.0f, 0.0f, 1.0f), proj.direction);
+			proj.transform = glm::translate(glm::mat4(1.0f), proj.position) * glm::mat4_cast(rotation) * glm::scale(glm::mat4(1.0f), proj.scale);
+
+			// Update AABB using Application's function
+			this->updateBoundingBox(baseSphereLocalAABBMin, baseSphereLocalAABBMax, proj.transform, proj.aabbMin, proj.aabbMax);
+
+			// Check collision with enemies
+			for (auto* enemy : enemies) {
+				if (!enemy || !enemy->isAlive()) continue;
+
+				// Ensure enemy AABB is up-to-date (call if they move)
+				// enemy->updateAABB();
+
+				if (checkAABBCollision(proj.aabbMin, proj.aabbMax, enemy->getAABBMin(), enemy->getAABBMax())) {
+					cout << "[DEBUG] Spell HIT enemy!" << endl;
+					enemy->takeDamage(damageAmount);
+					proj.active = false; // Deactivate projectile
+					break; // Hit one enemy
+				}
+			}
+		} // End loop
+
+		// Remove inactive projectiles
+		activeSpells.erase(
+			std::remove_if(activeSpells.begin(), activeSpells.end(),
+				[](const SpellProjectile& p) { return !p.active; }),
+			activeSpells.end()
+		);
+	}
+
+	void drawProjectiles(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
+		if (!shader || !Model || !sphere) return; // Need shader, stack, model
+
+		shader->bind();
+		// Set material for projectiles (e.g., bright yellow/white, maybe emissive if shader supports)
+		SetMaterialMan(shader, 0); // Gold material for now
+		glUniform3f(shader->getUniform("MatAmb"), 0.8f, 0.8f, 0.1f);
+		glUniform3f(shader->getUniform("MatDif"), 1.0f, 1.0f, 0.5f);
+		glUniform3f(shader->getUniform("MatSpec"), 1.0f, 1.0f, 1.0f);
+		glUniform1f(shader->getUniform("MatShine"), 64.0f);
+		// Optional: Emissive properties if shader supports them
+		// if(shader->hasUniform("hasEmittance")) glUniform1i(shader->getUniform("hasEmittance"), 1);
+		// if(shader->hasUniform("MatEmitt")) glUniform3f(shader->getUniform("MatEmitt"), 1.0f, 1.0f, 0.8f);
+
+		for (const auto& proj : activeSpells) {
+			if (!proj.active) continue;
+
+			Model->pushMatrix();
+			Model->loadIdentity(); // Start from identity for projectile
+
+			// Use the pre-calculated transform from updateAABB
+			Model->multMatrix(proj.transform);
+
+			/* // --- Manual Transform Calculation (Alternative to using proj.transform) ---
+			Model->translate(proj.position);
+			// Calculate rotation to align local Z with direction
+			glm::quat rotation = glm::rotation(glm::vec3(0.0f, 0.0f, 1.0f), proj.direction);
+			Model->multMatrix(glm::mat4_cast(rotation));
+			Model->scale(proj.scale);
+			*/
+
+			setModel(shader, Model);
+			proj.model->Draw(shader); // Draw the sphere model
+
+			Model->popMatrix();
+		}
+
+		shader->unbind();
 	}
 
 	void render(float frametime, float animTime) {
@@ -1400,20 +1750,20 @@ public:
 		auto View = make_shared<MatrixStack>();
 		auto Model = make_shared<MatrixStack>();
 
+		// --- Update Game Logic ---
+		charMove();
+		updateCameraVectors();
 		updateBooks(frametime);
 		updateOrbs((float)glfwGetTime());
 		updateEnemies(frametime);
+		updateProjectiles(frametime);
 
-		// Apply perspective projection
+		// --- Setup Camera ---
 		Projection->pushMatrix();
-
-		// Projection->perspective(45.0f, aspect, 0.01f, 200.0f);
-		Projection->perspective(45.0f, aspect, 0.01f, 400.0f);
-
-		// View is global translation along negative z for now
+		Projection->perspective(radians(45.0f), aspect, 0.1f, 1000.0f); // Adjusted near/far
 		View->pushMatrix();
 		View->loadIdentity();
-		View->lookAt(eye, lookAt, vec3(0, 1, 0));
+		View->lookAt(eye, lookAt, up); // Use updated eye/lookAt
 
 		// --- Setup Lights ---
 		// Example: One bright light in the library, one dimmer in boss area
@@ -1494,6 +1844,8 @@ public:
 		// 6. Draw Collectible Orbs
 		drawOrbs(prog2, Model);
 
+		drawProjectiles(prog2, Model);
+
 		// 7. Draw Player (often drawn last or near last)
 		drawPlayer(assimptexProg, Model, animTime);
 
@@ -1558,8 +1910,7 @@ int main(int argc, char *argv[])
 		<< "'F': Interact with book" << "F11 Fullscreen" << endl << "'L': Toggle cursor mode" << endl;
 
 	// Loop until the user closes the window.
-	while (! glfwWindowShouldClose(windowManager->getHandle()))
-	{
+	while (! glfwWindowShouldClose(windowManager->getHandle())) {
 		auto nextLastTIme = chrono::high_resolution_clock::now();
 
 		float deltaTime = chrono::duration_cast<chrono::microseconds>(chrono::high_resolution_clock::now() - lastTime).count();
