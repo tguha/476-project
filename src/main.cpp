@@ -244,11 +244,19 @@ public:
 	// Our shader programs
 	std::shared_ptr<Program> texProg, prog2, assimptexProg;
 
-	// ground data
-	GLuint GrndBuffObj, GrndNorBuffObj, GIndxBuffObj;
-	int g_GiboLen;
-	GLuint GroundVertexArrayID;
-	float groundSize = 20.0f;
+	// ground data - Reused for all flat ground planes
+	GLuint GrndBuffObj = 0, GrndNorBuffObj = 0, GIndxBuffObj = 0; // Initialize to 0
+	int g_GiboLen = 0;
+	GLuint GroundVertexArrayID = 0; // Initialize to 0
+	float groundSize = 20.0f; // Half-size of the main library ground square
+	float groundY = 0.0f;     // Y level for all ground planes
+
+	// Scene layout parameters
+	vec3 libraryCenter = vec3(0.0f, groundY, 0.0f);
+	vec3 bossAreaCenter = vec3(0.0f, groundY, 60.0f); // Further away
+	vec3 doorPosition = vec3(0.0f, 1.5f, groundSize); // Center of door at library edge
+	vec3 doorScale = vec3(1.5f, 3.0f, 0.2f); // Width, Height, Thickness
+	float pathWidth = 4.0f; // Width of the path connecting areas
 
 	// setup collectibles vector
 	std::vector<Collectible> orbCollectibles;
@@ -617,7 +625,7 @@ public:
 		assimptexProg->addUniform("hasTexture");
 		updateCameraVectors();
 
-		library->generate(glm::ivec2(30, 30));
+		library->generate(glm::ivec2(30, 30)); // grid size
 		grid = library->getGrid();
 
 	}
@@ -664,7 +672,9 @@ public:
 		// --- Initialize Enemies ---
 		// Create one enemy instance at position (e.g., 5, 1, 5) with 100 HP and 0 move speed (static for now)
 		// The vertical pill shape means the base sphere should be scaled more in Y.
-		enemies.push_back(new Enemy(glm::vec3(5.0f, 1.0f, 5.0f), 100.0f, 0.0f)); // Pos, HP, Speed
+		vec3 bossStartPos = bossAreaCenter;
+		bossStartPos.y = 1.0f;
+		enemies.push_back(new Enemy(bossAreaCenter, 100.0f, 0.0f)); // Pos, HP, Speed
 	}
 
 	void SetMaterialMan(shared_ptr<Program> curS, int i) {
@@ -747,76 +757,110 @@ public:
 		}
 	}
 
-	//directly pass quad for the ground to the GPU
 	void initGround() {
-		float g_groundSize = groundSize;
-		float g_groundY = 0.0f;
-		// A x-z plane at y = g_groundY of dimension [-g_groundSize, g_groundSize]^2
+		// Check if already initialized
+		if (GroundVertexArrayID != 0) {
+			cout << "Warning: initGround() called more than once." << endl;
+			return;
+		}
+		// Ground plane from -groundSize to +groundSize in X and Z at groundY
 		float GrndPos[] = {
-			-g_groundSize, g_groundY, -g_groundSize,
-			-g_groundSize, g_groundY,  g_groundSize,
-			g_groundSize, g_groundY,  g_groundSize,
-			g_groundSize, g_groundY, -g_groundSize
+			-groundSize, groundY, -groundSize, // top-left
+			-groundSize, groundY,  groundSize, // bottom-left
+			 groundSize, groundY,  groundSize, // bottom-right
+			 groundSize, groundY, -groundSize  // top-right
 		};
+		// Normals point straight up
 		float GrndNorm[] = {
-			0, 1, 0,
-			0, 1, 0,
-			0, 1, 0,
-			0, 1, 0,
-			0, 1, 0,
-			0, 1, 0
+			0, 1, 0,   0, 1, 0,   0, 1, 0,   0, 1, 0
 		};
-		unsigned short idx[] = { 0, 1, 2, 0, 2, 3 };
+		// Indices for two triangles covering the quad
+		unsigned short idx[] = { 0, 1, 2,   0, 2, 3 };
+		g_GiboLen = 6; // Number of indices
 
-		// Generate the ground VAO
+		// Generate VAO
 		glGenVertexArrays(1, &GroundVertexArrayID);
 		glBindVertexArray(GroundVertexArrayID);
 
-		g_GiboLen = 6;
+		// Position buffer (Attribute 0)
 		glGenBuffers(1, &GrndBuffObj);
 		glBindBuffer(GL_ARRAY_BUFFER, GrndBuffObj);
 		glBufferData(GL_ARRAY_BUFFER, sizeof(GrndPos), GrndPos, GL_STATIC_DRAW);
+		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
 
+		// Normal buffer (Attribute 1)
 		glGenBuffers(1, &GrndNorBuffObj);
 		glBindBuffer(GL_ARRAY_BUFFER, GrndNorBuffObj);
 		glBufferData(GL_ARRAY_BUFFER, sizeof(GrndNorm), GrndNorm, GL_STATIC_DRAW);
+		glEnableVertexAttribArray(1);
+		glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
 
+		// Index buffer
 		glGenBuffers(1, &GIndxBuffObj);
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, GIndxBuffObj);
 		glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(idx), idx, GL_STATIC_DRAW);
+
+		// Unbind VAO and buffers (good practice)
+		glBindVertexArray(0);
+		glBindBuffer(GL_ARRAY_BUFFER, 0);
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+
+		cout << "Ground Initialized: VAO ID " << GroundVertexArrayID << endl;
 	}
 
-    //code to draw the ground plane
-	void drawGround(shared_ptr<Program> curS, std::shared_ptr<MatrixStack> Model) {
-		curS->bind();
-		glBindVertexArray(GroundVertexArrayID);
+	// Draw the ground sections (library, boss area, path)
+	void drawGroundSections(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
+		if (!shader || !Model || GroundVertexArrayID == 0) { // Check if ground is initialized
+			// cerr << "Error: Cannot draw ground sections - shader, model, or ground VAO invalid." << endl;
+			return;
+		}
 
-		// Set material for ground
-		SetMaterialMan(curS, 1);
+		shader->bind(); // Bind the simple shader
 
-		// Use the matrix stack for the model matrix
+		glBindVertexArray(GroundVertexArrayID); // Bind ground VAO
+
+		// 1. Draw Library Ground
 		Model->pushMatrix();
 		Model->loadIdentity();
-		Model->translate(vec3(0, 0, 0));
-		glUniformMatrix4fv(curS->getUniform("M"), 1, GL_FALSE, value_ptr(Model->topMatrix()));
-
-		glEnableVertexAttribArray(0);
-		glBindBuffer(GL_ARRAY_BUFFER, GrndBuffObj);
-		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
-
-		glEnableVertexAttribArray(1);
-		glBindBuffer(GL_ARRAY_BUFFER, GrndNorBuffObj);
-		glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, 0);
-
-		// Draw
-		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, GIndxBuffObj);
+		Model->translate(libraryCenter); // Center the ground plane
+		// No scaling needed if initGround used groundSize correctly relative to its vertices
+		setModel(shader, Model);
+		SetMaterialMan(shader, 1); // Silver material
 		glDrawElements(GL_TRIANGLES, g_GiboLen, GL_UNSIGNED_SHORT, 0);
-
-		glDisableVertexAttribArray(0);
-		glDisableVertexAttribArray(1);
-
 		Model->popMatrix();
-		curS->unbind();
+
+		// 2. Draw Boss Area Ground
+		Model->pushMatrix();
+		Model->loadIdentity();
+		Model->translate(bossAreaCenter); // Position the boss ground plane
+		setModel(shader, Model);
+		SetMaterialMan(shader, 2); // Bronze material
+		glDrawElements(GL_TRIANGLES, g_GiboLen, GL_UNSIGNED_SHORT, 0);
+		Model->popMatrix();
+
+		// 3. Draw Path (Scaled ground geometry)
+		Model->pushMatrix();
+		Model->loadIdentity();
+		// Calculate path dimensions and position
+		float pathLength = bossAreaCenter.z - libraryCenter.z - 2 * groundSize;
+		if (pathLength < 0) pathLength = 0; // Avoid negative length if areas overlap
+		float pathCenterZ = libraryCenter.z + groundSize + pathLength * 0.5f;
+		// Calculate scaling factors based on the original ground quad size (groundSize * 2)
+		float scaleX = pathWidth / (groundSize * 2.0f);
+		float scaleZ = pathLength / (groundSize * 2.0f);
+
+		Model->translate(vec3(libraryCenter.x, groundY, pathCenterZ)); // Center the path segment
+		Model->scale(vec3(scaleX, 1.0f, scaleZ)); // Scale ground quad to path dimensions
+		setModel(shader, Model);
+		SetMaterialMan(shader, 4); // Dark white material
+		glDrawElements(GL_TRIANGLES, g_GiboLen, GL_UNSIGNED_SHORT, 0);
+		Model->popMatrix();
+
+		// Unbind VAO after drawing all ground parts
+		glBindVertexArray(0);
+
+		shader->unbind(); // Unbind the simple shader
 	}
 
 	void drawPlayer(shared_ptr<Program> curS, shared_ptr<MatrixStack> Model, float animTime) {
@@ -1141,23 +1185,58 @@ public:
 	}
 
 	void drawLibrary(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
+		if (!shader || !Model || !book_shelf1 || grid.getSize().x == 0 || grid.getSize().y == 0) return; // Safety checks
+
 		shader->bind();
+		glUniform1i(shader->getUniform("hasTexture"), 1); // Bookshelves should use texture
+		
+		float gridWorldWidth = groundSize * 2.0f; // The world space the grid should occupy (library floor width)
+		float gridWorldDepth = groundSize * 2.0f; // The world space the grid should occupy (library floor depth)
+		float cellWidth = gridWorldWidth / (float)grid.getSize().x;
+		float cellDepth = gridWorldDepth / (float)grid.getSize().y;
+		float shelfScaleFactor = 1.8f; // Adjust scale of the bookshelf model itself
+
 		for (int z = 0; z < grid.getSize().y; ++z) {
 			for (int x = 0; x < grid.getSize().x; ++x) {
-				glm::ivec2 pos(x, z);
-				LibraryGen::CellType cell = grid[pos];
-				if (cell == LibraryGen::SHELF) {
+				glm::ivec2 gridPos(x, z);
+				if (grid[gridPos] == LibraryGen::SHELF) {
+					// Calculate world position based on grid cell, centering the grid on libraryCenter
+					float worldX = libraryCenter.x - gridWorldWidth * 0.5f + (x + 0.5f) * cellWidth;
+					float worldZ = libraryCenter.z - gridWorldDepth * 0.5f + (z + 0.5f) * cellDepth;
+
 					Model->pushMatrix();
 					Model->loadIdentity();
-					Model->translate(vec3(x - 40, 0, z - 15));
-					glUniform1i(assimptexProg->getUniform("hasTexture"), 1);
-					Model->scale(vec3(2.0f));
-					setModel(assimptexProg, Model);
-					book_shelf1->Draw(assimptexProg);
+					Model->translate(vec3(worldX, libraryCenter.y, worldZ)); // Position shelf at cell center on ground
+					// Scale based on cell size and factor, adjust Y scale for desired height
+					Model->scale(vec3(shelfScaleFactor * cellWidth * 1.5f, // Adjust scale factor
+						shelfScaleFactor * 1.8f, // Taller shelves
+						shelfScaleFactor * cellDepth * 1.5f));
+					// Optional: Add random rotation?
+					// Model->rotate(randFloat(0.f, 3.14f), vec3(0, 1, 0));
+					setModel(shader, Model);
+					book_shelf1->Draw(shader);
 					Model->popMatrix();
 				}
 			}
 		}
+		shader->unbind();
+	}
+
+	void drawDoor(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
+		if (!shader || !Model || !cube) return; // Need cube model
+
+		shader->bind();
+
+		Model->pushMatrix();
+		Model->loadIdentity();
+		Model->translate(doorPosition); // Position set in class members
+		Model->scale(doorScale);      // Scale set in class members
+
+		SetMaterialMan(shader, 5); // Use Wood material
+		setModel(shader, Model);
+		cube->Draw(shader);
+
+		Model->popMatrix();
 		shader->unbind();
 	}
 
@@ -1297,7 +1376,7 @@ public:
 		auto Model = make_shared<MatrixStack>();
 
 		updateBooks(frametime);
-		updateOrbs(glfwGetTime());
+		updateOrbs((float)glfwGetTime());
 		updateEnemies(frametime);
 
 		// Apply perspective projection
@@ -1311,52 +1390,95 @@ public:
 		View->loadIdentity();
 		View->lookAt(eye, lookAt, vec3(0, 1, 0));
 
-		// Setup Shaders
-		prog2->bind();
-		glUniformMatrix4fv(prog2->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
-		glUniformMatrix4fv(prog2->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
-		glUniform3f(prog2->getUniform("lightColor[0]"), 1.0, 1.0, 1.0); // white light
-		glUniform1f(prog2->getUniform("lightIntensity[0]"), 1.0); // light intensity
-		glUniform3f(prog2->getUniform("lightPos[0]"), 0, 2, 0); // light position at the computer screen
-		glUniform1i(prog2->getUniform("numLights"), 1); // light position at the computer screen
-		prog2->unbind();
+		// --- Setup Lights ---
+		// Example: One bright light in the library, one dimmer in boss area
+		vec3 lightPositions[NUM_LIGHTS] = {
+			libraryCenter + vec3(0, 15, 0),      // Library light overhead
+			bossAreaCenter + vec3(0, 10, 0),     // Boss area light overhead
+			characterMovement + vec3(0, 1, 0.5), // Small light near player (optional)
+			vec3(0, 0, 0)                        // Unused or ambient fill
+		};
+		vec3 lightColors[NUM_LIGHTS] = {
+			vec3(1.0f, 1.0f, 0.9f), // Slightly warm white
+			vec3(0.8f, 0.6f, 1.0f), // Dim purple/blue
+			vec3(0.3f, 0.3f, 0.3f),
+			vec3(0.1f, 0.1f, 0.1f)
+		};
+		float lightIntensities[NUM_LIGHTS] = {
+			1.5f, // Bright library
+			0.8f, // Dimmer boss area
+			0.5f, // Player light
+			0.0f
+		};
+		int numActiveLights = 3; // How many lights we're actually using
 
-		assimptexProg->bind();
-		glUniformMatrix4fv(assimptexProg->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
-		glUniformMatrix4fv(assimptexProg->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
-		glUniform3f(assimptexProg->getUniform("lightColor[0]"), 1.0, 1.0, 1.0); // white light
-		glUniform1f(assimptexProg->getUniform("lightIntensity[0]"), 0.0); // light intensity
-		glUniform3f(assimptexProg->getUniform("lightPos[0]"), 0, 10, 0); // light position at the computer screen
-		glUniform1i(assimptexProg->getUniform("numLights"), 1); // light position at the computer screen
-		assimptexProg->unbind();
+		// --- Update Shader Uniforms (Lights, P, V) ---
+		// Update prog2 (Simple Lighting)
+		if (prog2) {
+			prog2->bind();
+			glUniformMatrix4fv(prog2->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
+			glUniformMatrix4fv(prog2->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
+			glUniform1i(prog2->getUniform("numLights"), numActiveLights);
+			for (int i = 0; i < numActiveLights; ++i) {
+				string prefix = "lightPos[" + to_string(i) + "]";
+				glUniform3fv(prog2->getUniform(prefix), 1, value_ptr(lightPositions[i]));
+				prefix = "lightColor[" + to_string(i) + "]";
+				glUniform3fv(prog2->getUniform(prefix), 1, value_ptr(lightColors[i]));
+				prefix = "lightIntensity[" + to_string(i) + "]";
+				glUniform1f(prog2->getUniform(prefix), lightIntensities[i]);
+			}
+			prog2->unbind();
+		}
 
-		texProg->bind();
-		glUniformMatrix4fv(texProg->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
-		glUniformMatrix4fv(texProg->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
-		glUniform3f(texProg->getUniform("lightColor[0]"), 1.0, 1.0, 1.0); // White light
-		glUniform1f(texProg->getUniform("lightIntensity[0]"), 5.0); // High intensity for visibility
-		glUniform3f(texProg->getUniform("lightPos[0]"), 0, 2, 0);
-		glUniform1i(texProg->getUniform("numLights"), 1);
-		glUniform3f(texProg->getUniform("MatAmb"), 0.5, 0.5, 0.5); // Bright ambient
-		glUniform3f(texProg->getUniform("MatSpec"), 0.8, 0.8, 0.8); // Strong specular
-		glUniform1f(texProg->getUniform("MatShine"), 32.0f); // High shininess
-		texProg->unbind();
+		// Update assimptexProg (Textured/Animated Lighting)
+		if (assimptexProg) {
+			assimptexProg->bind();
+			glUniformMatrix4fv(assimptexProg->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
+			glUniformMatrix4fv(assimptexProg->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
+			glUniform1i(assimptexProg->getUniform("numLights"), numActiveLights);
+			for (int i = 0; i < numActiveLights; ++i) {
+				string prefix = "lightPos[" + to_string(i) + "]";
+				glUniform3fv(assimptexProg->getUniform(prefix), 1, value_ptr(lightPositions[i]));
+				prefix = "lightColor[" + to_string(i) + "]";
+				glUniform3fv(assimptexProg->getUniform(prefix), 1, value_ptr(lightColors[i]));
+				prefix = "lightIntensity[" + to_string(i) + "]";
+				glUniform1f(assimptexProg->getUniform(prefix), lightIntensities[i]);
+			}
+			assimptexProg->unbind();
+		}
 
-		drawGround(prog2, Model);
+		// --- Draw Scene Elements ---
+		// ORDER MATTERS for transparency, but with opaque objects and depth testing, it's less critical.
+		// Drawing grounds first is logical.
 
-		drawEnemies(prog2, Model);
+		// 1. Draw Ground, Path
+		drawGroundSections(prog2, Model);
 
-		drawPlayer(assimptexProg, Model, animTime);
-
-		drawOrbs(prog2, Model);
-
-		drawBooks(prog2, Model);
-
+		// 2. Draw the Static Library Shelves
 		drawLibrary(assimptexProg, Model);
 
-		// Pop matrix stacks
+		// 3. Draw the Door
+		drawDoor(prog2, Model);
+
+		// 4. Draw Falling/Interactable Books
+		drawBooks(prog2, Model);
+
+		// 5. Draw Enemies
+		drawEnemies(prog2, Model);
+
+		// 6. Draw Collectible Orbs
+		drawOrbs(prog2, Model);
+
+		// 7. Draw Player (often drawn last or near last)
+		drawPlayer(assimptexProg, Model, animTime);
+
+		// --- Cleanup ---
 		Projection->popMatrix();
 		View->popMatrix();
+
+		// Unbind any VAO or Program that might be lingering (belt-and-suspenders)
+		glBindVertexArray(0);
+		glUseProgram(0);
 	}
 };
 
