@@ -1190,7 +1190,7 @@ public:
 	}
 
 	vec3 charMove() {
-		float moveSpeed = 0.05;
+		float moveSpeed = 0.045;
 		vec3 moveDir = vec3(0.0f, 0.0f, 0.0f);
 
 		if (movingForward) {
