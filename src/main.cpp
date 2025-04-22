@@ -16,7 +16,10 @@
 #include "AssimpModel.h"
 #include "Animator.h"
 #include "LightTrail.h"
+#include "LibraryGen.h"
+// #include "Grid.h"
 #include "Enemy.h"
+
 
 // value_ptr for glm
 #include <glm/gtc/type_ptr.hpp>
@@ -256,7 +259,9 @@ public:
 	// character bounding box
 	glm::vec3 manAABBmin, manAABBmax;
 
-	AssimpModel *cube, *barrel, *creeper, *alien, *wizard_hat, *fish, *cylinder, *sphere;
+	AssimpModel *book_shelf1;
+
+	AssimpModel *cube, *sphere;
 
 	//  vector of books
 	vector<Book> books;
@@ -320,6 +325,10 @@ public:
 	float characterRotation = 0.0f;
 
 	Man_State manState = STANDING;
+
+
+	LibraryGen *library = new LibraryGen();
+	Grid<LibraryGen::CellType> grid;
 
 	void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods)
 	{
@@ -608,6 +617,10 @@ public:
 		assimptexProg->addUniform("numLights");
 		assimptexProg->addUniform("hasTexture");
 		updateCameraVectors();
+
+		library->generate(glm::ivec2(30, 30));
+		grid = library->getGrid();
+
 	}
 
 	void initGeom(const std::string& resourceDirectory)
@@ -622,6 +635,11 @@ public:
 
 		// load the cube (books)
 		cube = new AssimpModel(resourceDirectory + "/cube.obj");
+
+		book_shelf1 = new AssimpModel(resourceDirectory + "/book_shelf/source/bookshelf_cluster.obj");
+
+		book_shelf1->assignTexture("texture_diffuse1", resourceDirectory + "/book_shelf/textures/bookstack_textures_2.jpg");
+		book_shelf1->assignTexture("texture_specular1", resourceDirectory + "/book_shelf/textures/bookstack_specular.jpg");
 
 		// load the sphere (spell)
 		sphere = new AssimpModel(resourceDirectory + "/SmoothSphere.obj");
