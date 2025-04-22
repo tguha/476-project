@@ -278,8 +278,7 @@ public:
 	float vTransx = 2;
 	float vTransy = 0;
 
-	// vec3 manTrans = vec3(-2.5, -1.3, 0);
-	vec3 manTrans = vec3(0, 0, 0);
+	vec3 characterMovement = vec3(0, 0, 0);
 	vec3 manScale = vec3(0.01, 0.01, 0.01);
 	vec3 manRot = vec3(radians(0.0f), radians(0.0f), radians(0.0f));
 
@@ -301,8 +300,10 @@ public:
 
 	vec3 eye = vec3(-6, 1.03, 0);
 	// vec3 lookAt = vec3(-1.58614, -0.9738, 0.0436656);
-	vec3 lookAt = manTrans;
+	vec3 lookAt = characterMovement;
 	vec3 up = vec3(0, 1, 0);
+
+	vec3 right = normalize(cross(manMoveDir, up));
 
 	bool mouseIntialized = false;
 	double lastX, lastY;
@@ -311,10 +312,20 @@ public:
 	int debug = 0;
 	int debug_pos = 0;
 
+	bool cursor_visable = true;
+
 	enum Man_State {
 		WALKING,
 		STANDING,
 	};
+
+	//Movement Variables (Maybe move?)
+	bool movingForward = false;
+	bool movingBackward = false;
+	bool movingLeft = false;
+	bool movingRight = false;
+	
+	float characterRotation = 0.0f;
 
 	Man_State manState = STANDING;
 
@@ -324,46 +335,27 @@ public:
 		{
 			glfwSetWindowShouldClose(window, GL_TRUE);
 		}
-		if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
-		{
-			glfwSetWindowShouldClose(window, GL_TRUE);
-		}
 		//update global camera rotate
+
 		if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_W) != GLFW_RELEASE) {
-			// eye = eye + wasd_sens * normalize(lookAt - eye); // w vector
-			// lookAt = lookAt + wasd_sens * normalize(lookAt - eye); // w vector
-			// manTrans.x += 0.2f;
-			// eye.x += 0.2f;
-			manTrans += manMoveDir * 0.2f;
-			eye += manMoveDir * 0.2f;
-			lookAt = manTrans;
-
-
 			manState = WALKING;
 
-			// cout << "pressing W" << endl;
-
-
+			//Movement Variable
+			movingForward = true;
 			if (debug_pos) {
 				cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
 				cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
 			}
 		} else if (key == GLFW_KEY_W && action == GLFW_RELEASE) {
 			manState = STANDING;
-
-			// cout << "releasing W" << endl;
+			//Movement Variable
+			movingForward = false;
 		}
 		if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_S) != GLFW_RELEASE) {
-			// eye = eye - wasd_sens * normalize(lookAt - eye); // w vector
-			// lookAt = lookAt - wasd_sens * normalize(lookAt - eye); // w vector
-			// manTrans.x -= 0.2f;
-			// eye.x -= 0.2f;
-			manTrans -= manMoveDir * 0.2f;
-			eye -= manMoveDir * 0.2f;
-			lookAt = manTrans;
-
-
 			manState = WALKING;
+
+			//Movement Variable
+			movingBackward = true;
 
 			if (debug_pos) {
 				cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
@@ -372,20 +364,14 @@ public:
 
 		} else if (key == GLFW_KEY_S && action == GLFW_RELEASE) {
 			manState = STANDING;
+			//Movement Variable
+			movingBackward = false;
 		}
 		if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_A) != GLFW_RELEASE) {
-			// eye = eye - wasd_sens * normalize(cross(lookAt - eye, up)); // u vector
-			// lookAt = lookAt - wasd_sens * normalize(cross(lookAt - eye, up)); // u vector
-
-			// manTrans.z -= 0.2f;
-			// eye.z -= 0.2f;
-			vec3 right = normalize(cross(manMoveDir, up));
-			manTrans -= right * 0.2f;
-			eye -= right * 0.2f;
-			lookAt = manTrans;
-
-
 			manState = WALKING;
+
+			//Movement Variable
+			movingLeft = true;
 
 			if (debug_pos) {
 				cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
@@ -394,20 +380,14 @@ public:
 
 		} else if (key == GLFW_KEY_A && action == GLFW_RELEASE) {
 			manState = STANDING;
+			//Movement Variable
+			movingLeft = false;
 		}
 		if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_D) != GLFW_RELEASE) {
-			// eye = eye + wasd_sens * normalize(cross(lookAt - eye, up)); // u vector
-			// lookAt = lookAt + wasd_sens * normalize(cross(lookAt - eye, up)); // u vector
-
-			// manTrans.z += 0.2f;
-			// eye.z += 0.2f;
-			vec3 right = normalize(cross(manMoveDir, up));
-			manTrans += right * 0.2f;
-			eye += right * 0.2f;
-			lookAt = manTrans;
-
-
 			manState = WALKING;
+			
+			//Movement Variable
+			movingRight = true;
 
 			if (debug_pos) {
 				cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
@@ -415,6 +395,8 @@ public:
 			}
 		} else if (key == GLFW_KEY_D && action == GLFW_RELEASE) {
 			manState = STANDING;
+			//Movement Variable
+			movingRight = false;
 		}
 		if (glfwGetKey(window, GLFW_KEY_Q)){
 			lightTrans += 1.0;
@@ -431,6 +413,15 @@ public:
 		}
 		if (key == GLFW_KEY_F && action == GLFW_PRESS) { // Interaction Key
 			interactWithBooks();
+    }
+		if (key == GLFW_KEY_L && action == GLFW_PRESS){
+			cursor_visable = !cursor_visable;
+			if (cursor_visable) {
+				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+			}
+			else {
+				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+			}
 		}
 	}
 
@@ -494,22 +485,22 @@ public:
 		front.y = radius * sin(phi);
 		front.z = radius * cos(phi) * cos((pi<float>()/2) - theta);
 
-		eye = manTrans - front;
-		lookAt = manTrans;
+		eye = characterMovement - front;
+		lookAt = characterMovement;
 
 		manRot.y = theta + radians(-90.0f);
 		manRot.y = - manRot.y;
 		manRot.x = phi;
 
 		// cout << "Theta: " << theta << " Phi: " << phi << endl;
-
 		manMoveDir = vec3(sin(manRot.y), 0, cos(manRot.y));
-
+		right = normalize(cross(manMoveDir, up));
+		
 		// lookAt = eye + front;
 
 
 	}
-
+	
 	void mouseCallback(GLFWwindow *window, int button, int action, int mods)
 	{
 		double posX, posY;
@@ -835,10 +826,12 @@ public:
 		// set the model matrix and draw the walking character model
 		Model->pushMatrix();
 		Model->loadIdentity();
-		Model->translate(manTrans);
+    
+    //Character Movement - REFACTOR
+		charMove();
+		Model->translate(characterMovement);
 		Model->scale(0.01f);
-		Model->rotate(manRot.y, vec3(0, 1, 0));
-		Model->rotate(manRot.z, vec3(0, 0, 1));
+		Model->rotate(characterRotation, vec3(0, 1, 0));
 
 		// update the bounding box for collision detection
 		glm::mat4 manTransform = glm::translate(glm::mat4(1.0f), manTrans)
@@ -1215,6 +1208,43 @@ public:
 		}
 	}
 
+	vec3 charMove() {
+		float moveSpeed = 0.05;
+		vec3 moveDir = vec3(0.0f, 0.0f, 0.0f);
+
+		if (movingForward) {
+			characterMovement += manMoveDir * moveSpeed;
+			eye += manMoveDir * moveSpeed;
+			lookAt = characterMovement;
+
+			characterRotation = manRot.y + 0.0f;
+			
+		}
+		else if (movingBackward) {
+			characterMovement -= manMoveDir * moveSpeed;
+			eye -= manMoveDir * moveSpeed;
+			lookAt = characterMovement;
+
+			characterRotation = manRot.y + 3.14f;
+		}
+		if (movingRight) {
+			characterMovement += right * moveSpeed;
+			eye += right * moveSpeed;
+			lookAt = characterMovement;
+			
+			characterRotation = manRot.y + 4.71;
+		}
+		else if (movingLeft) {
+			characterMovement -= right * moveSpeed;
+			eye -= right * moveSpeed;
+			lookAt = characterMovement;
+
+			characterRotation = manRot.y + 1.57;
+		}
+		normalize(characterMovement);
+		return characterMovement;
+	}
+
 	void render(float frametime, float animTime) {
 		// Get current frame buffer size.
 		int width, height;
@@ -1307,7 +1337,7 @@ int main(int argc, char *argv[])
 	{
 		resourceDir = argv[1];
 	}
-
+	
 	Application *application = new Application();
 
 	// Your main will always include a similar set up to establish your window
@@ -1318,7 +1348,7 @@ int main(int argc, char *argv[])
 	windowManager->setEventCallbacks(application);
 	application->windowManager = windowManager;
 
-	glfwSetInputMode(windowManager->getHandle(), GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
+	glfwSetInputMode(windowManager->getHandle(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 	glfwSetWindowUserPointer(windowManager->getHandle(), application);
 	glfwSetCursorPosCallback(windowManager->getHandle(), mouseMoveCallbackWrapper);
 
