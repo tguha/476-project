@@ -38,8 +38,7 @@ class Player : public Entity {
         bool dodgeFlag;
 
     public:
-        Player(const glm::vec3& position, float hitpoints, float moveSpeed,
-            AssimpModel* model, const glm::vec3& scale);
+        Player(const glm::vec3& position, float hitpoints, float moveSpeed);
 
         void move(const glm::vec3& direction);
         SpellSlot getActiveSpellSlot();

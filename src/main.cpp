@@ -23,10 +23,6 @@
 // value_ptr for glm
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtx/quaternion.hpp> // For glm::quat and glm::rotation
-#include <glm/gtx/vector_angle.hpp> // Also sometimes needed for glm::rotation
-#include <algorithm>              // For std::remove_if
-#include <limits>                 // For std::numeric_limits (used in updateBoundingBox)
 
 using namespace std;
 using namespace glm;
@@ -53,27 +49,6 @@ enum class OrbState {
 	LEVITATING,// Moving upwards
 	IDLE,      // Stationary, ready for collection
 	COLLECTED // Visually attached to player (handled by drawing logic)
-};
-
-// --- SpellProjectile Struct ---
-struct SpellProjectile {
-	glm::vec3 position;
-	glm::vec3 direction;
-	glm::vec3 scale = glm::vec3(0.05f, 0.05f, 0.6f);
-	float speed = 20.0f;
-	float lifetime = 2.0f;
-	float spawnTime = 0.0f;
-	bool active = true;
-	AssimpModel* model = nullptr;
-
-	glm::vec3 aabbMin;
-	glm::vec3 aabbMax;
-	glm::mat4 transform; // Still useful for drawing
-
-	SpellProjectile(glm::vec3 startPos, glm::vec3 dir, float time, AssimpModel* mdl)
-		: position(startPos), direction(normalize(dir)), spawnTime(time), model(mdl), transform(1.0f) // Initialize transform
-	{
-	}
 };
 
 class Book {
@@ -317,12 +292,6 @@ public:
 	int orbsCollectedCount = 0;
 	std::vector<Enemy*> enemies;
 
-	// --- Spell Projectiles ---
-	std::vector<SpellProjectile> activeSpells;
-	glm::vec3 baseSphereLocalAABBMin; // Store base sphere AABB once
-	glm::vec3 baseSphereLocalAABBMax;
-	bool sphereAABBCalculated = false;
-
 	// character bounding box
 	glm::vec3 manAABBmin, manAABBmax;
 
@@ -395,6 +364,7 @@ public:
 	float characterRotation = 0.0f;
 
 	Man_State manState = STANDING;
+
 
 	LibraryGen *library = new LibraryGen();
 	Grid<LibraryGen::CellType> grid;
@@ -582,7 +552,8 @@ public:
 
 		if (action == GLFW_PRESS)
 		{
-			shootSpell();
+			 glfwGetCursorPos(window, &posX, &posY);
+			 cout << "Pos X " << posX << " Pos Y " << posY << endl;
 		}
 	}
 
@@ -716,27 +687,10 @@ public:
 		// load the sphere (spell)
 		sphere = new AssimpModel(resourceDirectory + "/SmoothSphere.obj");
 
-		baseSphereLocalAABBMin = sphere->getBoundingBoxMin();
-		baseSphereLocalAABBMax = sphere->getBoundingBoxMax();
-		sphereAABBCalculated = true;
-		cout << "[DEBUG] Stored Base Sphere Local AABB." << endl;
-
 		// --- Initialize Enemy(s) ---
-		cout << "Initializing enemies..." << endl;
-		// Use the scale factor used in drawEnemies
-		// Body scale was (0.5f, bodyBaseScaleY * 1.6f, 0.5f) where bodyBaseScaleY = 0.8f => (0.5, 1.28, 0.5)
-		glm::vec3 enemyCollisionScale = glm::vec3(0.5f, 1.28f, 0.5f); // Define the scale
-		vec3 bossSpawnPos = bossAreaCenter + vec3(0.0f, 0.8f, 0.0f);
-
-		// Check if sphere model is loaded before creating enemies that use it
-		if (sphere) {
-			enemies.push_back(new Enemy(bossSpawnPos, 200.0f, 0.0f, sphere, enemyCollisionScale)); // <<-- Pass sphere and scale
-			cout << " Enemy placed at boss area: (" << bossSpawnPos.x << ", " << bossSpawnPos.y << ", " << bossSpawnPos.z << ")" << endl;
-			enemies.push_back(new Enemy(libraryCenter + vec3(-5.0f, 0.8f, 8.0f), 50.0f, 0.0f, sphere, enemyCollisionScale)); // <<-- Pass sphere and scale
-		}
-		else {
-			cerr << "ERROR: Sphere model not loaded, cannot create enemies." << endl;
-		}
+		vec3 bossStartPos = bossAreaCenter;
+		bossStartPos.y = 1.0f;
+		enemies.push_back(new Enemy(bossStartPos, 10.0f, 0.0f)); // Pos, HP, Speed
 	}
 
 	void SetMaterialMan(shared_ptr<Program> curS, int i) {
@@ -1420,7 +1374,7 @@ public:
 	void updateEnemies(float deltaTime) {
 		// TODO: Add enemy movement, AI, attack logic later
 		for (auto* enemy : enemies) {
-			if (!enemy || !enemy->isAlive()) enemy->setPosition(enemy->getPosition() - vec3(0.0f, 3.0f, 0.0f));
+			if (!enemy || !enemy->isAlive()) continue;
 			// Example: Simple bobbing motion
 			// float bobSpeed = 2.0f;
 			// float bobHeight = 0.05f;
@@ -1597,143 +1551,6 @@ public:
 		return characterMovement; // Return the final, potentially adjusted, position
 	}
 
-	// --- Shooting Function ---
-	void shootSpell() {
-		cout << "[DEBUG] shootSpell() called. Orbs: " << orbsCollectedCount << endl;
-		if (orbsCollectedCount <= 0 || !sphere || !sphereAABBCalculated) {
-			cout << "[DEBUG] Cannot shoot: No orbs or sphere model not ready." << endl;
-			return; // Need orbs and the sphere model/AABB
-		}
-
-		// Consume an orb
-		orbsCollectedCount--;
-		// Remove visual orb logic... (find first collected orb and erase)
-		for (auto it = orbCollectibles.begin(); it != orbCollectibles.end(); ++it) {
-			if (it->collected) {
-				orbCollectibles.erase(it);
-				break;
-			}
-		}
-
-		// *** Use Character's Forward Direction ***
-		// 'manMoveDir' is updated in updateCameraVectors based on manRot.y (which matches theta)
-		vec3 shootDir = manMoveDir; // Already normalized and horizontal
-
-		// *** Use Character's Right Vector ***
-		// Calculate the horizontal right vector based on manMoveDir
-		vec3 playerRight = normalize(cross(manMoveDir, vec3(0.0f, 1.0f, 0.0f)));
-
-
-		// Spawn Position Calculation (relative to character's position and orientation)
-		float forwardOffset = 0.5f; // How far in front of player center
-		float upOffset = 0.8f;      // Height relative to player base (groundY)
-		float rightOffset = 0.2f;   // Offset to the side (e.g., right hand)
-
-		vec3 spawnPos = characterMovement
-			+ vec3(0.0f, upOffset, 0.0f) // Vertical offset from base
-			+ shootDir * forwardOffset   // Forward offset along character's facing direction
-			+ playerRight * rightOffset; // Sideways offset along character's right
-
-		// Create and add projectile
-		activeSpells.emplace_back(spawnPos, shootDir, (float)glfwGetTime(), sphere);
-		cout << "[DEBUG] Spell Fired! Start:(" << spawnPos.x << "," << spawnPos.y << "," << spawnPos.z
-			<< ") Dir: (" << shootDir.x << "," << shootDir.y << "," << shootDir.z // y should be 0
-			<< "). Active spells: " << activeSpells.size() << endl;
-	}
-
-	// --- updateProjectiles ---
-	void updateProjectiles(float deltaTime) {
-		if (!sphereAABBCalculated) return;
-
-		float damageAmount = 25.0f;
-
-		// Iterate using index for potential removal
-		for (int i = 0; i < activeSpells.size(); ++i) {
-			if (!activeSpells[i].active) continue;
-
-			SpellProjectile& proj = activeSpells[i]; // Use reference
-
-			// Check lifetime
-			if (glfwGetTime() - proj.spawnTime > proj.lifetime) {
-				proj.active = false;
-				// cout << "[DEBUG] Spell lifetime expired." << endl;
-				continue;
-			}
-
-			// Update position
-			proj.position += proj.direction * proj.speed * deltaTime;
-
-			// Calculate transform HERE
-			glm::quat rotation = glm::rotation(glm::vec3(0.0f, 0.0f, 1.0f), proj.direction);
-			proj.transform = glm::translate(glm::mat4(1.0f), proj.position) * glm::mat4_cast(rotation) * glm::scale(glm::mat4(1.0f), proj.scale);
-
-			// Update AABB using Application's function
-			this->updateBoundingBox(baseSphereLocalAABBMin, baseSphereLocalAABBMax, proj.transform, proj.aabbMin, proj.aabbMax);
-
-			// Check collision with enemies
-			for (auto* enemy : enemies) {
-				if (!enemy || !enemy->isAlive()) continue;
-
-				// Ensure enemy AABB is up-to-date (call if they move)
-				// enemy->updateAABB();
-
-				if (checkAABBCollision(proj.aabbMin, proj.aabbMax, enemy->getAABBMin(), enemy->getAABBMax())) {
-					cout << "[DEBUG] Spell HIT enemy!" << endl;
-					enemy->takeDamage(damageAmount);
-					proj.active = false; // Deactivate projectile
-					break; // Hit one enemy
-				}
-			}
-		} // End loop
-
-		// Remove inactive projectiles
-		activeSpells.erase(
-			std::remove_if(activeSpells.begin(), activeSpells.end(),
-				[](const SpellProjectile& p) { return !p.active; }),
-			activeSpells.end()
-		);
-	}
-
-	void drawProjectiles(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
-		if (!shader || !Model || !sphere) return; // Need shader, stack, model
-
-		shader->bind();
-		// Set material for projectiles (e.g., bright yellow/white, maybe emissive if shader supports)
-		SetMaterialMan(shader, 0); // Gold material for now
-		glUniform3f(shader->getUniform("MatAmb"), 0.8f, 0.8f, 0.1f);
-		glUniform3f(shader->getUniform("MatDif"), 1.0f, 1.0f, 0.5f);
-		glUniform3f(shader->getUniform("MatSpec"), 1.0f, 1.0f, 1.0f);
-		glUniform1f(shader->getUniform("MatShine"), 64.0f);
-		// Optional: Emissive properties if shader supports them
-		// if(shader->hasUniform("hasEmittance")) glUniform1i(shader->getUniform("hasEmittance"), 1);
-		// if(shader->hasUniform("MatEmitt")) glUniform3f(shader->getUniform("MatEmitt"), 1.0f, 1.0f, 0.8f);
-
-		for (const auto& proj : activeSpells) {
-			if (!proj.active) continue;
-
-			Model->pushMatrix();
-			Model->loadIdentity(); // Start from identity for projectile
-
-			// Use the pre-calculated transform from updateAABB
-			Model->multMatrix(proj.transform);
-
-			/* // --- Manual Transform Calculation (Alternative to using proj.transform) ---
-			Model->translate(proj.position);
-			// Calculate rotation to align local Z with direction
-			glm::quat rotation = glm::rotation(glm::vec3(0.0f, 0.0f, 1.0f), proj.direction);
-			Model->multMatrix(glm::mat4_cast(rotation));
-			Model->scale(proj.scale);
-			*/
-
-			setModel(shader, Model);
-			proj.model->Draw(shader); // Draw the sphere model
-
-			Model->popMatrix();
-		}
-
-		shader->unbind();
-	}
-
 	void render(float frametime, float animTime) {
 		// Get current frame buffer size.
 		int width, height;
@@ -1752,18 +1569,21 @@ public:
 
 		// --- Update Game Logic ---
 		charMove();
-		updateCameraVectors();
-		updateBooks(frametime);
+		updateCameraVectors(); // Update camera AFTER charMove
+		updateBooks(frametime); // Updates spawned books (falling, opening, etc.)
 		updateOrbs((float)glfwGetTime());
 		updateEnemies(frametime);
-		updateProjectiles(frametime);
 
-		// --- Setup Camera ---
+		// Apply perspective projection
 		Projection->pushMatrix();
-		Projection->perspective(radians(45.0f), aspect, 0.1f, 1000.0f); // Adjusted near/far
+
+		// Projection->perspective(45.0f, aspect, 0.01f, 200.0f);
+		Projection->perspective(45.0f, aspect, 0.01f, 400.0f);
+
+		// View is global translation along negative z for now
 		View->pushMatrix();
 		View->loadIdentity();
-		View->lookAt(eye, lookAt, up); // Use updated eye/lookAt
+		View->lookAt(eye, lookAt, vec3(0, 1, 0));
 
 		// --- Setup Lights ---
 		// Example: One bright light in the library, one dimmer in boss area
@@ -1843,8 +1663,6 @@ public:
 
 		// 6. Draw Collectible Orbs
 		drawOrbs(prog2, Model);
-
-		drawProjectiles(prog2, Model);
 
 		// 7. Draw Player (often drawn last or near last)
 		drawPlayer(assimptexProg, Model, animTime);
