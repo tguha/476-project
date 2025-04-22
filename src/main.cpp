@@ -16,6 +16,7 @@
 #include "AssimpModel.h"
 #include "Animator.h"
 #include "LightTrail.h"
+#include "Enemy.h"
 
 // value_ptr for glm
 #include <glm/gtc/type_ptr.hpp>
@@ -246,8 +247,8 @@ public:
 	// setup collectibles vector
 	std::vector<Collectible> orbCollectibles;
 	int orbsCollectedCount = 0;
-	float finishTime;
-	bool reset = false;
+	std::vector<Enemy*> enemies;
+
 	// character bounding box
 	glm::vec3 manAABBmin, manAABBmax;
 
@@ -654,6 +655,11 @@ public:
 			glm::vec3(0.6f, 0.8f, 0.15f), // Smaller book
 			glm::angleAxis(glm::radians(-5.0f), glm::vec3(0, 1, 0)),
 			glm::vec3(0.0f, 1.0f, 0.0f)); // Orb Color (Green)
+
+		// --- Initialize Enemies ---
+		// Create one enemy instance at position (e.g., 5, 1, 5) with 100 HP and 0 move speed (static for now)
+		// The vertical pill shape means the base sphere should be scaled more in Y.
+		enemies.push_back(new Enemy(glm::vec3(5.0f, 1.0f, 5.0f), 100.0f, 0.0f)); // Pos, HP, Speed
 	}
 
 	void SetMaterialMan(shared_ptr<Program> curS, int i) {
@@ -996,6 +1002,137 @@ public:
 		simpleShader->unbind();
 	}
 
+	void drawEnemies(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
+		if (!sphere) return; // Need the sphere model
+
+		shader->bind(); // Use prog2 for simple colored shapes
+
+		// --- Material Settings ---
+		glm::vec3 bodyColor = glm::vec3(0.6f, 0.2f, 0.8f); // Purple-ish body
+		glm::vec3 eyeWhiteColor = glm::vec3(1.0f, 1.0f, 1.0f);
+		glm::vec3 eyePupilColor = glm::vec3(0.1f, 0.1f, 0.1f);
+
+		// --- Common Eye Parameters ---
+		float bodyBaseScaleY = 0.8f; // Base height factor before pill stretch
+		glm::vec3 eyeOffsetBase = glm::vec3(0.0f, bodyBaseScaleY * 0.4f, 0.45f); // Y up, Z forward from body center
+		float eyeSeparation = 0.25f; // Distance between eye centers
+		float whiteScale = 0.18f;
+		float pupilScale = 0.1f;
+		float pupilOffsetForward = 0.02f; // Push pupil slightly in front of white
+
+
+		for (const auto* enemy : enemies) {
+			if (!enemy || !enemy->isAlive()) continue; // Skip null or dead enemies
+
+			glm::vec3 enemyPos = enemy->getPosition();
+
+			// --- Draw Main Body (Pill Shape) ---
+			Model->pushMatrix();
+			{
+				Model->translate(enemyPos);
+				// Scale for pill shape ( taller in Y, squished in X/Z )
+				Model->scale(glm::vec3(0.5f, bodyBaseScaleY * 1.6f, 0.5f)); // Adjust scale factors as needed
+
+				// Set body material
+				glUniform3f(shader->getUniform("MatAmb"), bodyColor.r * 0.3f, bodyColor.g * 0.3f, bodyColor.b * 0.3f);
+				glUniform3f(shader->getUniform("MatDif"), bodyColor.r, bodyColor.g, bodyColor.b);
+				glUniform3f(shader->getUniform("MatSpec"), 0.3f, 0.3f, 0.3f);
+				glUniform1f(shader->getUniform("MatShine"), 8.0f);
+
+				setModel(shader, Model);
+				sphere->Draw(shader); // Draw the scaled sphere as the body
+			}
+			Model->popMatrix();
+
+
+			// --- Draw Eyes (Relative to Enemy Center) ---
+
+			// Set Eye Materials Once
+			// White Material Setup (done inside loop per part for clarity now)
+			// Black Material Setup (done inside loop per part for clarity now)
+
+			// Left Eye
+			Model->pushMatrix();
+			{
+				// Go to enemy center, then offset to eye position
+				Model->translate(enemyPos);
+				Model->translate(eyeOffsetBase + glm::vec3(-eyeSeparation, 0, 0));
+
+				// White Part
+				Model->pushMatrix();
+				{
+					Model->scale(glm::vec3(whiteScale));
+					// Set white material
+					glUniform3f(shader->getUniform("MatAmb"), eyeWhiteColor.r * 0.3f, eyeWhiteColor.g * 0.3f, eyeWhiteColor.b * 0.3f);
+					glUniform3f(shader->getUniform("MatDif"), eyeWhiteColor.r, eyeWhiteColor.g, eyeWhiteColor.b);
+					glUniform3f(shader->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f);
+					glUniform1f(shader->getUniform("MatShine"), 4.0f);
+					setModel(shader, Model);
+					sphere->Draw(shader);
+				}
+				Model->popMatrix(); // Pop white scale
+
+				// Pupil Part
+				Model->pushMatrix();
+				{
+					// Move slightly forward from white surface and scale down
+					Model->translate(glm::vec3(0, 0, whiteScale * 0.5f + pupilOffsetForward)); // Offset relative to white scale
+					Model->scale(glm::vec3(pupilScale));
+					// Set black material
+					glUniform3f(shader->getUniform("MatAmb"), eyePupilColor.r * 0.3f, eyePupilColor.g * 0.3f, eyePupilColor.b * 0.3f);
+					glUniform3f(shader->getUniform("MatDif"), eyePupilColor.r, eyePupilColor.g, eyePupilColor.b);
+					glUniform3f(shader->getUniform("MatSpec"), 0.5f, 0.5f, 0.5f); // Some specular highlight
+					glUniform1f(shader->getUniform("MatShine"), 32.0f);
+					setModel(shader, Model);
+					sphere->Draw(shader);
+				}
+				Model->popMatrix(); // Pop pupil transform
+			}
+			Model->popMatrix(); // Pop left eye transform
+
+
+			// Right Eye (Similar to Left)
+			Model->pushMatrix();
+			{
+				Model->translate(enemyPos);
+				Model->translate(eyeOffsetBase + glm::vec3(+eyeSeparation, 0, 0)); // Offset to the right
+
+				// White Part
+				Model->pushMatrix();
+				{
+					Model->scale(glm::vec3(whiteScale));
+					// Set white material
+					glUniform3f(shader->getUniform("MatAmb"), eyeWhiteColor.r * 0.3f, eyeWhiteColor.g * 0.3f, eyeWhiteColor.b * 0.3f);
+					glUniform3f(shader->getUniform("MatDif"), eyeWhiteColor.r, eyeWhiteColor.g, eyeWhiteColor.b);
+					glUniform3f(shader->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f);
+					glUniform1f(shader->getUniform("MatShine"), 4.0f);
+					setModel(shader, Model);
+					sphere->Draw(shader);
+				}
+				Model->popMatrix();
+
+				// Pupil Part
+				Model->pushMatrix();
+				{
+					Model->translate(glm::vec3(0, 0, whiteScale * 0.5f + pupilOffsetForward));
+					Model->scale(glm::vec3(pupilScale));
+					// Set black material
+					glUniform3f(shader->getUniform("MatAmb"), eyePupilColor.r * 0.3f, eyePupilColor.g * 0.3f, eyePupilColor.b * 0.3f);
+					glUniform3f(shader->getUniform("MatDif"), eyePupilColor.r, eyePupilColor.g, eyePupilColor.b);
+					glUniform3f(shader->getUniform("MatSpec"), 0.5f, 0.5f, 0.5f);
+					glUniform1f(shader->getUniform("MatShine"), 32.0f);
+					setModel(shader, Model);
+					sphere->Draw(shader);
+				}
+				Model->popMatrix();
+			}
+			Model->popMatrix(); // Pop right eye transform
+
+		} // End loop through enemies
+
+		shader->unbind();
+	}
+
 	bool checkAABBCollision(const glm::vec3& minA, const glm::vec3& maxA,
 		const glm::vec3& minB, const glm::vec3& maxB)
 	{
@@ -1063,6 +1200,21 @@ public:
 		}
 	}
 
+	void updateEnemies(float deltaTime) {
+		// TODO: Add enemy movement, AI, attack logic later
+		for (auto* enemy : enemies) {
+			if (!enemy || !enemy->isAlive()) continue;
+			// Example: Simple bobbing motion
+			// float bobSpeed = 2.0f;
+			// float bobHeight = 0.05f;
+			// glm::vec3 currentPos = enemy->getPosition();
+			// enemy->setPosition(glm::vec3(currentPos.x, 0.8f + sin(glfwGetTime() * bobSpeed) * bobHeight, currentPos.z));
+
+			 // IMPORTANT: Update enemy AABB if it moves
+			 // enemy->updateAABB(); // Need to add AABB members and update method to Enemy/Entity class
+		}
+	}
+
 	void render(float frametime, float animTime) {
 		// Get current frame buffer size.
 		int width, height;
@@ -1081,6 +1233,7 @@ public:
 
 		updateBooks(frametime);
 		updateOrbs(glfwGetTime());
+		updateEnemies(frametime);
 
 		// Apply perspective projection
 		Projection->pushMatrix();
@@ -1125,6 +1278,8 @@ public:
 		texProg->unbind();
 
 		drawGround(prog2, Model);
+
+		drawEnemies(prog2, Model);
 
 		drawPlayer(assimptexProg, Model, animTime);
 		
