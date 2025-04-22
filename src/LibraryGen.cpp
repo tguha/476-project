@@ -23,7 +23,7 @@ void LibraryGen::generate(glm::ivec2 size, glm::ivec2 offset) {
 
     seedGen.seed(std::random_device()());
 
-    int numberOfClusters = size.x * size.y / 200; // Destiny controls the number of clusters
+    int numberOfClusters = size.x * size.y / 50; // Destiny controls the number of clusters
     // int numberOfClusters = 10;
 
     placeClusters(numberOfClusters);
@@ -58,7 +58,7 @@ void LibraryGen::placeClusters(int count) {
 
         // Check if the position is already occupied or too close to existing clusters
         for (const auto& center : clusterCenters) {
-            if (glm::distance(glm::vec2(center), glm::vec2(pos)) < 10.0f) { // Adjust this number for spacing
+            if (glm::distance(glm::vec2(center), glm::vec2(pos)) < 3.0f) { // Adjust this number for spacing
                 valid = false;
                 break;
             }
@@ -70,13 +70,28 @@ void LibraryGen::placeClusters(int count) {
             clusterCenters.push_back(pos);
 
             // Controls whats inside the cluster - currently just a 3x3 square
-            for (int y = -1; y <= 1; y++) {
-                for (int x = -1; x <= 1; x++) {
-                    glm::ivec2 shelfPos = pos + glm::ivec2(x, y);
-                    if (grid.inBounds(shelfPos)) {
-                        grid[shelfPos] = SHELF;
-                    }
-                }
+            // for (int y = -1; y <= 1; y++) {
+            //     for (int x = -1; x <= 1; x++) {
+            //         glm::ivec2 shelfPos = pos + glm::ivec2(x, y);
+            //         if (grid.inBounds(shelfPos)) {
+            //             grid[shelfPos] = SHELF;
+            //         }
+            //     }
+
+            // side by side shelves
+            // for (int y = -1; y < 1; y++) {
+            //     for (int x = -1; x < 1; x++) {
+            //         glm::ivec2 shelfPos = pos + glm::ivec2(y, x);
+            //         if (grid.inBounds(shelfPos)) {
+            //             grid[shelfPos] = SHELF;
+            //         }
+            //     }
+            // }
+
+            if (grid.inBounds(pos)) {
+                grid[pos] = SHELF; // Mark the position as a shelf
+            } else {
+                std::cerr << "Cluster position out of bounds: " << pos.x << ", " << pos.y << std::endl;
             }
         }
     }

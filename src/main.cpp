@@ -79,6 +79,7 @@ public:
 	glm::vec3 manAABBmin, manAABBmax;
 
 	AssimpModel *cube, *barrel, *creeper, *alien, *wizard_hat, *fish, *cylinder;
+	AssimpModel *book_shelf1;
 
 	AssimpModel *stickfigure_running, *stickfigure_standing;
 	Animation *stickfigure_anim, *stickfigure_idle;
@@ -445,7 +446,7 @@ public:
 		assimptexProg->addUniform("hasTexture");
 		updateCameraVectors();
 
-		library->generate(glm::ivec2(100, 100));
+		library->generate(glm::ivec2(30, 30));
 		grid = library->getGrid();
 
 	}
@@ -462,6 +463,11 @@ public:
 
 		// load the cube
 		cube = new AssimpModel(resourceDirectory + "/cube.obj");
+
+		book_shelf1 = new AssimpModel(resourceDirectory + "/book_shelf/source/bookshelf_cluster.obj");
+
+		book_shelf1->assignTexture("texture_diffuse1", resourceDirectory + "/book_shelf/textures/bookstack_textures_2.jpg");
+		book_shelf1->assignTexture("texture_specular1", resourceDirectory + "/book_shelf/textures/bookstack_specular.jpg");
 
 		// load the barrel
 		barrel = new AssimpModel(resourceDirectory + "/Barrel/Barrel_OBJ.obj");
@@ -786,32 +792,23 @@ public:
 
 		for (int z = 0; z < grid.getSize().y; ++z) {
 			for (int x = 0; x < grid.getSize().x; ++x) {
-				glm::ivec2 pos(x - grid.getOffset().x, z - grid.getOffset().y);
-				LibraryGen::CellType cell = grid.at(x, z);
+				// glm::ivec2 pos(x - grid.getOffset().x, z - grid.getOffset().y);
+				glm::ivec2 pos(x, z);
+				LibraryGen::CellType cell = grid[pos];
 
 				if (cell == LibraryGen::SHELF) {
 					Model->pushMatrix();
 						Model->loadIdentity();
-						Model->translate(vec3(x, 0, z));
-						Model->scale(vec3(2.0f, 10.0f, 2.0f));
-						SetMaterialMan(assimptexProg, 1);
-						setModel(assimptexProg, Model);
-						cube->Draw(assimptexProg);
-					Model->popMatrix();
-				} else if (cell == LibraryGen::PATH) {
-					Model->pushMatrix();
-						Model->loadIdentity();
-						Model->translate(vec3(x, 0, z));
+						Model->translate(vec3(x - 15, 0, z - 15));
+						glUniform1i(assimptexProg->getUniform("hasTexture"), 1);
 						Model->scale(vec3(2.0f));
-						SetMaterialMan(assimptexProg, 2);
+						// SetMaterialMan(assimptexProg, 1);
 						setModel(assimptexProg, Model);
-						cube->Draw(assimptexProg);
+						book_shelf1->Draw(assimptexProg);
 					Model->popMatrix();
 				}
 			}
 		}
-
-		assimptexProg->unbind();
 
 		// Draw the collectibles with the simple texture shader
 		texProg->bind();
