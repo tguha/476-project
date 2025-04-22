@@ -20,7 +20,6 @@
 // #include "Grid.h"
 #include "Enemy.h"
 
-
 // value_ptr for glm
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -1308,6 +1307,22 @@ public:
 		glUniform1f(assimptexProg->getUniform("lightIntensity[0]"), 0.0); // light intensity
 		glUniform3f(assimptexProg->getUniform("lightPos[0]"), 0, 10, 0); // light position at the computer screen
 		glUniform1i(assimptexProg->getUniform("numLights"), 1); // light position at the computer screen
+		for (int z = 0; z < grid.getSize().y; ++z) {
+			for (int x = 0; x < grid.getSize().x; ++x) {
+				glm::ivec2 pos(x, z);
+				LibraryGen::CellType cell = grid[pos];
+				if (cell == LibraryGen::SHELF) {
+					Model->pushMatrix();
+					Model->loadIdentity();
+					Model->translate(vec3(x - 15, 0, z - 15));
+					glUniform1i(assimptexProg->getUniform("hasTexture"), 1);
+					Model->scale(vec3(2.0f));
+					setModel(assimptexProg, Model);
+					book_shelf1->Draw(assimptexProg);
+					Model->popMatrix();
+				}
+			}
+		}
 		assimptexProg->unbind();
 
 		texProg->bind();
