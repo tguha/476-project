@@ -1361,7 +1361,7 @@ int main(int argc, char *argv[])
 	glfwSetInputMode(windowManager->getHandle(), GLFW_STICKY_KEYS, GLFW_TRUE);
 
 	cout << "Controls: " << endl << "WASD: Move" << endl << "Mouse: Look around" << endl
-		<< "'F': Interact with book" << "F11 Fullscreen" << endl << "'L': Toggle cursor mode";
+		<< "'F': Interact with book" << "F11 Fullscreen" << endl << "'L': Toggle cursor mode" << endl;
 
 	// Loop until the user closes the window.
 	while (! glfwWindowShouldClose(windowManager->getHandle()))
