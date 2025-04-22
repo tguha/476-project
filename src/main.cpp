@@ -86,29 +86,58 @@ public:
 	}
 
 	// Method to start the fall
-	void startFalling(float groundY) {
-		if (state == BookState::ON_SHELF) {
-			state = BookState::FALLING;
-			fallStartTime = glfwGetTime();
-
-			glm::vec3 endPosition = position;
-			endPosition.y = groundY + (scale.y * 0.5f); // Land flat on the ground based on scale
-
-			// Add some randomness to landing spot and arc
-			float offsetX = randFloat(-0.5f, 0.5f);
-			float offsetZ = randFloat(-0.5f, 0.5f);
-			endPosition.x += offsetX;
-			endPosition.z += offsetZ;
-
-			// Simple control point for a basic arc
-			glm::vec3 controlPoint = (initialPosition + endPosition) * 0.5f; // Midpoint
-			controlPoint.y += 2.0f; // Arc upwards
-			controlPoint.x += randFloat(-1.0f, 1.0f); // Random horizontal arc deviation
-
-			// Create spline (quadratic example, cubic needs another control point)
-			delete fallSpline; // Delete old one if any (shouldn't happen in this flow)
-			fallSpline = new Spline(initialPosition, controlPoint, endPosition, 0.25f); // 0.25 second fall duration
+	void startFalling(float groundY, const glm::vec3& playerPos) {
+		// Check state BEFORE accessing initialPosition etc.
+		if (state != BookState::ON_SHELF) {
+			return; // Already falling or in another state
 		}
+
+		state = BookState::FALLING;
+		fallStartTime = (float)glfwGetTime(); // Cast to float
+
+		// --- Calculate Landing Position (End Point) ---
+		glm::vec3 endPosition;
+		endPosition.y = groundY + (scale.y * 0.5f); // Land flat based on book scale
+
+		// Calculate direction away from player towards the book's spawn point
+		// Flatten the direction to the XZ plane to avoid influencing landing Y
+		glm::vec3 dirToBook = playerPos - initialPosition;
+		dirToBook.y = 0.0f; // Ignore vertical difference for landing direction
+
+		// Handle case where player is exactly at the spawn point (or very close)
+		float distSq = dot(dirToBook, dirToBook); // Use dot product for squared length
+		if (distSq < 0.01f) { // If too close, pick a default direction (e.g., positive Z)
+			dirToBook = glm::vec3(0.0f, 0.0f, 1.0f);
+		}
+		else {
+			dirToBook = normalize(dirToBook); // Normalize the direction vector
+		}
+
+		// Define how far the book should land
+		float landingDistance = 3.0f; // <-- ADJUST this value to throw further
+		float randomSpread = 0.75f; // <-- Randomness around the target landing spot
+
+		// Calculate landing X and Z based on direction and distance + randomness
+		endPosition.x = initialPosition.x + dirToBook.x * landingDistance + randFloat(-randomSpread, randomSpread);
+		endPosition.z = initialPosition.z + dirToBook.z * landingDistance + randFloat(-randomSpread, randomSpread);
+
+
+		// --- Calculate Control Point for the Arc ---
+		glm::vec3 controlPoint = (initialPosition + endPosition) * 0.5f; // Midpoint between start and end
+		// Make the arc higher relative to the start position
+		controlPoint.y = initialPosition.y + 3.0f; // <-- ADJUST arc height (relative to start)
+		// Add some sideways deviation to the arc's peak
+		controlPoint.x += randFloat(-1.5f, 1.5f); // More horizontal arc randomness
+
+		// --- Create the Spline ---
+		float fallDuration = 0.4f; // <-- ADJUST fall duration if needed
+		delete fallSpline;
+		fallSpline = new Spline(initialPosition, controlPoint, endPosition, fallDuration);
+
+		// Debug output (optional)
+		// cout << "Book Falling: Start=" << initialPosition.x << "," << initialPosition.y << "," << initialPosition.z
+		//      << " End=" << endPosition.x << "," << endPosition.y << "," << endPosition.z
+		//      << " Dir=" << dirToBook.x << "," << dirToBook.z << endl;
 	}
 
 	// Method to update the book's state and position
@@ -651,30 +680,10 @@ public:
 		// load the sphere (spell)
 		sphere = new AssimpModel(resourceDirectory + "/SmoothSphere.obj");
 
-		books.emplace_back(cube, sphere,
-			glm::vec3(5.0f, 2.0f, 0.0f),  // Initial Position (on a shelf)
-			glm::vec3(0.8f, 1.0f, 0.2f),  // Scale (Width, Height, Thickness)
-			glm::angleAxis(glm::radians(0.0f), glm::vec3(0, 1, 0)), // Orientation (upright)
-			glm::vec3(1.0f, 0.0f, 0.0f)); // Orb Color (Red)
-
-		books.emplace_back(cube, sphere,
-			glm::vec3(5.0f, 2.0f, 0.5f),  // Position
-			glm::vec3(0.8f, 1.0f, 0.2f),  // Scale
-			glm::angleAxis(glm::radians(10.0f), glm::vec3(0, 1, 0)), // Slightly rotated
-			glm::vec3(0.0f, 0.0f, 1.0f)); // Orb Color (Blue)
-
-		books.emplace_back(cube, sphere,
-			glm::vec3(5.0f, 1.0f, -0.5f), // Lower shelf
-			glm::vec3(0.6f, 0.8f, 0.15f), // Smaller book
-			glm::angleAxis(glm::radians(-5.0f), glm::vec3(0, 1, 0)),
-			glm::vec3(0.0f, 1.0f, 0.0f)); // Orb Color (Green)
-
-		// --- Initialize Enemies ---
-		// Create one enemy instance at position (e.g., 5, 1, 5) with 100 HP and 0 move speed (static for now)
-		// The vertical pill shape means the base sphere should be scaled more in Y.
+		// --- Initialize Enemy(s) ---
 		vec3 bossStartPos = bossAreaCenter;
 		bossStartPos.y = 1.0f;
-		enemies.push_back(new Enemy(bossAreaCenter, 100.0f, 0.0f)); // Pos, HP, Speed
+		enemies.push_back(new Enemy(bossStartPos, 10.0f, 0.0f)); // Pos, HP, Speed
 	}
 
 	void SetMaterialMan(shared_ptr<Program> curS, int i) {
@@ -1268,33 +1277,60 @@ public:
 	}
 
 	void interactWithBooks() {
+		float interactionRadius = 5.0f;
+		float interactionRadiusSq = interactionRadius * interactionRadius;
 
-		// Player's AABB (manAABBmin, manAABBmax) is assumed to be updated from drawPlayer
-		for (auto& book : books) {
-			// Only check for interaction if the book is on the shelf
-			if (book.state == BookState::ON_SHELF) {
+		float gridWorldWidth = groundSize * 2.0f;
+		float gridWorldDepth = groundSize * 2.0f;
+		float cellWidth = gridWorldWidth / (float)grid.getSize().x;
+		float cellDepth = gridWorldDepth / (float)grid.getSize().y;
 
-				// 1. Define the Book's Local AABB (Approximation when closed)
-				// We approximate the closed book as a single box with dimensions book.scale
-				// centered at the origin.
-				glm::vec3 bookLocalMin = -book.scale * 0.5f;
-				glm::vec3 bookLocalMax = book.scale * 0.5f;
+		bool interacted = false;
 
-				// 2. Calculate the Book's World Transformation Matrix
-				glm::mat4 bookWorldTransform = glm::translate(glm::mat4(1.0f), book.position) *
-					glm::mat4_cast(book.orientation);
+		for (int z = 0; z < grid.getSize().y && !interacted; ++z) {
+			for (int x = 0; x < grid.getSize().x && !interacted; ++x) {
+				glm::ivec2 gridPos(x, z);
+				if (grid[gridPos] == LibraryGen::SHELF) {
+					float shelfWorldX = libraryCenter.x - gridWorldWidth * 0.5f + (x + 0.5f) * cellWidth;
+					float shelfWorldZ = libraryCenter.z - gridWorldDepth * 0.5f + (z + 0.5f) * cellDepth;
+					glm::vec3 shelfCenterPos = glm::vec3(shelfWorldX, groundY + 1.0f, shelfWorldZ);
 
-				// 3. Calculate the Book's World AABB
-				glm::vec3 bookWorldMin, bookWorldMax;
-				updateBoundingBox(bookLocalMin, bookLocalMax, bookWorldTransform, bookWorldMin, bookWorldMax);
+					glm::vec3 diff = shelfCenterPos - characterMovement;
+					diff.y = 0.0f; // Ignore Y difference for interaction distance
+					float distSq = dot(diff, diff); // Use dot product for squared distance
 
-				// 4. Perform AABB Collision Check
-				if (checkAABBCollision(manAABBmin, manAABBmax, bookWorldMin, bookWorldMax)) {
-					// Collision detected! Trigger the fall.
-					book.startFalling(0);
-					break; // break here so we only trigger one book
+					if (distSq <= interactionRadiusSq) {
+
+						// --- ADJUST Spawn Height ---
+						float minSpawnHeight = 1.8f; // Minimum height above groundY
+						float maxSpawnHeight = 2.8f; // Maximum height above groundY
+						float spawnHeight = groundY + randFloat(minSpawnHeight, maxSpawnHeight); // <-- ADJUSTED height range
+
+						glm::vec3 spawnPos = glm::vec3(shelfWorldX, spawnHeight, shelfWorldZ);
+
+						glm::vec3 bookScale = glm::vec3(0.7f, 0.9f, 0.2f);
+						glm::quat bookOrientation = glm::angleAxis(glm::radians(randFloat(-10.f, 10.f)), glm::vec3(0, 1, 0));
+						glm::vec3 orbColor = glm::vec3(randFloat(0.2f, 1.0f), randFloat(0.2f, 1.0f), randFloat(0.2f, 1.0f));
+
+						books.emplace_back(cube, sphere, spawnPos, bookScale, bookOrientation, orbColor);
+
+						Book& newBook = books.back();
+
+						// --- PASS Player Position to startFalling ---
+						newBook.startFalling(groundY, characterMovement); // <<-- MODIFIED call
+
+						interacted = true;
+						break;
+					}
 				}
 			}
+		}
+
+		if (interacted) {
+			cout << "Book spawned and falling." << endl;
+		}
+		else {
+			cout << "No shelf nearby to interact with." << endl;
 		}
 	}
 
@@ -1316,7 +1352,6 @@ public:
 			// float bobHeight = 0.05f;
 			// glm::vec3 currentPos = enemy->getPosition();
 			// enemy->setPosition(glm::vec3(currentPos.x, 0.8f + sin(glfwGetTime() * bobSpeed) * bobHeight, currentPos.z));
-
 			 // IMPORTANT: Update enemy AABB if it moves
 			 // enemy->updateAABB(); // Need to add AABB members and update method to Enemy/Entity class
 		}
@@ -1375,7 +1410,10 @@ public:
 		auto View = make_shared<MatrixStack>();
 		auto Model = make_shared<MatrixStack>();
 
-		updateBooks(frametime);
+		// --- Update Game Logic ---
+		charMove();
+		updateCameraVectors(); // Update camera AFTER charMove
+		updateBooks(frametime); // Updates spawned books (falling, opening, etc.)
 		updateOrbs((float)glfwGetTime());
 		updateEnemies(frametime);
 
@@ -1526,8 +1564,7 @@ int main(int argc, char *argv[])
 		<< "'F': Interact with book" << "F11 Fullscreen" << endl << "'L': Toggle cursor mode" << endl;
 
 	// Loop until the user closes the window.
-	while (! glfwWindowShouldClose(windowManager->getHandle()))
-	{
+	while (! glfwWindowShouldClose(windowManager->getHandle())) {
 		auto nextLastTIme = chrono::high_resolution_clock::now();
 
 		float deltaTime = chrono::duration_cast<chrono::microseconds>(chrono::high_resolution_clock::now() - lastTime).count();
