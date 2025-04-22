@@ -31,7 +31,7 @@ class SimplePriorityQueue {
                     return item.item; // Return the item
                 }
             }
-            return Pathfinder::Node(); // Return a default node if the queue is empty
+            return T(); // Return a default node if the queue is empty
         }
 
         bool tryGetPriority(T* item, float& outPriority) {

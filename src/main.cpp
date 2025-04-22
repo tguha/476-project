@@ -330,6 +330,9 @@ public:
 
 	AssimpModel *cube, *sphere;
 
+	//border
+	AssimpModel *border;
+
 	//  vector of books
 	vector<Book> books;
 
@@ -1045,7 +1048,25 @@ public:
 		shader->unbind();
 	}
 
-	void Application::drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
+	void drawBorder(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model){
+		shader->bind();
+
+		glUniform3f(shader->getUniform("MatAmb"), 0.15f, 0.08f, 0.03f);
+		glUniform3f(shader->getUniform("MatDif"), 0.6f, 0.3f, 0.1f);
+		glUniform3f(shader->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f);
+		glUniform1f(shader->getUniform("MatShine"), 4.0f);
+		glUniform1i(shader->getUniform("hasEmittance"), 0);
+
+		Model->pushMatrix();
+			Model->scale(0.28);
+			setModel(shader, Model);
+			border->Draw(shader);
+		Model->popMatrix();
+		shader->unbind();
+	}
+
+
+	void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 		// --- Collision Check Logic ---
 		for (auto& orb : orbCollectibles) {
@@ -1113,6 +1134,7 @@ public:
 
 		simpleShader->unbind();
 	}
+
 
 	void drawEnemies(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		if (!sphere) return; // Need the sphere model
@@ -1826,6 +1848,13 @@ public:
 
 		// 7. Draw Player (often drawn last or near last)
 		drawPlayer(assimptexProg, Model, animTime);
+
+
+		drawBorder(prog2, Model);
+
+
+
+
 
 		// --- Cleanup ---
 		Projection->popMatrix();
