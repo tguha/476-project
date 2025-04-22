@@ -236,7 +236,7 @@ class Application : public EventCallbacks {
 
 public:
 	WindowManager * windowManager = nullptr;
-	
+
 	bool windowMaximized = false;
 	int window_width = 640;
 	int window_height = 480;
@@ -320,7 +320,7 @@ public:
 	bool movingBackward = false;
 	bool movingLeft = false;
 	bool movingRight = false;
-	
+
 	float characterRotation = 0.0f;
 
 	Man_State manState = STANDING;
@@ -397,7 +397,7 @@ public:
 		}
 		if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_D) != GLFW_RELEASE) {
 			manState = WALKING;
-			
+
 			//Movement Variable
 			movingRight = true;
 
@@ -500,12 +500,12 @@ public:
 		// cout << "Theta: " << theta << " Phi: " << phi << endl;
 		manMoveDir = vec3(sin(manRot.y), 0, cos(manRot.y));
 		right = normalize(cross(manMoveDir, up));
-		
+
 		// lookAt = eye + front;
 
 
 	}
-	
+
 	void mouseCallback(GLFWwindow *window, int button, int action, int mods)
 	{
 		double posX, posY;
@@ -821,7 +821,7 @@ public:
 
 	void drawPlayer(shared_ptr<Program> curS, shared_ptr<MatrixStack> Model, float animTime) {
 		curS->bind();
-		
+
 		// select animation for vanguard model
 		stickfigure_animator->UpdateAnimation(1.5 * animTime);
 		if (manState == WALKING) {
@@ -840,7 +840,7 @@ public:
 		// set the model matrix and draw the walking character model
 		Model->pushMatrix();
 		Model->loadIdentity();
-    
+
     //Character Movement - REFACTOR
 		charMove();
 		Model->translate(characterMovement);
@@ -1149,7 +1149,7 @@ public:
 				if (cell == LibraryGen::SHELF) {
 					Model->pushMatrix();
 					Model->loadIdentity();
-					Model->translate(vec3(x - 15, 0, z - 15));
+					Model->translate(vec3(x - 40, 0, z - 15));
 					glUniform1i(assimptexProg->getUniform("hasTexture"), 1);
 					Model->scale(vec3(2.0f));
 					setModel(assimptexProg, Model);
@@ -1253,7 +1253,7 @@ public:
 			lookAt = characterMovement;
 
 			characterRotation = manRot.y + 0.0f;
-			
+
 		}
 		else if (movingBackward) {
 			characterMovement -= manMoveDir * moveSpeed;
@@ -1266,7 +1266,7 @@ public:
 			characterMovement += right * moveSpeed;
 			eye += right * moveSpeed;
 			lookAt = characterMovement;
-			
+
 			characterRotation = manRot.y + 4.71;
 		}
 		else if (movingLeft) {
@@ -1347,7 +1347,7 @@ public:
 		drawEnemies(prog2, Model);
 
 		drawPlayer(assimptexProg, Model, animTime);
-		
+
 		drawOrbs(prog2, Model);
 
 		drawBooks(prog2, Model);
@@ -1374,7 +1374,7 @@ int main(int argc, char *argv[])
 	{
 		resourceDir = argv[1];
 	}
-	
+
 	Application *application = new Application();
 
 	// Your main will always include a similar set up to establish your window
