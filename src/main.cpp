@@ -252,7 +252,7 @@ public:
 	// character bounding box
 	glm::vec3 manAABBmin, manAABBmax;
 
-	AssimpModel *cube, *barrel, *creeper, *alien, *wizard_hat, *fish, *cylinder, *sphere;
+	AssimpModel *cube, *barrel, *creeper, *alien, *wizard_hat, *fish, *cylinder, *sphere, *border;
 
 	//  vector of books
 	vector<Book> books;
@@ -610,6 +610,9 @@ public:
 		// load the sphere (spell)
 		sphere = new AssimpModel(resourceDirectory + "/SmoothSphere.obj");
 
+		//load in the border (circle of bookshelves and doors)
+		border = new AssimpModel(resourceDirectory + "/border.obj");
+
 		books.emplace_back(cube, sphere,
 			glm::vec3(5.0f, 2.0f, 0.0f),  // Initial Position (on a shelf)
 			glm::vec3(0.8f, 1.0f, 0.2f),  // Scale (Width, Height, Thickness)
@@ -907,6 +910,7 @@ public:
 		shader->unbind();
 	}
 
+
 	void Application::drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 		// --- Collision Check Logic ---
@@ -975,6 +979,7 @@ public:
 
 		simpleShader->unbind();
 	}
+
 
 	void drawEnemies(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		if (!sphere) return; // Need the sphere model
@@ -1294,9 +1299,21 @@ public:
 
 		drawPlayer(assimptexProg, Model, animTime);
 		
-		drawOrbs(prog2, Model);
+		//drawOrbs(prog2, Model);
 
 		drawBooks(prog2, Model);
+
+		//border
+
+		// prog2->bind();
+
+		// SetMaterial(prog2, 2);
+		// setModel(prog2, vec3(0,1,0), 0,0,0,1); 
+		// border->draw(prog2);
+
+		// prog2->unbind();
+
+
 
 		// Pop matrix stacks
 		Projection->popMatrix();
