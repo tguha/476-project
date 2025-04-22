@@ -252,7 +252,10 @@ public:
 	// character bounding box
 	glm::vec3 manAABBmin, manAABBmax;
 
-	AssimpModel *cube, *barrel, *creeper, *alien, *wizard_hat, *fish, *cylinder, *sphere, *border;
+	AssimpModel *cube, *barrel, *creeper, *alien, *wizard_hat, *fish, *cylinder, *sphere;
+
+	//border
+	AssimpModel *border;
 
 	//  vector of books
 	vector<Book> books;
@@ -910,8 +913,25 @@ public:
 		shader->unbind();
 	}
 
+	void drawBorder(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model){
+		shader->bind();
 
-	void Application::drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
+		glUniform3f(shader->getUniform("MatAmb"), 0.15f, 0.08f, 0.03f);
+		glUniform3f(shader->getUniform("MatDif"), 0.6f, 0.3f, 0.1f);
+		glUniform3f(shader->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f);
+		glUniform1f(shader->getUniform("MatShine"), 4.0f);
+		glUniform1i(shader->getUniform("hasEmittance"), 0);
+
+		Model->pushMatrix();
+			Model->scale(0.28);
+			setModel(shader, Model);
+			border->Draw(shader);
+		Model->popMatrix();
+		shader->unbind();
+	}
+
+
+	void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 		// --- Collision Check Logic ---
 		for (auto& orb : orbCollectibles) {
@@ -1299,19 +1319,14 @@ public:
 
 		drawPlayer(assimptexProg, Model, animTime);
 		
-		//drawOrbs(prog2, Model);
+		drawOrbs(prog2, Model);
 
 		drawBooks(prog2, Model);
 
-		//border
 
-		// prog2->bind();
+		drawBorder(prog2, Model);
 
-		// SetMaterial(prog2, 2);
-		// setModel(prog2, vec3(0,1,0), 0,0,0,1); 
-		// border->draw(prog2);
 
-		// prog2->unbind();
 
 
 
