@@ -299,6 +299,8 @@ public:
 
 	AssimpModel *cube, *sphere;
 
+	AssimpModel *sky_sphere;
+
 	//  vector of books
 	vector<Book> books;
 
@@ -681,6 +683,9 @@ public:
 		book_shelf1->assignTexture("texture_diffuse1", resourceDirectory + "/book_shelf/textures/bookstack_textures_2.jpg");
 		book_shelf1->assignTexture("texture_specular1", resourceDirectory + "/book_shelf/textures/bookstack_specular.jpg");
 
+		sky_sphere = new AssimpModel(resourceDirectory + "/sky_sphere/skybox_sphere.obj");
+		sky_sphere->assignTexture("texture_diffuse1", resourceDirectory + "/sky_sphere/sky_sphere.fbm/infinite_lib2.png");
+
 		// load the sphere (spell)
 		sphere = new AssimpModel(resourceDirectory + "/SmoothSphere.obj");
 
@@ -999,6 +1004,21 @@ public:
 		shader->unbind();
 	}
 
+	void drawSkybox(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
+		shader->bind(); // Use prog2 for simple colored shapes
+
+		Model->pushMatrix();
+		Model->loadIdentity();
+		Model->translate(vec3(bossAreaCenter.x, bossAreaCenter.y, bossAreaCenter.z - 20)); // Center the sky sphere at the player position
+		Model->scale(vec3(5.0f)); // Scale up the sky sphere to cover the scene
+
+		setModel(shader, Model);
+		sky_sphere->Draw(shader);
+
+		Model->popMatrix();
+		shader->unbind();
+	}
+
 	void Application::drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 		// --- Collision Check Logic ---
@@ -1204,7 +1224,7 @@ public:
 
 		shader->bind();
 		glUniform1i(shader->getUniform("hasTexture"), 1); // Bookshelves should use texture
-		
+
 		float gridWorldWidth = groundSize * 2.0f; // The world space the grid should occupy (library floor width)
 		float gridWorldDepth = groundSize * 2.0f; // The world space the grid should occupy (library floor depth)
 		float cellWidth = gridWorldWidth / (float)grid.getSize().x;
@@ -1644,6 +1664,8 @@ public:
 
 		// 7. Draw Player (often drawn last or near last)
 		drawPlayer(assimptexProg, Model, animTime);
+
+		drawSkybox(assimptexProg, Model); // Draw the skybox last
 
 		// --- Cleanup ---
 		Projection->popMatrix();
