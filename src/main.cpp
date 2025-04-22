@@ -667,6 +667,10 @@ public:
 		stickfigure_running = new AssimpModel(resourceDirectory + "/Vanguard/Vanguard.fbx");
 		stickfigure_anim = new Animation(resourceDirectory + "/Vanguard/Vanguard.fbx", stickfigure_running, 0);
 		stickfigure_idle = new Animation(resourceDirectory + "/Vanguard/Vanguard.fbx", stickfigure_running, 1);
+
+		// --- Calculate Player Collision Box NOW that model is loaded ---
+		calculatePlayerLocalAABB();
+
 		stickfigure_animator = new Animator(stickfigure_anim);
 
 		// load the cube (books)
@@ -873,50 +877,52 @@ public:
 	}
 
 	void drawPlayer(shared_ptr<Program> curS, shared_ptr<MatrixStack> Model, float animTime) {
+		if (!curS || !Model || !stickfigure_running || !stickfigure_animator || !stickfigure_anim || !stickfigure_idle) {
+			cerr << "Error: Null pointer in drawPlayer." << endl;
+			return;
+		}
 		curS->bind();
 
-		// select animation for vanguard model
-		stickfigure_animator->UpdateAnimation(1.5 * animTime);
+		// Animation update
+		stickfigure_animator->UpdateAnimation(1.5f * animTime);
 		if (manState == WALKING) {
 			stickfigure_animator->SetCurrentAnimation(stickfigure_anim);
 		}
-		else if (manState == STANDING) {
+		else {
 			stickfigure_animator->SetCurrentAnimation(stickfigure_idle);
 		}
 
-		// update the bone matrices according to selected animation
+		// Update bone matrices
 		vector<glm::mat4> transforms = stickfigure_animator->GetFinalBoneMatrices();
-		for (int i = 0; i < transforms.size(); ++i) {
-			glUniformMatrix4fv(curS->getUniform("finalBonesMatrices[" + std::to_string(i) + "]"), 1, GL_FALSE, value_ptr(transforms[i]));
+		int numBones = std::min((int)transforms.size(), MAX_BONES);
+		for (int i = 0; i < numBones; ++i) {
+			string uniformName = "finalBonesMatrices[" + std::to_string(i) + "]";
+			glUniformMatrix4fv(curS->getUniform(uniformName), 1, GL_FALSE, value_ptr(transforms[i]));
 		}
 
-		// set the model matrix and draw the walking character model
+		// Model matrix setup
 		Model->pushMatrix();
 		Model->loadIdentity();
+		Model->translate(characterMovement); // Use final player position
+		// *** USE CAMERA ROTATION FOR MODEL ***
+		Model->rotate(manRot.y, vec3(0, 1, 0)); // <<-- FIXED ROTATION
+		Model->scale(manScale);
 
-    //Character Movement - REFACTOR
-		charMove();
-		Model->translate(characterMovement);
-		Model->scale(0.01f);
-		Model->rotate(characterRotation, vec3(0, 1, 0));
-
-		// update the bounding box for collision detection
-		glm::mat4 manTransform = glm::translate(glm::mat4(1.0f), charMove())
-			* glm::rotate(glm::mat4(1.0f), manRot.x, glm::vec3(1, 0, 0))
-			* glm::rotate(glm::mat4(1.0f), manRot.y, glm::vec3(0, 1, 0))
-			* glm::scale(glm::mat4(1.0f), manScale);
+		// Update VISUAL bounding box (can be different from collision box if needed)
+		// Using the same AABB calculation logic as before for consistency
+		glm::mat4 manTransform = Model->topMatrix();
 		updateBoundingBox(stickfigure_running->getBoundingBoxMin(),
 			stickfigure_running->getBoundingBoxMax(),
 			manTransform,
-			manAABBmin,
+			manAABBmin, // This is the visual/interaction AABB
 			manAABBmax);
 
+		// Set uniforms and draw
 		glUniform1i(curS->getUniform("hasTexture"), 1);
-		SetMaterialMan(curS, 0);
 		setModel(curS, Model);
 		stickfigure_running->Draw(curS);
-		Model->popMatrix();
 
+		Model->popMatrix();
 		curS->unbind();
 	}
 
@@ -1357,41 +1363,170 @@ public:
 		}
 	}
 
+	// --- Player Collision ---
+	// Store player's local AABB (scaled) for easier access
+	glm::vec3 playerLocalAABBMin;
+	glm::vec3 playerLocalAABBMax;
+	bool playerAABBCalculated = false; // Flag to calculate once
+
+	// Helper to calculate player's local AABB
+	void calculatePlayerLocalAABB() {
+		if (!stickfigure_running || playerAABBCalculated) return;
+
+		// Get base AABB from the *standing* or *running* model (choose one representative)
+		// Using stickfigure_running as it's loaded first
+		glm::vec3 baseMin = stickfigure_running->getBoundingBoxMin();
+		glm::vec3 baseMax = stickfigure_running->getBoundingBoxMax();
+
+		// Apply the player's base scale
+		playerLocalAABBMin = baseMin * manScale.x; // Assuming uniform scale for collision box
+		playerLocalAABBMax = baseMax * manScale.x;
+
+		// Optional: Add padding or adjust Y if needed
+		// Example: Make collision box slightly taller or ensure base is at y=0 locally
+		// playerLocalAABBMin.y = 0.0f; // If player origin is at feet
+
+		playerAABBCalculated = true;
+		// cout << "[DEBUG] Calculated Player Local AABB Min: (" << playerLocalAABBMin.x << "," << playerLocalAABBMin.y << "," << playerLocalAABBMin.z << ")" << endl;
+		// cout << "[DEBUG] Calculated Player Local AABB Max: (" << playerLocalAABBMax.x << "," << playerLocalAABBMax.y << "," << playerLocalAABBMax.z << ")" << endl;
+	}
+
+
+	// --- Collision Checking Helper ---
+	bool checkCollisionAt(const glm::vec3& checkPos, const glm::quat& playerOrientation) {
+		if (!playerAABBCalculated || !book_shelf1 || grid.getSize().x == 0) return false; // Need data
+
+		// 1. Calculate Player's World AABB at checkPos
+		glm::mat4 playerTransform = glm::translate(glm::mat4(1.0f), checkPos) * glm::mat4_cast(playerOrientation);
+		// Note: We use the PRE-SCALED local AABB calculated earlier
+		glm::vec3 playerWorldMin, playerWorldMax;
+		updateBoundingBox(playerLocalAABBMin, playerLocalAABBMax, playerTransform, playerWorldMin, playerWorldMax);
+
+		// 2. Iterate through grid for shelves
+		float gridWorldWidth = groundSize * 2.0f;
+		float gridWorldDepth = groundSize * 2.0f;
+		float cellWidth = gridWorldWidth / (float)grid.getSize().x;
+		float cellDepth = gridWorldDepth / (float)grid.getSize().y;
+		// Use the same scale factor as drawLibrary
+		float shelfScaleFactor = 1.8f;
+		glm::vec3 shelfVisScale = vec3(shelfScaleFactor * cellWidth * 1.5f,
+			shelfScaleFactor * 1.8f,
+			shelfScaleFactor * cellDepth * 1.5f);
+		// --- Get shelf model's local AABB ONCE ---
+		glm::vec3 shelfLocalMin = book_shelf1->getBoundingBoxMin();
+		glm::vec3 shelfLocalMax = book_shelf1->getBoundingBoxMax();
+		// --- Apply visual scale to shelf local AABB for collision ---
+		// Important: Scale the AABB min/max points correctly
+		glm::vec3 collisionShelfLocalMin = shelfLocalMin * shelfVisScale;
+		glm::vec3 collisionShelfLocalMax = shelfLocalMax * shelfVisScale;
+		// Handle potential inversion if scale is negative (unlikely here)
+		for (int i = 0; i < 3; ++i) {
+			if (collisionShelfLocalMin[i] > collisionShelfLocalMax[i]) std::swap(collisionShelfLocalMin[i], collisionShelfLocalMax[i]);
+		}
+
+		for (int z = 0; z < grid.getSize().y; ++z) {
+			for (int x = 0; x < grid.getSize().x; ++x) {
+				glm::ivec2 gridPos(x, z);
+				if (grid[gridPos] == LibraryGen::SHELF) {
+					// 3. Calculate this shelf's World AABB
+					float worldX = libraryCenter.x - gridWorldWidth * 0.5f + (x + 0.5f) * cellWidth;
+					float worldZ = libraryCenter.z - gridWorldDepth * 0.5f + (z + 0.5f) * cellDepth;
+					glm::vec3 shelfPos = vec3(worldX, libraryCenter.y, worldZ); // Base position on ground
+
+					// Shelf transform (Position only, assuming no rotation for collision)
+					// The scale is applied to the local AABB above
+					glm::mat4 shelfTransform = glm::translate(glm::mat4(1.0f), shelfPos);
+
+					glm::vec3 shelfWorldMin, shelfWorldMax;
+					updateBoundingBox(collisionShelfLocalMin, collisionShelfLocalMax, shelfTransform, shelfWorldMin, shelfWorldMax);
+
+					// 4. Check for Overlap
+					if (checkAABBCollision(playerWorldMin, playerWorldMax, shelfWorldMin, shelfWorldMax)) {
+						// cout << "[DEBUG] Collision DETECTED with shelf at grid (" << x << "," << z << ")" << endl;
+						return true; // Collision found
+					}
+				}
+			}
+		}
+
+		return false; // No collision found
+	}
+
+	// --- Modified charMove ---
 	vec3 charMove() {
-		float moveSpeed = 0.045;
-		vec3 moveDir = vec3(0.0f, 0.0f, 0.0f);
-
-		if (movingForward) {
-			characterMovement += manMoveDir * moveSpeed;
-			eye += manMoveDir * moveSpeed;
-			lookAt = characterMovement;
-
-			characterRotation = manRot.y + 0.0f;
-
+		// Calculate player's local AABB once if not done yet
+		if (!playerAABBCalculated) {
+			calculatePlayerLocalAABB();
 		}
-		else if (movingBackward) {
-			characterMovement -= manMoveDir * moveSpeed;
-			eye -= manMoveDir * moveSpeed;
-			lookAt = characterMovement;
 
-			characterRotation = manRot.y + 3.14f;
-		}
-		if (movingRight) {
-			characterMovement += right * moveSpeed;
-			eye += right * moveSpeed;
-			lookAt = characterMovement;
+		float moveSpeed = 4.5f * AnimDeltaTime; // Use frame-rate independent speed
+		vec3 desiredMoveDelta = vec3(0.0f);
 
-			characterRotation = manRot.y + 4.71;
-		}
-		else if (movingLeft) {
-			characterMovement -= right * moveSpeed;
-			eye -= right * moveSpeed;
-			lookAt = characterMovement;
+		// Calculate desired movement direction based on input
+		if (movingForward)  desiredMoveDelta += manMoveDir;
+		if (movingBackward) desiredMoveDelta -= manMoveDir;
+		if (movingLeft)     desiredMoveDelta -= right;
+		if (movingRight)    desiredMoveDelta += right;
 
-			characterRotation = manRot.y + 1.57;
+		// Normalize and scale movement delta
+		float moveLength = length(desiredMoveDelta);
+		if (moveLength > 0.0f) {
+			desiredMoveDelta = (desiredMoveDelta / moveLength) * moveSpeed;
 		}
-		//normalize(characterMovement);
-		return characterMovement;
+		else {
+			return characterMovement; // No movement input, stay put
+		}
+
+		// --- Collision Detection and Resolution ---
+		vec3 currentPos = characterMovement;
+		vec3 nextPos = currentPos + desiredMoveDelta;
+		nextPos.y = groundY; // Keep player on the ground plane
+
+		// Player orientation for AABB calculation
+		glm::quat playerOrientation = glm::angleAxis(manRot.y, glm::vec3(0, 1, 0));
+
+		// --- Simple Stop Method ---
+		/*
+		if (checkCollisionAt(nextPos, playerOrientation)) {
+			 // Don't update characterMovement, effectively stopping before collision
+			 cout << "[DEBUG] Collision prevented movement." << endl;
+			 return currentPos; // Return current position
+		} else {
+			 // No collision detected, allow full movement
+			 characterMovement = nextPos;
+		}
+		*/
+
+		// --- Sliding Method (Separate Axes) ---
+		vec3 allowedPos = currentPos; // Start with current position
+
+		// Try moving along X only
+		vec3 nextPosX = vec3(nextPos.x, currentPos.y, currentPos.z);
+		if (!checkCollisionAt(nextPosX, playerOrientation)) {
+			allowedPos.x = nextPos.x; // Allow X movement
+		}
+		else {
+			cout << "[DEBUG] X-Collision prevented." << endl;
+		}
+
+
+		// Try moving along Z only (starting from potentially updated X)
+		vec3 nextPosZ = vec3(allowedPos.x, currentPos.y, nextPos.z); // Use allowedPos.x
+		if (!checkCollisionAt(nextPosZ, playerOrientation)) {
+			allowedPos.z = nextPos.z; // Allow Z movement
+		}
+		else {
+			cout << "[DEBUG] Z-Collision prevented." << endl;
+		}
+
+
+		// Final position is the allowed position after checking both axes
+		characterMovement = allowedPos;
+		characterMovement.y = groundY; // Ensure Y stays correct
+
+
+		// Update camera based on final position (done in render)
+		return characterMovement; // Return the final, potentially adjusted, position
 	}
 
 	void render(float frametime, float animTime) {
