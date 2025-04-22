@@ -1238,7 +1238,7 @@ public:
 
 			characterRotation = manRot.y + 1.57;
 		}
-		normalize(characterMovement);
+		//normalize(characterMovement);
 		return characterMovement;
 	}
 
