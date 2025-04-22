@@ -1,7 +1,12 @@
 #include "Player.h"
 
-Player::Player(const glm::vec3& position, float hitpoints, float moveSpeed)
-    : Entity(position, hitpoints, moveSpeed) {}
+Player::Player(const glm::vec3& position, float hitpoints, float moveSpeed,
+    AssimpModel* model, const glm::vec3& scale)
+    : Entity(position, hitpoints, moveSpeed, model, scale) // Call the CORRECT Entity constructor
+{
+    // Add any Player-specific initialization here
+    std::cout << "Player Entity Created." << std::endl;
+}
 
 SpellSlot Player::getActiveSpellSlot() {
     return activeSpellSlot;
