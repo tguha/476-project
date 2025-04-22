@@ -1140,6 +1140,27 @@ public:
 		shader->unbind();
 	}
 
+	void drawLibrary(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
+		shader->bind();
+		for (int z = 0; z < grid.getSize().y; ++z) {
+			for (int x = 0; x < grid.getSize().x; ++x) {
+				glm::ivec2 pos(x, z);
+				LibraryGen::CellType cell = grid[pos];
+				if (cell == LibraryGen::SHELF) {
+					Model->pushMatrix();
+					Model->loadIdentity();
+					Model->translate(vec3(x - 15, 0, z - 15));
+					glUniform1i(assimptexProg->getUniform("hasTexture"), 1);
+					Model->scale(vec3(2.0f));
+					setModel(assimptexProg, Model);
+					book_shelf1->Draw(assimptexProg);
+					Model->popMatrix();
+				}
+			}
+		}
+		shader->unbind();
+	}
+
 	bool checkAABBCollision(const glm::vec3& minA, const glm::vec3& maxA,
 		const glm::vec3& minB, const glm::vec3& maxB)
 	{
@@ -1307,22 +1328,6 @@ public:
 		glUniform1f(assimptexProg->getUniform("lightIntensity[0]"), 0.0); // light intensity
 		glUniform3f(assimptexProg->getUniform("lightPos[0]"), 0, 10, 0); // light position at the computer screen
 		glUniform1i(assimptexProg->getUniform("numLights"), 1); // light position at the computer screen
-		for (int z = 0; z < grid.getSize().y; ++z) {
-			for (int x = 0; x < grid.getSize().x; ++x) {
-				glm::ivec2 pos(x, z);
-				LibraryGen::CellType cell = grid[pos];
-				if (cell == LibraryGen::SHELF) {
-					Model->pushMatrix();
-					Model->loadIdentity();
-					Model->translate(vec3(x - 15, 0, z - 15));
-					glUniform1i(assimptexProg->getUniform("hasTexture"), 1);
-					Model->scale(vec3(2.0f));
-					setModel(assimptexProg, Model);
-					book_shelf1->Draw(assimptexProg);
-					Model->popMatrix();
-				}
-			}
-		}
 		assimptexProg->unbind();
 
 		texProg->bind();
@@ -1346,6 +1351,8 @@ public:
 		drawOrbs(prog2, Model);
 
 		drawBooks(prog2, Model);
+
+		drawLibrary(assimptexProg, Model);
 
 		// Pop matrix stacks
 		Projection->popMatrix();
