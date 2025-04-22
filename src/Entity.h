@@ -1,5 +1,4 @@
-#ifndef ENTITY_H
-#define ENTITY_H
+#pragma once
 
 #include "AssimpModel.h"
 #include <glm/glm.hpp>
@@ -21,5 +20,3 @@ class Entity {
         bool isAlive() const;
 
 };
-
-#endif // ENTITY_H

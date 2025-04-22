@@ -1,5 +1,4 @@
-#ifndef ENEMY_H
-#define ENEMY_H
+#pragma once
 
 #include "Entity.h"
 
@@ -9,5 +8,3 @@ class Enemy : public Entity {
 
         void attack();
 };
-
-#endif // ENEMY_H
