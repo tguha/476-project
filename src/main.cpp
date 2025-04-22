@@ -234,6 +234,10 @@ class Application : public EventCallbacks {
 
 public:
 	WindowManager * windowManager = nullptr;
+	
+	bool windowMaximized = false;
+	int window_width = 640;
+	int window_height = 480;
 
 	// Our shader programs
 	std::shared_ptr<Program> texProg, prog2, assimptexProg;
@@ -323,7 +327,19 @@ public:
 		{
 			glfwSetWindowShouldClose(window, GL_TRUE);
 		}
-		//update global camera rotate
+
+		if (key == GLFW_KEY_F11 && action == GLFW_PRESS)
+		{
+			//Fullscreen Mode
+			if (!windowMaximized) {
+				glfwMaximizeWindow(window);
+				windowMaximized = !windowMaximized;
+			}
+			else {
+				glfwRestoreWindow(window);
+				windowMaximized = !windowMaximized;
+			}
+		}
 
 		if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_W) != GLFW_RELEASE) {
 			manState = WALKING;
@@ -1343,6 +1359,9 @@ int main(int argc, char *argv[])
 	auto lastTime = chrono::high_resolution_clock::now();
 
 	glfwSetInputMode(windowManager->getHandle(), GLFW_STICKY_KEYS, GLFW_TRUE);
+
+	cout << "Controls: " << endl << "WASD: Move" << endl << "Mouse: Look around" << endl
+		<< "'F': Interact with book" << "F11 Fullscreen" << endl << "'L': Toggle cursor mode";
 
 	// Loop until the user closes the window.
 	while (! glfwWindowShouldClose(windowManager->getHandle()))
