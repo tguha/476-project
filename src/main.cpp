@@ -264,19 +264,7 @@ public:
 	float AnimDeltaTime = 0.0f;
 	float AnimLastFrame = 0.0f;
 
-	vec3 gMin;
-
-	float lightTrans = -2;
 	int change_mat = 0;
-
-	//animation data
-	float sTransx = -2.5;
-	float sTransy = -1.3;
-	float vTransz = 0;
-	float vThetax = 0.0f;
-	float vThetay = 0.0f;
-	float vTransx = 2;
-	float vTransy = 0;
 
 	vec3 characterMovement = vec3(0, 0, 0);
 	vec3 manScale = vec3(0.01, 0.01, 0.01);
@@ -398,13 +386,6 @@ public:
 			//Movement Variable
 			movingRight = false;
 		}
-		if (glfwGetKey(window, GLFW_KEY_Q)){
-			lightTrans += 1.0;
-		}
-		if (glfwGetKey(window, GLFW_KEY_E)){
-			lightTrans -= 1.0;
-		}
-
 		if (key == GLFW_KEY_Z && action == GLFW_PRESS) {
 			glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
 		}
@@ -834,7 +815,7 @@ public:
 		Model->rotate(characterRotation, vec3(0, 1, 0));
 
 		// update the bounding box for collision detection
-		glm::mat4 manTransform = glm::translate(glm::mat4(1.0f), manTrans)
+		glm::mat4 manTransform = glm::translate(glm::mat4(1.0f), charMove())
 			* glm::rotate(glm::mat4(1.0f), manRot.x, glm::vec3(1, 0, 0))
 			* glm::rotate(glm::mat4(1.0f), manRot.y, glm::vec3(0, 1, 0))
 			* glm::scale(glm::mat4(1.0f), manScale);
@@ -961,7 +942,7 @@ public:
 				glm::vec3 playerRight = normalize(cross(playerForward, playerUp));
 				float currentUpOffset = upOffsetBase + (collectedOrbDrawIndex * stackOffset);
 				float currentSideOffset = (collectedOrbDrawIndex % 2 == 0 ? -sideOffset : sideOffset);
-				currentDrawPosition = manTrans - playerForward * backOffset
+				currentDrawPosition = charMove() - playerForward * backOffset
 					+ playerUp * currentUpOffset
 					+ playerRight * currentSideOffset;
 				collectedOrbDrawIndex++;
