@@ -713,6 +713,8 @@ public:
 		book_shelf1->assignTexture("texture_diffuse1", resourceDirectory + "/book_shelf/textures/bookstack_textures_2.jpg");
 		book_shelf1->assignTexture("texture_specular1", resourceDirectory + "/book_shelf/textures/bookstack_specular.jpg");
 
+		border = new AssimpModel(resourceDirectory + "/border.obj");
+
 		// load the sphere (spell)
 		sphere = new AssimpModel(resourceDirectory + "/SmoothSphere.obj");
 
@@ -1058,7 +1060,8 @@ public:
 		glUniform1i(shader->getUniform("hasEmittance"), 0);
 
 		Model->pushMatrix();
-			Model->scale(0.28);
+			Model->translate(bossAreaCenter);
+			Model->scale(0.5f);
 			setModel(shader, Model);
 			border->Draw(shader);
 		Model->popMatrix();
@@ -1420,7 +1423,7 @@ public:
 	void updateEnemies(float deltaTime) {
 		// TODO: Add enemy movement, AI, attack logic later
 		for (auto* enemy : enemies) {
-			if (!enemy || !enemy->isAlive()) enemy->setPosition(enemy->getPosition() - vec3(0.0f, 3.0f, 0.0f));
+			if (!enemy->isAlive()) enemy->setPosition(enemy->getPosition() - vec3(0.0f, 3.0f, 0.0f));
 			// Example: Simple bobbing motion
 			// float bobSpeed = 2.0f;
 			// float bobHeight = 0.05f;
@@ -1829,6 +1832,8 @@ public:
 		// 1. Draw Ground, Path
 		drawGroundSections(prog2, Model);
 
+		drawBorder(prog2, Model);
+
 		// 2. Draw the Static Library Shelves
 		drawLibrary(assimptexProg, Model);
 
@@ -1850,7 +1855,7 @@ public:
 		drawPlayer(assimptexProg, Model, animTime);
 
 
-		drawBorder(prog2, Model);
+		
 
 
 
