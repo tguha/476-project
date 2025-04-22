@@ -1,7 +1,7 @@
 #include "Player.h"
 
-Player::Player(const glm::vec3& position, float hitpoints, float moveSpeed)
-    : Entity(position, hitpoints, moveSpeed) {}
+Player::Player(const glm::vec3& position, const glm::vec3& scale, const glm::vec3& rotation, float hitpoints, float moveSpeed)
+    : Entity(position, scale, rotation, hitpoints, moveSpeed) {}
 
 SpellSlot Player::getActiveSpellSlot() {
     return activeSpellSlot;

@@ -17,6 +17,7 @@
 #include "Animator.h"
 #include "LightTrail.h"
 #include "Enemy.h"
+#include "Player.h"
 
 // value_ptr for glm
 #include <glm/gtc/type_ptr.hpp>
@@ -235,6 +236,8 @@ class Application : public EventCallbacks {
 public:
 	WindowManager * windowManager = nullptr;
 
+	std::shared_ptr<Player> player;
+
 	// Our shader programs
 	std::shared_ptr<Program> texProg, prog2, assimptexProg;
 
@@ -288,7 +291,8 @@ public:
 
 	vec3 eye = vec3(-6, 1.03, 0);
 	// vec3 lookAt = vec3(-1.58614, -0.9738, 0.0436656);
-	vec3 lookAt = characterMovement;
+	// vec3 lookAt = characterMovement;
+	vec3 lookAt = vec3(0, 0, 0);
 	vec3 up = vec3(0, 1, 0);
 
 	vec3 right = normalize(cross(manMoveDir, up));
@@ -466,8 +470,8 @@ public:
 		front.y = radius * sin(phi);
 		front.z = radius * cos(phi) * cos((pi<float>()/2) - theta);
 
-		eye = characterMovement - front;
-		lookAt = characterMovement;
+		eye = player->getPosition() - front;
+		lookAt = player->getPosition();
 
 		manRot.y = theta + radians(-90.0f);
 		manRot.y = - manRot.y;
@@ -478,8 +482,6 @@ public:
 		right = normalize(cross(manMoveDir, up));
 		
 		// lookAt = eye + front;
-
-
 	}
 	
 	void mouseCallback(GLFWwindow *window, int button, int action, int mods)
@@ -631,7 +633,7 @@ public:
 		// --- Initialize Enemies ---
 		// Create one enemy instance at position (e.g., 5, 1, 5) with 100 HP and 0 move speed (static for now)
 		// The vertical pill shape means the base sphere should be scaled more in Y.
-		enemies.push_back(new Enemy(glm::vec3(5.0f, 1.0f, 5.0f), 100.0f, 0.0f)); // Pos, HP, Speed
+		enemies.push_back(new Enemy(glm::vec3(5.0f, 1.0f, 5.0f), glm::vec3(1.0f, 1.0f, 1.0f), glm::vec3(0.0f, 0.0f, 0.0f), 100.0f, 0.0f)); // Pos, Scale, Rot, HP, Speed
 	}
 
 	void SetMaterialMan(shared_ptr<Program> curS, int i) {
@@ -807,18 +809,20 @@ public:
 		// set the model matrix and draw the walking character model
 		Model->pushMatrix();
 		Model->loadIdentity();
-    
-    //Character Movement - REFACTOR
-		charMove();
-		Model->translate(characterMovement);
-		Model->scale(0.01f);
-		Model->rotate(characterRotation, vec3(0, 1, 0));
 
-		// update the bounding box for collision detection
-		glm::mat4 manTransform = glm::translate(glm::mat4(1.0f), charMove())
-			* glm::rotate(glm::mat4(1.0f), manRot.x, glm::vec3(1, 0, 0))
-			* glm::rotate(glm::mat4(1.0f), manRot.y, glm::vec3(0, 1, 0))
-			* glm::scale(glm::mat4(1.0f), manScale);
+		charMove();
+		
+		Model->translate(player->getPosition());
+		Model->scale(player->getScale());
+		Model->rotate(player->getRotY(), vec3(0, 1, 0));
+
+		// Update the bounding box for collision detection
+		// Probably will add BBOX to the Entity/Player class later on
+		glm::mat4 manTransform = glm::translate(glm::mat4(1.0f), player->getPosition())
+			* glm::rotate(glm::mat4(1.0f), player->getRotX(), glm::vec3(1, 0, 0))
+			* glm::rotate(glm::mat4(1.0f), player->getRotY(), glm::vec3(0, 1, 0))
+			* glm::scale(glm::mat4(1.0f), player->getScale());
+
 		updateBoundingBox(stickfigure_running->getBoundingBoxMin(),
 			stickfigure_running->getBoundingBoxMax(),
 			manTransform,
@@ -907,7 +911,7 @@ public:
 		shader->unbind();
 	}
 
-	void Application::drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
+	void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 		// --- Collision Check Logic ---
 		for (auto& orb : orbCollectibles) {
@@ -942,7 +946,7 @@ public:
 				glm::vec3 playerRight = normalize(cross(playerForward, playerUp));
 				float currentUpOffset = upOffsetBase + (collectedOrbDrawIndex * stackOffset);
 				float currentSideOffset = (collectedOrbDrawIndex % 2 == 0 ? -sideOffset : sideOffset);
-				currentDrawPosition = charMove() - playerForward * backOffset
+				currentDrawPosition = player->getPosition() - playerForward * backOffset
 					+ playerUp * currentUpOffset
 					+ playerRight * currentSideOffset;
 				collectedOrbDrawIndex++;
@@ -1194,34 +1198,28 @@ public:
 		vec3 moveDir = vec3(0.0f, 0.0f, 0.0f);
 
 		if (movingForward) {
-			characterMovement += manMoveDir * moveSpeed;
+			player->move(manMoveDir);
 			eye += manMoveDir * moveSpeed;
-			lookAt = characterMovement;
-
-			characterRotation = manRot.y + 0.0f;
+			player->setRotY(manRot.y + 0.0f);
 			
 		}
 		else if (movingBackward) {
-			characterMovement -= manMoveDir * moveSpeed;
+			player->move(-manMoveDir);
 			eye -= manMoveDir * moveSpeed;
-			lookAt = characterMovement;
-
-			characterRotation = manRot.y + 3.14f;
+			player->setRotY(manRot.y + 3.14f);
 		}
 		if (movingRight) {
-			characterMovement += right * moveSpeed;
+			player->move(right);
 			eye += right * moveSpeed;
-			lookAt = characterMovement;
-			
-			characterRotation = manRot.y + 4.71;
+			player->setRotY(manRot.y + 4.71);
 		}
 		else if (movingLeft) {
-			characterMovement -= right * moveSpeed;
+			player->move(-right);
 			eye -= right * moveSpeed;
-			lookAt = characterMovement;
-
-			characterRotation = manRot.y + 1.57;
+			player->setRotY(manRot.y + 1.57);
 		}
+
+		lookAt = player->getPosition();
 		normalize(characterMovement);
 		return characterMovement;
 	}
@@ -1321,6 +1319,15 @@ int main(int argc, char *argv[])
 	
 	Application *application = new Application();
 
+	std::shared_ptr<Player> playerPtr = std::make_shared<Player>(
+		vec3(0, 0, 0),
+		vec3(0.01, 0.01, 0.01),
+		vec3(0.0f, 0.0f, 0.0f),
+		PLAYER_HP_MAX,
+		PLAYER_MOVE_SPEED
+	);
+	application->player = playerPtr;
+
 	// Your main will always include a similar set up to establish your window
 	// and GL context, etc
 
@@ -1343,6 +1350,7 @@ int main(int argc, char *argv[])
 	auto lastTime = chrono::high_resolution_clock::now();
 
 	glfwSetInputMode(windowManager->getHandle(), GLFW_STICKY_KEYS, GLFW_TRUE);
+
 
 	// Loop until the user closes the window.
 	while (! glfwWindowShouldClose(windowManager->getHandle()))
