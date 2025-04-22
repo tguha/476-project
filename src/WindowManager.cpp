@@ -56,6 +56,7 @@ bool WindowManager::init(int const width, int const height)
 
 	glfwMakeContextCurrent(windowHandle);
 
+
 	// Initialize GLAD
 	if (!gladLoadGL())
 	{
