@@ -9,13 +9,28 @@
     *
     */
 
-void LibraryGen::generate(glm::ivec2 size, glm::ivec2 offset) {
+void LibraryGen::generate(glm::ivec2 size, glm::ivec2 offset, glm::vec3 spawnPos, glm::vec2 bossEntrDir) {
 
     std::cout << "Grid size: " << size.x << ", " << size.y << std::endl;
 
 
     grid = Grid<CellType>(size, offset, NONE); // Initialize the grid with the given size and offset
 
+    int i = grid.mapXtoGridX(spawnPos.x);
+    int j = grid.mapZtoGridY(spawnPos.z);
+
+    spawnPosinGrid = glm::vec2(i, j); // Convert the spawn position to grid coordinates
+
+    if (grid.inBounds(spawnPosinGrid)) {
+        grid[spawnPosinGrid] = SPAWN; // Mark the spawn position in the grid
+        std::cout << "Spawn position in grid: " << spawnPosinGrid.x << ", " << spawnPosinGrid.y << std::endl;
+    } else {
+        std::cerr << "Spawn not in grid bounds: " << spawnPosinGrid.x << ", " << spawnPosinGrid.y << std::endl;
+    }
+
+    bossEntranceDir = bossEntrDir; // Set the boss entrance direction
+
+    std::cout << "boss entrance direction: " << bossEntranceDir.x << ", " << bossEntranceDir.y << std::endl;
 
     std::cout << "Generating library layout..." << std::endl;
 
@@ -23,20 +38,18 @@ void LibraryGen::generate(glm::ivec2 size, glm::ivec2 offset) {
 
     seedGen.seed(std::random_device()());
 
-    int numberOfClusters = size.x * size.y / 50; // Destiny controls the number of clusters
-    // int numberOfClusters = 10;
+    placeBorder();
+
+    // int numberOfClusters = size.x * size.y / 50; // Destiny controls the number of clusters
+    int numberOfClusters = 30;
 
     placeClusters(numberOfClusters);
 
     std::cout << "Placed " << clusterCenters.size() << " clusters." << std::endl;
 
-    triangulateClusters();
-
-    std::cout << "Triangulated clusters." << std::endl;
+    // triangulateClusters();
 
     // generatePaths();
-
-    std::cout << "Generated paths." << std::endl;
 
     // addShelfWalls();
 }
@@ -48,7 +61,11 @@ void LibraryGen::placeClusters(int count) {
 
     std::cout << "Placing clusters..." << std::endl;
 
-    while (clusterCenters.size() < count) {
+    int attempts = 0;
+    int maxAttempts = grid.getSize().x * grid.getSize().y / 10; // Limit attempts to avoid infinite loop
+
+    while (clusterCenters.size() < count && attempts < maxAttempts) {
+        attempts++;
         glm::ivec2 pos{distX(seedGen), distY(seedGen)};
 
         // Ensure minimum spacing between clusters
@@ -56,9 +73,21 @@ void LibraryGen::placeClusters(int count) {
 
         std::cout << "Trying to place cluster at: " << pos.x << ", " << pos.y << std::endl;
 
+        if (grid[pos] == SPAWN ||
+            grid[pos] == TOP_BORDER ||
+            grid[pos] == BOTTOM_BORDER ||
+            grid[pos] == LEFT_BORDER ||
+            grid[pos] == RIGHT_BORDER ||
+            grid[pos] == BOSS_ENTRANCE) {
+            valid = false; // Position is already occupied by spawn or wall no need to check further
+        }
+
         // Check if the position is already occupied or too close to existing clusters
         for (const auto& center : clusterCenters) {
-            if (glm::distance(glm::vec2(center), glm::vec2(pos)) < 3.0f) { // Adjust this number for spacing
+            // check if the distance between the new position and existing cluster centers is too small
+            // and if the new position is either the spawn position or too close to it
+            if (glm::distance(glm::vec2(center), glm::vec2(pos)) < 3.0f ||
+                glm::distance(glm::vec2(pos), glm::vec2(spawnPosinGrid)) < 3.0f) {
                 valid = false;
                 break;
             }
@@ -77,6 +106,7 @@ void LibraryGen::placeClusters(int count) {
             //             grid[shelfPos] = SHELF;
             //         }
             //     }
+            // }
 
             // side by side shelves
             // for (int y = -1; y < 1; y++) {
@@ -93,7 +123,39 @@ void LibraryGen::placeClusters(int count) {
             } else {
                 std::cerr << "Cluster position out of bounds: " << pos.x << ", " << pos.y << std::endl;
             }
+
+            attempts = 0; // Reset attempts if a cluster is successfully placed
         }
+    }
+}
+
+void LibraryGen::placeBorder() {
+    // Place a border around the grid
+    std::cout << "Placing border..." << std::endl;
+
+    for (int x = 0; x < grid.getSize().x; ++x) {
+        grid[glm::ivec2(x, 0)] = BOTTOM_BORDER; // Bottom border
+        grid[glm::ivec2(x, grid.getSize().y - 1)] = TOP_BORDER; // Top border
+    }
+
+    for (int y = 0; y < grid.getSize().y; ++y) {
+        grid[glm::ivec2(0, y)] = LEFT_BORDER; // Left border
+        grid[glm::ivec2(grid.getSize().x - 1, y)] = RIGHT_BORDER; // Right border
+    }
+
+    if (bossEntranceDir.x > 0) {
+        // in middle of the right wall assuming even number of cells
+        grid[glm::ivec2(grid.getSize().x - 1, grid.getSize().y / 2)] = BOSS_ENTRANCE; // Right entrance
+        grid[glm::ivec2(grid.getSize().x - 1, grid.getSize().y / 2 - 1)] = BOSS_ENTRANCE; // Right entrance
+    } else if (bossEntranceDir.x < 0) {
+        grid[glm::ivec2(0, grid.getSize().y / 2)] = BOSS_ENTRANCE; // Left entrance
+        grid[glm::ivec2(0, grid.getSize().y / 2 - 1)] = BOSS_ENTRANCE; // Left entrance
+    } else if (bossEntranceDir.y > 0) {
+        grid[glm::ivec2(grid.getSize().x / 2, grid.getSize().y - 1)] = BOSS_ENTRANCE; // Top entrance
+        grid[glm::ivec2(grid.getSize().x / 2 - 1, grid.getSize().y - 1)] = BOSS_ENTRANCE; // Top entrance
+    } else if (bossEntranceDir.y < 0) {
+        grid[glm::ivec2(grid.getSize().x / 2, 0)] = BOSS_ENTRANCE; // Bottom entrance
+        grid[glm::ivec2(grid.getSize().x / 2 - 1, 0)] = BOSS_ENTRANCE; // Bottom entrance
     }
 }
 

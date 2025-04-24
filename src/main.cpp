@@ -329,9 +329,9 @@ public:
 	AssimpModel *book_shelf1;
 
 	AssimpModel *cube, *sphere;
-  
+
   AssimpModel *sky_sphere;
-  
+
   AssimpModel *border;
 
 	//  vector of books
@@ -687,7 +687,7 @@ public:
 		assimptexProg->addUniform("hasTexture");
 		updateCameraVectors();
 
-		library->generate(glm::ivec2(30, 30)); // grid size
+		library->generate(glm::ivec2(30, 30), glm::ivec2(0, 0), characterMovement, glm::ivec2(0, 1));
 		grid = library->getGrid();
 
 	}
@@ -709,15 +709,19 @@ public:
 		// load the cube (books)
 		cube = new AssimpModel(resourceDirectory + "/cube.obj");
 
-		book_shelf1 = new AssimpModel(resourceDirectory + "/book_shelf/source/bookshelf_cluster.obj");
+		// book_shelf1 = new AssimpModel(resourceDirectory + "/book_shelf/source/bookshelf_cluster.obj");
 
-		book_shelf1->assignTexture("texture_diffuse1", resourceDirectory + "/book_shelf/textures/bookstack_textures_2.jpg");
-		book_shelf1->assignTexture("texture_specular1", resourceDirectory + "/book_shelf/textures/bookstack_specular.jpg");
-    
-    sky_sphere = new AssimpModel(resourceDirectory + "/sky_sphere/skybox_sphere.obj");
+		// book_shelf1->assignTexture("texture_diffuse1", resourceDirectory + "/book_shelf/textures/bookstack_textures_2.jpg");
+		// book_shelf1->assignTexture("texture_specular1", resourceDirectory + "/book_shelf/textures/bookstack_specular.jpg");
+
+		book_shelf1 = new AssimpModel(resourceDirectory + "/book_shelf/source/bookshelf_texture1.obj");
+
+		book_shelf1->assignTexture("texture_diffuse1", resourceDirectory + "/book_shelf/textures/bookshelf_bake.png");
+
+		sky_sphere = new AssimpModel(resourceDirectory + "/sky_sphere/skybox_sphere.obj");
 		sky_sphere->assignTexture("texture_diffuse1", resourceDirectory + "/sky_sphere/sky_sphere.fbm/infinite_lib2.png");
-    
-    border = new AssimpModel(resourceDirectory + "/border.obj");
+
+		// border = new AssimpModel(resourceDirectory + "/border.obj");
 
 		// load the sphere (spell)
 		sphere = new AssimpModel(resourceDirectory + "/SmoothSphere.obj");
@@ -1064,28 +1068,28 @@ public:
 
 		setModel(shader, Model);
 		sky_sphere->Draw(shader);
-    
+
     Model->popMatrix();
     shader->unbind();
   }
 
-	void drawBorder(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model){
-		shader->bind();
+	// void drawBorder(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model){
+	// 	shader->bind();
 
-		glUniform3f(shader->getUniform("MatAmb"), 0.15f, 0.08f, 0.03f);
-		glUniform3f(shader->getUniform("MatDif"), 0.6f, 0.3f, 0.1f);
-		glUniform3f(shader->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f);
-		glUniform1f(shader->getUniform("MatShine"), 4.0f);
-		glUniform1i(shader->getUniform("hasEmittance"), 0);
+	// 	glUniform3f(shader->getUniform("MatAmb"), 0.15f, 0.08f, 0.03f);
+	// 	glUniform3f(shader->getUniform("MatDif"), 0.6f, 0.3f, 0.1f);
+	// 	glUniform3f(shader->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f);
+	// 	glUniform1f(shader->getUniform("MatShine"), 4.0f);
+	// 	glUniform1i(shader->getUniform("hasEmittance"), 0);
 
-		Model->pushMatrix();
-			Model->translate(bossAreaCenter);
-			Model->scale(0.5f);
-			setModel(shader, Model);
-			border->Draw(shader);
-		Model->popMatrix();
-		shader->unbind();
-	}
+	// 	Model->pushMatrix();
+	// 		Model->translate(bossAreaCenter);
+	// 		Model->scale(0.28f);
+	// 		setModel(shader, Model);
+	// 		border->Draw(shader);
+	// 	Model->popMatrix();
+	// 	shader->unbind();
+	// }
 
 
 void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
@@ -1305,12 +1309,15 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 				glm::ivec2 gridPos(x, z);
 				if (grid[gridPos] == LibraryGen::SHELF) {
 					// Calculate world position based on grid cell, centering the grid on libraryCenter
+					// int i = grid.mapGridXtoWorldX(x) + 0.5f; // Center the shelf in the cell
+					// int j = grid.mapGridYtoWorldZ(z) + 2.0f; // Center the shelf in the cell
 					float worldX = libraryCenter.x - gridWorldWidth * 0.5f + (x + 0.5f) * cellWidth;
 					float worldZ = libraryCenter.z - gridWorldDepth * 0.5f + (z + 0.5f) * cellDepth;
 
 					Model->pushMatrix();
 					Model->loadIdentity();
 					Model->translate(vec3(worldX, libraryCenter.y, worldZ)); // Position shelf at cell center on ground
+					// Model->translate(vec3(i, libraryCenter.y, j)); // Position wall at cell center on ground
 					// Scale based on cell size and factor, adjust Y scale for desired height
 					Model->scale(vec3(shelfScaleFactor * cellWidth * 1.5f, // Adjust scale factor
 						shelfScaleFactor * 1.8f, // Taller shelves
@@ -1319,6 +1326,41 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 					// Model->rotate(randFloat(0.f, 3.14f), vec3(0, 1, 0));
 					setModel(shader, Model);
 					book_shelf1->Draw(shader);
+					Model->popMatrix();
+				} else if (grid[gridPos] == LibraryGen::TOP_BORDER || grid[gridPos] == LibraryGen::BOTTOM_BORDER) {
+					// int i = grid.mapGridXtoWorldX(x) + 0.5f; // Center the shelf in the cell
+					// int j = grid.mapGridYtoWorldZ(z) + 0.5f; // Center the shelf in the cell
+					float worldX = libraryCenter.x - gridWorldWidth * 0.5f + (x + 0.5f) * cellWidth;
+					float worldZ = libraryCenter.z - gridWorldDepth * 0.5f + (z + 0.5f) * cellDepth;
+
+					// Draw wall sections (if needed)
+					Model->pushMatrix();
+					Model->loadIdentity();
+					Model->translate(vec3(worldX, libraryCenter.y, worldZ)); // Position wall at cell center on ground
+					// Model->translate(vec3(i, libraryCenter.y, j)); // Position wall at cell center on ground
+					Model->scale(vec3(shelfScaleFactor * cellWidth * 1.5f, // Adjust scale factor
+						shelfScaleFactor * 1.8f, // Taller walls
+						shelfScaleFactor * cellDepth * 1.5f));
+					Model->rotate(glm::radians(90.0f), vec3(0, 1, 0)); // Rotate for left/right walls
+					setModel(shader, Model);
+					book_shelf1->Draw(shader); // Use the same model for walls for simplicity
+					Model->popMatrix();
+				}  else if (grid[gridPos] == LibraryGen::LEFT_BORDER || grid[gridPos] == LibraryGen::RIGHT_BORDER) {
+					// int i = grid.mapGridXtoWorldX(x) + 0.5f; // Center the shelf in the cell
+					// int j = grid.mapGridYtoWorldZ(z) + 0.5f; // Center the shelf in the cell
+					float worldX = libraryCenter.x - gridWorldWidth * 0.5f + (x + 0.5f) * cellWidth;
+					float worldZ = libraryCenter.z - gridWorldDepth * 0.5f + (z + 0.5f) * cellDepth;
+
+					// Draw wall sections (if needed)
+					Model->pushMatrix();
+					Model->loadIdentity();
+					Model->translate(vec3(worldX, libraryCenter.y, worldZ)); // Position wall at cell center on ground
+					// Model->translate(vec3(i, libraryCenter.y, j)); // Position wall at cell center on ground
+					Model->scale(vec3(shelfScaleFactor * cellWidth * 1.5f, // Adjust scale factor
+						shelfScaleFactor * 1.8f, // Taller walls
+						shelfScaleFactor * cellDepth * 1.5f));
+					setModel(shader, Model);
+					book_shelf1->Draw(shader); // Use the same model for walls for simplicity
 					Model->popMatrix();
 				}
 			}
@@ -1497,7 +1539,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		float cellWidth = gridWorldWidth / (float)grid.getSize().x;
 		float cellDepth = gridWorldDepth / (float)grid.getSize().y;
 		// Use the same scale factor as drawLibrary
-		float shelfScaleFactor = 1.8f;
+		float shelfScaleFactor = 0.05f;
 		glm::vec3 shelfVisScale = vec3(shelfScaleFactor * cellWidth * 1.5f,
 			shelfScaleFactor * 1.8f,
 			shelfScaleFactor * cellDepth * 1.5f);
@@ -1513,6 +1555,31 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			if (collisionShelfLocalMin[i] > collisionShelfLocalMax[i]) std::swap(collisionShelfLocalMin[i], collisionShelfLocalMax[i]);
 		}
 
+		// spatial detection for library grid
+
+		// int gridX = grid.mapXtoGridX(playerWorldMin.x);
+		// int gridZ = grid.mapZtoGridY(playerWorldMin.z);
+
+		// std::cout << "[DEBUG] Player Grid Position: (" << gridX << "," << gridZ << ")" << std::endl;
+		// std::cout << "Grid Cell Value: " << grid[glm::ivec2(gridX, gridZ)] << std::endl;
+		// if (grid[glm::ivec2(gridX, gridZ)] == LibraryGen::TOP_BORDER ||
+		// 	grid[glm::ivec2(gridX, gridZ)] == LibraryGen::BOTTOM_BORDER ||
+		// 	grid[glm::ivec2(gridX, gridZ)] == LibraryGen::LEFT_BORDER ||
+		// 	grid[glm::ivec2(gridX, gridZ)] == LibraryGen::RIGHT_BORDER ||
+		// 	grid[glm::ivec2(gridX, gridZ)] == LibraryGen::SHELF) {
+		// 	return true; // No collision with walls
+		// }
+
+		// gridX = grid.mapXtoGridX(playerWorldMax.x);
+		// gridZ = grid.mapZtoGridY(playerWorldMax.z);
+		// if (grid[glm::ivec2(gridX, gridZ)] == LibraryGen::TOP_BORDER ||
+		// 	grid[glm::ivec2(gridX, gridZ)] == LibraryGen::BOTTOM_BORDER ||
+		// 	grid[glm::ivec2(gridX, gridZ)] == LibraryGen::LEFT_BORDER ||
+		// 	grid[glm::ivec2(gridX, gridZ)] == LibraryGen::RIGHT_BORDER ||
+		// 	grid[glm::ivec2(gridX, gridZ)] == LibraryGen::SHELF) {
+		// 	return false; // No collision with walls
+		// }
+
 		for (int z = 0; z < grid.getSize().y; ++z) {
 			for (int x = 0; x < grid.getSize().x; ++x) {
 				glm::ivec2 gridPos(x, z);
@@ -1525,6 +1592,42 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 					// Shelf transform (Position only, assuming no rotation for collision)
 					// The scale is applied to the local AABB above
 					glm::mat4 shelfTransform = glm::translate(glm::mat4(1.0f), shelfPos);
+
+					glm::vec3 shelfWorldMin, shelfWorldMax;
+					updateBoundingBox(collisionShelfLocalMin, collisionShelfLocalMax, shelfTransform, shelfWorldMin, shelfWorldMax);
+
+					// 4. Check for Overlap
+					if (checkAABBCollision(playerWorldMin, playerWorldMax, shelfWorldMin, shelfWorldMax)) {
+						// cout << "[DEBUG] Collision DETECTED with shelf at grid (" << x << "," << z << ")" << endl;
+						return true; // Collision found
+					}
+				} else if (grid[gridPos] == LibraryGen::TOP_BORDER || grid[gridPos] == LibraryGen::BOTTOM_BORDER) {
+					// 3. Calculate this shelf's World AABB
+					float worldX = libraryCenter.x - gridWorldWidth * 0.5f + (x + 0.5f) * cellWidth;
+					float worldZ = libraryCenter.z - gridWorldDepth * 0.5f + (z + 0.5f) * cellDepth;
+					glm::vec3 shelfPos = vec3(worldX, libraryCenter.y, worldZ); // Base position on ground
+
+					// Shelf transform (Position only, assuming no rotation for collision)
+					// The scale is applied to the local AABB above
+					glm::mat4 shelfTransform = glm::translate(glm::mat4(1.0f), shelfPos);
+
+					glm::vec3 shelfWorldMin, shelfWorldMax;
+					updateBoundingBox(collisionShelfLocalMin, collisionShelfLocalMax, shelfTransform, shelfWorldMin, shelfWorldMax);
+
+					// 4. Check for Overlap
+					if (checkAABBCollision(playerWorldMin, playerWorldMax, shelfWorldMin, shelfWorldMax)) {
+						// cout << "[DEBUG] Collision DETECTED with shelf at grid (" << x << "," << z << ")" << endl;
+						return true; // Collision found
+					}
+				} else if (grid[gridPos] == LibraryGen::LEFT_BORDER || grid[gridPos] == LibraryGen::RIGHT_BORDER) {
+					// 3. Calculate this shelf's World AABB
+					float worldX = libraryCenter.x - gridWorldWidth * 0.5f + (x + 0.5f) * cellWidth;
+					float worldZ = libraryCenter.z - gridWorldDepth * 0.5f + (z + 0.5f) * cellDepth;
+					glm::vec3 shelfPos = vec3(worldX, libraryCenter.y, worldZ); // Base position on ground
+
+					// Shelf transform (Position only, assuming no rotation for collision)
+					// The scale is applied to the local AABB above
+					glm::mat4 shelfTransform = glm::translate(glm::mat4(1.0f), shelfPos) * glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), vec3(0, 1, 0)); // Rotate for left/right walls
 
 					glm::vec3 shelfWorldMin, shelfWorldMax;
 					updateBoundingBox(collisionShelfLocalMin, collisionShelfLocalMax, shelfTransform, shelfWorldMin, shelfWorldMax);
@@ -1850,7 +1953,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		// 1. Draw Ground, Path
 		drawGroundSections(prog2, Model);
 
-		drawBorder(prog2, Model);
+		// drawBorder(prog2, Model);
 
 		// 2. Draw the Static Library Shelves
 		drawLibrary(assimptexProg, Model);

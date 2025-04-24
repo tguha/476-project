@@ -13,9 +13,10 @@ class LibraryGen {
     public:
         LibraryGen() : grid(glm::ivec2(1, 1), glm::ivec2(0, 0), NONE) {}
 
-        enum CellType {NONE, SHELF, PATH};
+        enum CellType {NONE, SHELF, PATH, SPAWN, BOSS_ENTRANCE, TOP_BORDER, BOTTOM_BORDER, LEFT_BORDER, RIGHT_BORDER};
 
-        void generate(glm::ivec2 size, glm::ivec2 offset = {0, 0});
+        void generate(glm::ivec2 size, glm::ivec2 offset = {0, 0},
+            glm::vec3 spawnPos = {0, 0, 0}, glm::vec2 bossEntrDir = {1, 0});
         const Grid<CellType>& getGrid() const { return grid; }
         CellType getCell(const glm::ivec2& pos) const { return grid.getCell(pos); }
 
@@ -23,6 +24,8 @@ class LibraryGen {
         Grid<CellType> grid; // Grid of CellType
         std::vector<glm::vec2> clusterCenters;
         std::mt19937 seedGen;
+        glm::vec2 spawnPosinGrid;
+        glm::vec2 bossEntranceDir;
 
         std::vector<std::pair<glm::ivec2, glm::ivec2>> selectedEdges;
 
@@ -30,6 +33,7 @@ class LibraryGen {
         void triangulateClusters();
         void generatePaths();
         void addShelfWalls();
+        void placeBorder();
 
         Pathfinder::PathCost calcCost(const glm::ivec2& from, const glm::ivec2& to);
 };
