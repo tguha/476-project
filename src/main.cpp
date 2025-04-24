@@ -366,9 +366,9 @@ public:
 
 	float wasd_sens = 0.5f;
 
-	vec3 eye = vec3(-6, 1.03, 0);
+	vec3 eye = vec3(-6, 1.03, 0); /*MINI MAP*/
 	// vec3 lookAt = vec3(-1.58614, -0.9738, 0.0436656);
-	vec3 lookAt = characterMovement;
+	vec3 lookAt = characterMovement; /*MINI MAP*/
 	vec3 up = vec3(0, 1, 0);
 
 	vec3 right = normalize(cross(manMoveDir, up));
@@ -1755,6 +1755,14 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		shader->unbind();
 	}
 
+
+	/* top down camera view  */
+	mat4 SetTopView(shared_ptr<Program> curShade) { /*MINI MAP*/
+		mat4 Cam = lookAt(eye + vec3(0, 7, 0), eye, lookAt - eye);
+		glUniformMatrix4fv(curShade->getUniform("V"), 1, GL_FALSE, value_ptr(Cam));
+		return Cam;
+	}
+
 	void render(float frametime, float animTime) {
 		// Get current frame buffer size.
 		int width, height;
@@ -1873,6 +1881,18 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		drawPlayer(assimptexProg, Model, animTime);
 
 		drawSkybox(assimptexProg, Model); // Draw the skybox last
+
+		/*MINI MAP*/
+		prog2->bind();
+			glClear( GL_DEPTH_BUFFER_BIT);
+			glViewport(0, height-300, 300, 300);
+			SetOrthoMatrix(prog);
+			SetTopView(prog); /*MINI MAP*/
+			drawScene(prog, CULL);
+			// if (SD)
+			// 	drawOccupied(prog);
+
+		prog2->unbind();
 
 		// --- Cleanup ---
 		Projection->popMatrix();
