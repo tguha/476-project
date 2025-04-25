@@ -19,6 +19,7 @@
 #include "LibraryGen.h"
 // #include "Grid.h"
 #include "Enemy.h"
+#include "Player.h"
 
 // value_ptr for glm
 #include <glm/gtc/type_ptr.hpp>
@@ -296,7 +297,7 @@ public:
 	int window_height = 480;
 
 	// Our shader programs
-	std::shared_ptr<Program> texProg, prog2, assimptexProg;
+	std::shared_ptr<Program> texProg, hudProg, prog2, assimptexProg;
 
 	// ground data - Reused for all flat ground planes
 	GLuint GrndBuffObj = 0, GrndNorBuffObj = 0, GIndxBuffObj = 0; // Initialize to 0
@@ -327,6 +328,8 @@ public:
 	glm::vec3 manAABBmin, manAABBmax;
 
 	AssimpModel *book_shelf1;
+
+	AssimpModel *healthBar;
 
 	AssimpModel *cube, *sphere;
   
@@ -685,6 +688,17 @@ public:
 		}
 		assimptexProg->addUniform("numLights");
 		assimptexProg->addUniform("hasTexture");
+
+		hudProg = make_shared<Program>();
+		hudProg->setVerbose(true);
+		hudProg->setShaderNames(resourceDirectory + "/hud_vert.glsl", resourceDirectory + "/hud_frag.glsl");
+		hudProg->init();
+		hudProg->addUniform("projection");
+		hudProg->addUniform("model");
+		hudProg->addUniform("healthPercent");
+		hudProg->addUniform("BarStartX");
+		hudProg->addUniform("BarWidth");
+
 		updateCameraVectors();
 
 		library->generate(glm::ivec2(30, 30)); // grid size
@@ -721,6 +735,10 @@ public:
 
 		// load the sphere (spell)
 		sphere = new AssimpModel(resourceDirectory + "/SmoothSphere.obj");
+
+		// health bar
+		healthBar = new AssimpModel(resourceDirectory + "/Quad/hud_quad.obj");
+		healthBar->assignTexture("texture_diffuse1", resourceDirectory + "/healthbar.bmp");
 
 		baseSphereLocalAABBMin = sphere->getBoundingBoxMin();
 		baseSphereLocalAABBMax = sphere->getBoundingBoxMax();
@@ -1755,6 +1773,27 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		shader->unbind();
 	}
 
+	void drawHealthBar() {
+		int screenWidth, screenHeight;
+		glfwGetFramebufferSize(windowManager->getHandle(), &screenWidth, &screenHeight);
+	
+		glm::mat4 projection = glm::ortho(0.0f, (float)screenWidth, 0.0f, (float)screenHeight, -1.0f, 1.0f);
+		
+		glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(100.0f, 100.0f, 0.0f));  // HUD position
+		model = glm::scale(model, glm::vec3(500.0f, 50.0f, 1.0f));                          // HUD size
+	
+		hudProg->bind();
+		glUniformMatrix4fv(hudProg->getUniform("projection"), 1, GL_FALSE, value_ptr(projection));
+		glUniformMatrix4fv(hudProg->getUniform("model"), 1, GL_FALSE, value_ptr(model));
+		glUniform1f(hudProg->getUniform("healthPercent"), 50.0f / PLAYER_MAX_HEALTH); // Pass health value
+		glUniform1f(hudProg->getUniform("BarStartX"), 100.0); // Pass max health value
+		glUniform1f(hudProg->getUniform("BarWidth"), 500.0); // Pass max health value
+	
+		healthBar->Draw(hudProg);
+		hudProg->unbind();
+	}
+	
+
 	void render(float frametime, float animTime) {
 		// Get current frame buffer size.
 		int width, height;
@@ -1873,6 +1912,8 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		drawPlayer(assimptexProg, Model, animTime);
 
 		drawSkybox(assimptexProg, Model); // Draw the skybox last
+
+		drawHealthBar();
 
 		// --- Cleanup ---
 		Projection->popMatrix();

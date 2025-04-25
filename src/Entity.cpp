@@ -22,6 +22,10 @@ glm::vec3 Entity::getPosition() const {
     return position;
 }
 
+float Entity::getHitpoints() const {
+    return hitpoints;
+}
+
 bool Entity::isAlive() const {
     // Check both the flag and hitpoints for robustness
     return alive && hitpoints > 0;

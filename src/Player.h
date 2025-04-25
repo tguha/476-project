@@ -5,6 +5,7 @@
 #include "Spell.h"
 
 #define INVENTORY_SIZE 8
+#define PLAYER_MAX_HEALTH 100.0f
 
 typedef enum {
     SLOT_LEFT,

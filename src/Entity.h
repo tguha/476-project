@@ -24,6 +24,7 @@ class Entity {
 
         // --- Getters ---
         glm::vec3 getPosition() const;
+        float getHitpoints() const;
         bool isAlive() const;
         glm::vec3 getAABBMin() const; // Getter for AABB
         glm::vec3 getAABBMax() const; // Getter for AABB
