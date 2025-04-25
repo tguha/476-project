@@ -16,12 +16,18 @@
 #include "AssimpModel.h"
 #include "Animator.h"
 #include "LightTrail.h"
+#include "LibraryGen.h"
+// #include "Grid.h"
 #include "Enemy.h"
 #include "Player.h"
 
 // value_ptr for glm
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtx/quaternion.hpp> // For glm::quat and glm::rotation
+#include <glm/gtx/vector_angle.hpp> // Also sometimes needed for glm::rotation
+#include <algorithm>              // For std::remove_if
+#include <limits>                 // For std::numeric_limits (used in updateBoundingBox)
 
 using namespace std;
 using namespace glm;
@@ -48,6 +54,27 @@ enum class OrbState {
 	LEVITATING,// Moving upwards
 	IDLE,      // Stationary, ready for collection
 	COLLECTED // Visually attached to player (handled by drawing logic)
+};
+
+// --- SpellProjectile Struct ---
+struct SpellProjectile {
+	glm::vec3 position;
+	glm::vec3 direction;
+	glm::vec3 scale = glm::vec3(0.05f, 0.05f, 0.6f);
+	float speed = 20.0f;
+	float lifetime = 2.0f;
+	float spawnTime = 0.0f;
+	bool active = true;
+	AssimpModel* model = nullptr;
+
+	glm::vec3 aabbMin;
+	glm::vec3 aabbMax;
+	glm::mat4 transform; // Still useful for drawing
+
+	SpellProjectile(glm::vec3 startPos, glm::vec3 dir, float time, AssimpModel* mdl)
+		: position(startPos), direction(normalize(dir)), spawnTime(time), model(mdl), transform(1.0f) // Initialize transform
+	{
+	}
 };
 
 class Book {
@@ -85,29 +112,58 @@ public:
 	}
 
 	// Method to start the fall
-	void startFalling(float groundY) {
-		if (state == BookState::ON_SHELF) {
-			state = BookState::FALLING;
-			fallStartTime = glfwGetTime();
-
-			glm::vec3 endPosition = position;
-			endPosition.y = groundY + (scale.y * 0.5f); // Land flat on the ground based on scale
-
-			// Add some randomness to landing spot and arc
-			float offsetX = randFloat(-0.5f, 0.5f);
-			float offsetZ = randFloat(-0.5f, 0.5f);
-			endPosition.x += offsetX;
-			endPosition.z += offsetZ;
-
-			// Simple control point for a basic arc
-			glm::vec3 controlPoint = (initialPosition + endPosition) * 0.5f; // Midpoint
-			controlPoint.y += 2.0f; // Arc upwards
-			controlPoint.x += randFloat(-1.0f, 1.0f); // Random horizontal arc deviation
-
-			// Create spline (quadratic example, cubic needs another control point)
-			delete fallSpline; // Delete old one if any (shouldn't happen in this flow)
-			fallSpline = new Spline(initialPosition, controlPoint, endPosition, 0.25f); // 0.25 second fall duration
+	void startFalling(float groundY, const glm::vec3& playerPos) {
+		// Check state BEFORE accessing initialPosition etc.
+		if (state != BookState::ON_SHELF) {
+			return; // Already falling or in another state
 		}
+
+		state = BookState::FALLING;
+		fallStartTime = (float)glfwGetTime(); // Cast to float
+
+		// --- Calculate Landing Position (End Point) ---
+		glm::vec3 endPosition;
+		endPosition.y = groundY + (scale.y * 0.5f); // Land flat based on book scale
+
+		// Calculate direction away from player towards the book's spawn point
+		// Flatten the direction to the XZ plane to avoid influencing landing Y
+		glm::vec3 dirToBook = playerPos - initialPosition;
+		dirToBook.y = 0.0f; // Ignore vertical difference for landing direction
+
+		// Handle case where player is exactly at the spawn point (or very close)
+		float distSq = dot(dirToBook, dirToBook); // Use dot product for squared length
+		if (distSq < 0.01f) { // If too close, pick a default direction (e.g., positive Z)
+			dirToBook = glm::vec3(0.0f, 0.0f, 1.0f);
+		}
+		else {
+			dirToBook = normalize(dirToBook); // Normalize the direction vector
+		}
+
+		// Define how far the book should land
+		float landingDistance = 3.0f; // <-- ADJUST this value to throw further
+		float randomSpread = 0.75f; // <-- Randomness around the target landing spot
+
+		// Calculate landing X and Z based on direction and distance + randomness
+		endPosition.x = initialPosition.x + dirToBook.x * landingDistance + randFloat(-randomSpread, randomSpread);
+		endPosition.z = initialPosition.z + dirToBook.z * landingDistance + randFloat(-randomSpread, randomSpread);
+
+
+		// --- Calculate Control Point for the Arc ---
+		glm::vec3 controlPoint = (initialPosition + endPosition) * 0.5f; // Midpoint between start and end
+		// Make the arc higher relative to the start position
+		controlPoint.y = initialPosition.y + 3.0f; // <-- ADJUST arc height (relative to start)
+		// Add some sideways deviation to the arc's peak
+		controlPoint.x += randFloat(-1.5f, 1.5f); // More horizontal arc randomness
+
+		// --- Create the Spline ---
+		float fallDuration = 0.4f; // <-- ADJUST fall duration if needed
+		delete fallSpline;
+		fallSpline = new Spline(initialPosition, controlPoint, endPosition, fallDuration);
+
+		// Debug output (optional)
+		// cout << "Book Falling: Start=" << initialPosition.x << "," << initialPosition.y << "," << initialPosition.z
+		//      << " End=" << endPosition.x << "," << endPosition.y << "," << endPosition.z
+		//      << " Dir=" << dirToBook.x << "," << dirToBook.z << endl;
 	}
 
 	// Method to update the book's state and position
@@ -238,24 +294,48 @@ public:
 
 	std::shared_ptr<Player> player;
 
+	bool windowMaximized = false;
+	int window_width = 640;
+	int window_height = 480;
+
 	// Our shader programs
 	std::shared_ptr<Program> texProg, prog2, assimptexProg;
 
-	// ground data
-	GLuint GrndBuffObj, GrndNorBuffObj, GIndxBuffObj;
-	int g_GiboLen;
-	GLuint GroundVertexArrayID;
-	float groundSize = 20.0f;
+	// ground data - Reused for all flat ground planes
+	GLuint GrndBuffObj = 0, GrndNorBuffObj = 0, GIndxBuffObj = 0; // Initialize to 0
+	int g_GiboLen = 0;
+	GLuint GroundVertexArrayID = 0; // Initialize to 0
+	float groundSize = 20.0f; // Half-size of the main library ground square
+	float groundY = 0.0f;     // Y level for all ground planes
+
+	// Scene layout parameters
+	vec3 libraryCenter = vec3(0.0f, groundY, 0.0f);
+	vec3 bossAreaCenter = vec3(0.0f, groundY, 60.0f); // Further away
+	vec3 doorPosition = vec3(0.0f, 1.5f, groundSize); // Center of door at library edge
+	vec3 doorScale = vec3(1.5f, 3.0f, 0.2f); // Width, Height, Thickness
+	float pathWidth = 4.0f; // Width of the path connecting areas
 
 	// setup collectibles vector
 	std::vector<Collectible> orbCollectibles;
 	int orbsCollectedCount = 0;
 	std::vector<Enemy*> enemies;
 
+	// --- Spell Projectiles ---
+	std::vector<SpellProjectile> activeSpells;
+	glm::vec3 baseSphereLocalAABBMin; // Store base sphere AABB once
+	glm::vec3 baseSphereLocalAABBMax;
+	bool sphereAABBCalculated = false;
+
 	// character bounding box
 	glm::vec3 manAABBmin, manAABBmax;
 
-	AssimpModel *cube, *barrel, *creeper, *alien, *wizard_hat, *fish, *cylinder, *sphere;
+	AssimpModel *book_shelf1;
+
+	AssimpModel *cube, *sphere;
+  
+  AssimpModel *sky_sphere;
+  
+  AssimpModel *border;
 
 	//  vector of books
 	vector<Book> books;
@@ -316,10 +396,13 @@ public:
 	bool movingBackward = false;
 	bool movingLeft = false;
 	bool movingRight = false;
-	
+
 	float characterRotation = 0.0f;
 
 	Man_State manState = STANDING;
+
+	LibraryGen *library = new LibraryGen();
+	Grid<LibraryGen::CellType> grid;
 
 	void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods)
 	{
@@ -327,7 +410,19 @@ public:
 		{
 			glfwSetWindowShouldClose(window, GL_TRUE);
 		}
-		//update global camera rotate
+
+		if (key == GLFW_KEY_F11 && action == GLFW_PRESS)
+		{
+			//Fullscreen Mode
+			if (!windowMaximized) {
+				glfwMaximizeWindow(window);
+				windowMaximized = !windowMaximized;
+			}
+			else {
+				glfwRestoreWindow(window);
+				windowMaximized = !windowMaximized;
+			}
+		}
 
 		if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_W) != GLFW_RELEASE) {
 			manState = WALKING;
@@ -377,7 +472,7 @@ public:
 		}
 		if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_D) != GLFW_RELEASE) {
 			manState = WALKING;
-			
+
 			//Movement Variable
 			movingRight = true;
 
@@ -480,18 +575,17 @@ public:
 		// cout << "Theta: " << theta << " Phi: " << phi << endl;
 		manMoveDir = vec3(sin(manRot.y), 0, cos(manRot.y));
 		right = normalize(cross(manMoveDir, up));
-		
+
 		// lookAt = eye + front;
 	}
-	
+
 	void mouseCallback(GLFWwindow *window, int button, int action, int mods)
 	{
 		double posX, posY;
 
 		if (action == GLFW_PRESS)
 		{
-			 glfwGetCursorPos(window, &posX, &posY);
-			 cout << "Pos X " << posX << " Pos Y " << posY << endl;
+			shootSpell();
 		}
 	}
 
@@ -594,6 +688,10 @@ public:
 		assimptexProg->addUniform("numLights");
 		assimptexProg->addUniform("hasTexture");
 		updateCameraVectors();
+
+		library->generate(glm::ivec2(30, 30)); // grid size
+		grid = library->getGrid();
+
 	}
 
 	void initGeom(const std::string& resourceDirectory)
@@ -604,36 +702,48 @@ public:
 		stickfigure_running = new AssimpModel(resourceDirectory + "/Vanguard/Vanguard.fbx");
 		stickfigure_anim = new Animation(resourceDirectory + "/Vanguard/Vanguard.fbx", stickfigure_running, 0);
 		stickfigure_idle = new Animation(resourceDirectory + "/Vanguard/Vanguard.fbx", stickfigure_running, 1);
+
+		// --- Calculate Player Collision Box NOW that model is loaded ---
+		calculatePlayerLocalAABB();
+
 		stickfigure_animator = new Animator(stickfigure_anim);
 
 		// load the cube (books)
 		cube = new AssimpModel(resourceDirectory + "/cube.obj");
 
+		book_shelf1 = new AssimpModel(resourceDirectory + "/book_shelf/source/bookshelf_cluster.obj");
+
+		book_shelf1->assignTexture("texture_diffuse1", resourceDirectory + "/book_shelf/textures/bookstack_textures_2.jpg");
+		book_shelf1->assignTexture("texture_specular1", resourceDirectory + "/book_shelf/textures/bookstack_specular.jpg");
+    
+    sky_sphere = new AssimpModel(resourceDirectory + "/sky_sphere/skybox_sphere.obj");
+		sky_sphere->assignTexture("texture_diffuse1", resourceDirectory + "/sky_sphere/sky_sphere.fbm/infinite_lib2.png");
+    
+    border = new AssimpModel(resourceDirectory + "/border.obj");
+
 		// load the sphere (spell)
 		sphere = new AssimpModel(resourceDirectory + "/SmoothSphere.obj");
+		baseSphereLocalAABBMin = sphere->getBoundingBoxMin();
+		baseSphereLocalAABBMax = sphere->getBoundingBoxMax();
+		sphereAABBCalculated = true;
+		cout << "[DEBUG] Stored Base Sphere Local AABB." << endl;
 
-		books.emplace_back(cube, sphere,
-			glm::vec3(5.0f, 2.0f, 0.0f),  // Initial Position (on a shelf)
-			glm::vec3(0.8f, 1.0f, 0.2f),  // Scale (Width, Height, Thickness)
-			glm::angleAxis(glm::radians(0.0f), glm::vec3(0, 1, 0)), // Orientation (upright)
-			glm::vec3(1.0f, 0.0f, 0.0f)); // Orb Color (Red)
+		// --- Initialize Enemy(s) ---
+		cout << "Initializing enemies..." << endl;
+		// Use the scale factor used in drawEnemies
+		// Body scale was (0.5f, bodyBaseScaleY * 1.6f, 0.5f) where bodyBaseScaleY = 0.8f => (0.5, 1.28, 0.5)
+		glm::vec3 enemyCollisionScale = glm::vec3(0.5f, 1.28f, 0.5f); // Define the scale
+		vec3 bossSpawnPos = bossAreaCenter + vec3(0.0f, 0.8f, 0.0f);
 
-		books.emplace_back(cube, sphere,
-			glm::vec3(5.0f, 2.0f, 0.5f),  // Position
-			glm::vec3(0.8f, 1.0f, 0.2f),  // Scale
-			glm::angleAxis(glm::radians(10.0f), glm::vec3(0, 1, 0)), // Slightly rotated
-			glm::vec3(0.0f, 0.0f, 1.0f)); // Orb Color (Blue)
-
-		books.emplace_back(cube, sphere,
-			glm::vec3(5.0f, 1.0f, -0.5f), // Lower shelf
-			glm::vec3(0.6f, 0.8f, 0.15f), // Smaller book
-			glm::angleAxis(glm::radians(-5.0f), glm::vec3(0, 1, 0)),
-			glm::vec3(0.0f, 1.0f, 0.0f)); // Orb Color (Green)
-
-		// --- Initialize Enemies ---
-		// Create one enemy instance at position (e.g., 5, 1, 5) with 100 HP and 0 move speed (static for now)
-		// The vertical pill shape means the base sphere should be scaled more in Y.
-		enemies.push_back(new Enemy(glm::vec3(5.0f, 1.0f, 5.0f), glm::vec3(1.0f, 1.0f, 1.0f), glm::vec3(0.0f, 0.0f, 0.0f), 100.0f, 0.0f)); // Pos, Scale, Rot, HP, Speed
+		// Check if sphere model is loaded before creating enemies that use it
+		if (sphere) {
+			enemies.push_back(new Enemy(bossSpawnPos, 200.0f, 0.0f, sphere, enemyCollisionScale)); // <<-- Pass sphere and scale
+			cout << " Enemy placed at boss area: (" << bossSpawnPos.x << ", " << bossSpawnPos.y << ", " << bossSpawnPos.z << ")" << endl;
+			enemies.push_back(new Enemy(libraryCenter + vec3(-5.0f, 0.8f, 8.0f), 50.0f, 0.0f, sphere, enemyCollisionScale)); // <<-- Pass sphere and scale
+		}
+		else {
+			cerr << "ERROR: Sphere model not loaded, cannot create enemies." << endl;
+		}
 	}
 
 	void SetMaterialMan(shared_ptr<Program> curS, int i) {
@@ -716,125 +826,161 @@ public:
 		}
 	}
 
-	//directly pass quad for the ground to the GPU
 	void initGround() {
-		float g_groundSize = groundSize;
-		float g_groundY = 0.0f;
-		// A x-z plane at y = g_groundY of dimension [-g_groundSize, g_groundSize]^2
+		// Check if already initialized
+		if (GroundVertexArrayID != 0) {
+			cout << "Warning: initGround() called more than once." << endl;
+			return;
+		}
+		// Ground plane from -groundSize to +groundSize in X and Z at groundY
 		float GrndPos[] = {
-			-g_groundSize, g_groundY, -g_groundSize,
-			-g_groundSize, g_groundY,  g_groundSize,
-			g_groundSize, g_groundY,  g_groundSize,
-			g_groundSize, g_groundY, -g_groundSize
+			-groundSize, groundY, -groundSize, // top-left
+			-groundSize, groundY,  groundSize, // bottom-left
+			 groundSize, groundY,  groundSize, // bottom-right
+			 groundSize, groundY, -groundSize  // top-right
 		};
+		// Normals point straight up
 		float GrndNorm[] = {
-			0, 1, 0,
-			0, 1, 0,
-			0, 1, 0,
-			0, 1, 0,
-			0, 1, 0,
-			0, 1, 0
+			0, 1, 0,   0, 1, 0,   0, 1, 0,   0, 1, 0
 		};
-		unsigned short idx[] = { 0, 1, 2, 0, 2, 3 };
+		// Indices for two triangles covering the quad
+		unsigned short idx[] = { 0, 1, 2,   0, 2, 3 };
+		g_GiboLen = 6; // Number of indices
 
-		// Generate the ground VAO
+		// Generate VAO
 		glGenVertexArrays(1, &GroundVertexArrayID);
 		glBindVertexArray(GroundVertexArrayID);
 
-		g_GiboLen = 6;
+		// Position buffer (Attribute 0)
 		glGenBuffers(1, &GrndBuffObj);
 		glBindBuffer(GL_ARRAY_BUFFER, GrndBuffObj);
 		glBufferData(GL_ARRAY_BUFFER, sizeof(GrndPos), GrndPos, GL_STATIC_DRAW);
+		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
 
+		// Normal buffer (Attribute 1)
 		glGenBuffers(1, &GrndNorBuffObj);
 		glBindBuffer(GL_ARRAY_BUFFER, GrndNorBuffObj);
 		glBufferData(GL_ARRAY_BUFFER, sizeof(GrndNorm), GrndNorm, GL_STATIC_DRAW);
+		glEnableVertexAttribArray(1);
+		glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
 
+		// Index buffer
 		glGenBuffers(1, &GIndxBuffObj);
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, GIndxBuffObj);
 		glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(idx), idx, GL_STATIC_DRAW);
+
+		// Unbind VAO and buffers (good practice)
+		glBindVertexArray(0);
+		glBindBuffer(GL_ARRAY_BUFFER, 0);
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+
+		cout << "Ground Initialized: VAO ID " << GroundVertexArrayID << endl;
 	}
 
-    //code to draw the ground plane
-	void drawGround(shared_ptr<Program> curS, std::shared_ptr<MatrixStack> Model) {
-		curS->bind();
-		glBindVertexArray(GroundVertexArrayID);
+	// Draw the ground sections (library, boss area, path)
+	void drawGroundSections(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
+		if (!shader || !Model || GroundVertexArrayID == 0) { // Check if ground is initialized
+			// cerr << "Error: Cannot draw ground sections - shader, model, or ground VAO invalid." << endl;
+			return;
+		}
 
-		// Set material for ground
-		SetMaterialMan(curS, 1);
+		shader->bind(); // Bind the simple shader
 
-		// Use the matrix stack for the model matrix
+		glBindVertexArray(GroundVertexArrayID); // Bind ground VAO
+
+		// 1. Draw Library Ground
 		Model->pushMatrix();
 		Model->loadIdentity();
-		Model->translate(vec3(0, 0, 0));
-		glUniformMatrix4fv(curS->getUniform("M"), 1, GL_FALSE, value_ptr(Model->topMatrix()));
-
-		glEnableVertexAttribArray(0);
-		glBindBuffer(GL_ARRAY_BUFFER, GrndBuffObj);
-		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
-
-		glEnableVertexAttribArray(1);
-		glBindBuffer(GL_ARRAY_BUFFER, GrndNorBuffObj);
-		glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, 0);
-
-		// Draw
-		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, GIndxBuffObj);
+		Model->translate(libraryCenter); // Center the ground plane
+		// No scaling needed if initGround used groundSize correctly relative to its vertices
+		setModel(shader, Model);
+		SetMaterialMan(shader, 1); // Silver material
 		glDrawElements(GL_TRIANGLES, g_GiboLen, GL_UNSIGNED_SHORT, 0);
-
-		glDisableVertexAttribArray(0);
-		glDisableVertexAttribArray(1);
-
 		Model->popMatrix();
-		curS->unbind();
+
+		// 2. Draw Boss Area Ground
+		Model->pushMatrix();
+		Model->loadIdentity();
+		Model->translate(bossAreaCenter); // Position the boss ground plane
+		setModel(shader, Model);
+		SetMaterialMan(shader, 2); // Bronze material
+		glDrawElements(GL_TRIANGLES, g_GiboLen, GL_UNSIGNED_SHORT, 0);
+		Model->popMatrix();
+
+		// 3. Draw Path (Scaled ground geometry)
+		Model->pushMatrix();
+		Model->loadIdentity();
+		// Calculate path dimensions and position
+		float pathLength = bossAreaCenter.z - libraryCenter.z - 2 * groundSize;
+		if (pathLength < 0) pathLength = 0; // Avoid negative length if areas overlap
+		float pathCenterZ = libraryCenter.z + groundSize + pathLength * 0.5f;
+		// Calculate scaling factors based on the original ground quad size (groundSize * 2)
+		float scaleX = pathWidth / (groundSize * 2.0f);
+		float scaleZ = pathLength / (groundSize * 2.0f);
+
+		Model->translate(vec3(libraryCenter.x, groundY, pathCenterZ)); // Center the path segment
+		Model->scale(vec3(scaleX, 1.0f, scaleZ)); // Scale ground quad to path dimensions
+		setModel(shader, Model);
+		SetMaterialMan(shader, 4); // Dark white material
+		glDrawElements(GL_TRIANGLES, g_GiboLen, GL_UNSIGNED_SHORT, 0);
+		Model->popMatrix();
+
+		// Unbind VAO after drawing all ground parts
+		glBindVertexArray(0);
+
+		shader->unbind(); // Unbind the simple shader
 	}
 
 	void drawPlayer(shared_ptr<Program> curS, shared_ptr<MatrixStack> Model, float animTime) {
+		if (!curS || !Model || !stickfigure_running || !stickfigure_animator || !stickfigure_anim || !stickfigure_idle) {
+			cerr << "Error: Null pointer in drawPlayer." << endl;
+			return;
+		}
 		curS->bind();
-		
-		// select animation for vanguard model
-		stickfigure_animator->UpdateAnimation(1.5 * animTime);
+
+		// Animation update
+		stickfigure_animator->UpdateAnimation(1.5f * animTime);
 		if (manState == WALKING) {
 			stickfigure_animator->SetCurrentAnimation(stickfigure_anim);
 		}
-		else if (manState == STANDING) {
+		else {
 			stickfigure_animator->SetCurrentAnimation(stickfigure_idle);
 		}
 
-		// update the bone matrices according to selected animation
+		// Update bone matrices
 		vector<glm::mat4> transforms = stickfigure_animator->GetFinalBoneMatrices();
-		for (int i = 0; i < transforms.size(); ++i) {
-			glUniformMatrix4fv(curS->getUniform("finalBonesMatrices[" + std::to_string(i) + "]"), 1, GL_FALSE, value_ptr(transforms[i]));
+		int numBones = std::min((int)transforms.size(), MAX_BONES);
+		for (int i = 0; i < numBones; ++i) {
+			string uniformName = "finalBonesMatrices[" + std::to_string(i) + "]";
+			glUniformMatrix4fv(curS->getUniform(uniformName), 1, GL_FALSE, value_ptr(transforms[i]));
 		}
 
-		// set the model matrix and draw the walking character model
+		// Model matrix setup
 		Model->pushMatrix();
 		Model->loadIdentity();
 
-		charMove();
-		
-		Model->translate(player->getPosition());
-		Model->scale(player->getScale());
-		Model->rotate(player->getRotY(), vec3(0, 1, 0));
+		Model->translate(characterMovement); // Use final player position
+		// *** USE CAMERA ROTATION FOR MODEL ***
+		Model->rotate(manRot.y, vec3(0, 1, 0)); // <<-- FIXED ROTATION
+		Model->scale(manScale);
 
-		// Update the bounding box for collision detection
-		// Probably will add BBOX to the Entity/Player class later on
-		glm::mat4 manTransform = glm::translate(glm::mat4(1.0f), player->getPosition())
-			* glm::rotate(glm::mat4(1.0f), player->getRotX(), glm::vec3(1, 0, 0))
-			* glm::rotate(glm::mat4(1.0f), player->getRotY(), glm::vec3(0, 1, 0))
-			* glm::scale(glm::mat4(1.0f), player->getScale());
+		// Update VISUAL bounding box (can be different from collision box if needed)
+		// Using the same AABB calculation logic as before for consistency
+		glm::mat4 manTransform = Model->topMatrix();
 
 		updateBoundingBox(stickfigure_running->getBoundingBoxMin(),
 			stickfigure_running->getBoundingBoxMax(),
 			manTransform,
-			manAABBmin,
+			manAABBmin, // This is the visual/interaction AABB
 			manAABBmax);
 
+		// Set uniforms and draw
 		glUniform1i(curS->getUniform("hasTexture"), 1);
-		SetMaterialMan(curS, 0);
 		setModel(curS, Model);
 		stickfigure_running->Draw(curS);
-		Model->popMatrix();
 
+		Model->popMatrix();
 		curS->unbind();
 	}
 
@@ -911,8 +1057,40 @@ public:
 		shader->unbind();
 	}
 
-	void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
+	void drawSkybox(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
+		shader->bind(); // Use prog2 for simple colored shapes
 
+		Model->pushMatrix();
+		Model->loadIdentity();
+		Model->translate(vec3(bossAreaCenter.x, bossAreaCenter.y, bossAreaCenter.z - 20)); // Center the sky sphere at the player position
+		Model->scale(vec3(5.0f)); // Scale up the sky sphere to cover the scene
+
+		setModel(shader, Model);
+		sky_sphere->Draw(shader);
+    
+    Model->popMatrix();
+    shader->unbind();
+  }
+
+	void drawBorder(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model){
+		shader->bind();
+
+		glUniform3f(shader->getUniform("MatAmb"), 0.15f, 0.08f, 0.03f);
+		glUniform3f(shader->getUniform("MatDif"), 0.6f, 0.3f, 0.1f);
+		glUniform3f(shader->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f);
+		glUniform1f(shader->getUniform("MatShine"), 4.0f);
+		glUniform1i(shader->getUniform("hasEmittance"), 0);
+
+		Model->pushMatrix();
+			Model->translate(bossAreaCenter);
+			Model->scale(0.5f);
+			setModel(shader, Model);
+			border->Draw(shader);
+		Model->popMatrix();
+		shader->unbind();
+	}
+
+void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		// --- Collision Check Logic ---
 		for (auto& orb : orbCollectibles) {
 			// Perform collision check ONLY if not collected AND in the IDLE state
@@ -979,6 +1157,7 @@ public:
 
 		simpleShader->unbind();
 	}
+
 
 	void drawEnemies(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		if (!sphere) return; // Need the sphere model
@@ -1111,6 +1290,62 @@ public:
 		shader->unbind();
 	}
 
+	void drawLibrary(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
+		if (!shader || !Model || !book_shelf1 || grid.getSize().x == 0 || grid.getSize().y == 0) return; // Safety checks
+
+		shader->bind();
+		glUniform1i(shader->getUniform("hasTexture"), 1); // Bookshelves should use texture
+
+		float gridWorldWidth = groundSize * 2.0f; // The world space the grid should occupy (library floor width)
+		float gridWorldDepth = groundSize * 2.0f; // The world space the grid should occupy (library floor depth)
+		float cellWidth = gridWorldWidth / (float)grid.getSize().x;
+		float cellDepth = gridWorldDepth / (float)grid.getSize().y;
+		float shelfScaleFactor = 1.8f; // Adjust scale of the bookshelf model itself
+
+		for (int z = 0; z < grid.getSize().y; ++z) {
+			for (int x = 0; x < grid.getSize().x; ++x) {
+				glm::ivec2 gridPos(x, z);
+				if (grid[gridPos] == LibraryGen::SHELF) {
+					// Calculate world position based on grid cell, centering the grid on libraryCenter
+					float worldX = libraryCenter.x - gridWorldWidth * 0.5f + (x + 0.5f) * cellWidth;
+					float worldZ = libraryCenter.z - gridWorldDepth * 0.5f + (z + 0.5f) * cellDepth;
+
+					Model->pushMatrix();
+					Model->loadIdentity();
+					Model->translate(vec3(worldX, libraryCenter.y, worldZ)); // Position shelf at cell center on ground
+					// Scale based on cell size and factor, adjust Y scale for desired height
+					Model->scale(vec3(shelfScaleFactor * cellWidth * 1.5f, // Adjust scale factor
+						shelfScaleFactor * 1.8f, // Taller shelves
+						shelfScaleFactor * cellDepth * 1.5f));
+					// Optional: Add random rotation?
+					// Model->rotate(randFloat(0.f, 3.14f), vec3(0, 1, 0));
+					setModel(shader, Model);
+					book_shelf1->Draw(shader);
+					Model->popMatrix();
+				}
+			}
+		}
+		shader->unbind();
+	}
+
+	void drawDoor(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
+		if (!shader || !Model || !cube) return; // Need cube model
+
+		shader->bind();
+
+		Model->pushMatrix();
+		Model->loadIdentity();
+		Model->translate(doorPosition); // Position set in class members
+		Model->scale(doorScale);      // Scale set in class members
+
+		SetMaterialMan(shader, 5); // Use Wood material
+		setModel(shader, Model);
+		cube->Draw(shader);
+
+		Model->popMatrix();
+		shader->unbind();
+	}
+
 	bool checkAABBCollision(const glm::vec3& minA, const glm::vec3& maxA,
 		const glm::vec3& minB, const glm::vec3& maxB)
 	{
@@ -1139,33 +1374,60 @@ public:
 	}
 
 	void interactWithBooks() {
+		float interactionRadius = 5.0f;
+		float interactionRadiusSq = interactionRadius * interactionRadius;
 
-		// Player's AABB (manAABBmin, manAABBmax) is assumed to be updated from drawPlayer
-		for (auto& book : books) {
-			// Only check for interaction if the book is on the shelf
-			if (book.state == BookState::ON_SHELF) {
+		float gridWorldWidth = groundSize * 2.0f;
+		float gridWorldDepth = groundSize * 2.0f;
+		float cellWidth = gridWorldWidth / (float)grid.getSize().x;
+		float cellDepth = gridWorldDepth / (float)grid.getSize().y;
 
-				// 1. Define the Book's Local AABB (Approximation when closed)
-				// We approximate the closed book as a single box with dimensions book.scale
-				// centered at the origin.
-				glm::vec3 bookLocalMin = -book.scale * 0.5f;
-				glm::vec3 bookLocalMax = book.scale * 0.5f;
+		bool interacted = false;
 
-				// 2. Calculate the Book's World Transformation Matrix
-				glm::mat4 bookWorldTransform = glm::translate(glm::mat4(1.0f), book.position) *
-					glm::mat4_cast(book.orientation);
+		for (int z = 0; z < grid.getSize().y && !interacted; ++z) {
+			for (int x = 0; x < grid.getSize().x && !interacted; ++x) {
+				glm::ivec2 gridPos(x, z);
+				if (grid[gridPos] == LibraryGen::SHELF) {
+					float shelfWorldX = libraryCenter.x - gridWorldWidth * 0.5f + (x + 0.5f) * cellWidth;
+					float shelfWorldZ = libraryCenter.z - gridWorldDepth * 0.5f + (z + 0.5f) * cellDepth;
+					glm::vec3 shelfCenterPos = glm::vec3(shelfWorldX, groundY + 1.0f, shelfWorldZ);
 
-				// 3. Calculate the Book's World AABB
-				glm::vec3 bookWorldMin, bookWorldMax;
-				updateBoundingBox(bookLocalMin, bookLocalMax, bookWorldTransform, bookWorldMin, bookWorldMax);
+					glm::vec3 diff = shelfCenterPos - characterMovement;
+					diff.y = 0.0f; // Ignore Y difference for interaction distance
+					float distSq = dot(diff, diff); // Use dot product for squared distance
 
-				// 4. Perform AABB Collision Check
-				if (checkAABBCollision(manAABBmin, manAABBmax, bookWorldMin, bookWorldMax)) {
-					// Collision detected! Trigger the fall.
-					book.startFalling(0);
-					break; // break here so we only trigger one book
+					if (distSq <= interactionRadiusSq) {
+
+						// --- ADJUST Spawn Height ---
+						float minSpawnHeight = 1.8f; // Minimum height above groundY
+						float maxSpawnHeight = 2.8f; // Maximum height above groundY
+						float spawnHeight = groundY + randFloat(minSpawnHeight, maxSpawnHeight); // <-- ADJUSTED height range
+
+						glm::vec3 spawnPos = glm::vec3(shelfWorldX, spawnHeight, shelfWorldZ);
+
+						glm::vec3 bookScale = glm::vec3(0.7f, 0.9f, 0.2f);
+						glm::quat bookOrientation = glm::angleAxis(glm::radians(randFloat(-10.f, 10.f)), glm::vec3(0, 1, 0));
+						glm::vec3 orbColor = glm::vec3(randFloat(0.2f, 1.0f), randFloat(0.2f, 1.0f), randFloat(0.2f, 1.0f));
+
+						books.emplace_back(cube, sphere, spawnPos, bookScale, bookOrientation, orbColor);
+
+						Book& newBook = books.back();
+
+						// --- PASS Player Position to startFalling ---
+						newBook.startFalling(groundY, characterMovement); // <<-- MODIFIED call
+
+						interacted = true;
+						break;
+					}
 				}
 			}
+		}
+
+		if (interacted) {
+			cout << "Book spawned and falling." << endl;
+		}
+		else {
+			cout << "No shelf nearby to interact with." << endl;
 		}
 	}
 
@@ -1181,47 +1443,318 @@ public:
 	void updateEnemies(float deltaTime) {
 		// TODO: Add enemy movement, AI, attack logic later
 		for (auto* enemy : enemies) {
-			if (!enemy || !enemy->isAlive()) continue;
+			if (!enemy->isAlive()) enemy->setPosition(enemy->getPosition() - vec3(0.0f, 3.0f, 0.0f));
 			// Example: Simple bobbing motion
 			// float bobSpeed = 2.0f;
 			// float bobHeight = 0.05f;
 			// glm::vec3 currentPos = enemy->getPosition();
 			// enemy->setPosition(glm::vec3(currentPos.x, 0.8f + sin(glfwGetTime() * bobSpeed) * bobHeight, currentPos.z));
-
 			 // IMPORTANT: Update enemy AABB if it moves
 			 // enemy->updateAABB(); // Need to add AABB members and update method to Enemy/Entity class
 		}
 	}
 
+	// --- Player Collision ---
+	// Store player's local AABB (scaled) for easier access
+	glm::vec3 playerLocalAABBMin;
+	glm::vec3 playerLocalAABBMax;
+	bool playerAABBCalculated = false; // Flag to calculate once
+
+	// Helper to calculate player's local AABB
+	void calculatePlayerLocalAABB() {
+		if (!stickfigure_running || playerAABBCalculated) return;
+
+		// Get base AABB from the *standing* or *running* model (choose one representative)
+		// Using stickfigure_running as it's loaded first
+		glm::vec3 baseMin = stickfigure_running->getBoundingBoxMin();
+		glm::vec3 baseMax = stickfigure_running->getBoundingBoxMax();
+
+		// Apply the player's base scale
+		playerLocalAABBMin = baseMin * manScale.x; // Assuming uniform scale for collision box
+		playerLocalAABBMax = baseMax * manScale.x;
+
+		// Optional: Add padding or adjust Y if needed
+		// Example: Make collision box slightly taller or ensure base is at y=0 locally
+		// playerLocalAABBMin.y = 0.0f; // If player origin is at feet
+
+		playerAABBCalculated = true;
+		// cout << "[DEBUG] Calculated Player Local AABB Min: (" << playerLocalAABBMin.x << "," << playerLocalAABBMin.y << "," << playerLocalAABBMin.z << ")" << endl;
+		// cout << "[DEBUG] Calculated Player Local AABB Max: (" << playerLocalAABBMax.x << "," << playerLocalAABBMax.y << "," << playerLocalAABBMax.z << ")" << endl;
+	}
+
+
+	// --- Collision Checking Helper ---
+	bool checkCollisionAt(const glm::vec3& checkPos, const glm::quat& playerOrientation) {
+		if (!playerAABBCalculated || !book_shelf1 || grid.getSize().x == 0) return false; // Need data
+
+		// 1. Calculate Player's World AABB at checkPos
+		glm::mat4 playerTransform = glm::translate(glm::mat4(1.0f), checkPos) * glm::mat4_cast(playerOrientation);
+		// Note: We use the PRE-SCALED local AABB calculated earlier
+		glm::vec3 playerWorldMin, playerWorldMax;
+		updateBoundingBox(playerLocalAABBMin, playerLocalAABBMax, playerTransform, playerWorldMin, playerWorldMax);
+
+		// 2. Iterate through grid for shelves
+		float gridWorldWidth = groundSize * 2.0f;
+		float gridWorldDepth = groundSize * 2.0f;
+		float cellWidth = gridWorldWidth / (float)grid.getSize().x;
+		float cellDepth = gridWorldDepth / (float)grid.getSize().y;
+		// Use the same scale factor as drawLibrary
+		float shelfScaleFactor = 1.8f;
+		glm::vec3 shelfVisScale = vec3(shelfScaleFactor * cellWidth * 1.5f,
+			shelfScaleFactor * 1.8f,
+			shelfScaleFactor * cellDepth * 1.5f);
+		// --- Get shelf model's local AABB ONCE ---
+		glm::vec3 shelfLocalMin = book_shelf1->getBoundingBoxMin();
+		glm::vec3 shelfLocalMax = book_shelf1->getBoundingBoxMax();
+		// --- Apply visual scale to shelf local AABB for collision ---
+		// Important: Scale the AABB min/max points correctly
+		glm::vec3 collisionShelfLocalMin = shelfLocalMin * shelfVisScale;
+		glm::vec3 collisionShelfLocalMax = shelfLocalMax * shelfVisScale;
+		// Handle potential inversion if scale is negative (unlikely here)
+		for (int i = 0; i < 3; ++i) {
+			if (collisionShelfLocalMin[i] > collisionShelfLocalMax[i]) std::swap(collisionShelfLocalMin[i], collisionShelfLocalMax[i]);
+		}
+
+		for (int z = 0; z < grid.getSize().y; ++z) {
+			for (int x = 0; x < grid.getSize().x; ++x) {
+				glm::ivec2 gridPos(x, z);
+				if (grid[gridPos] == LibraryGen::SHELF) {
+					// 3. Calculate this shelf's World AABB
+					float worldX = libraryCenter.x - gridWorldWidth * 0.5f + (x + 0.5f) * cellWidth;
+					float worldZ = libraryCenter.z - gridWorldDepth * 0.5f + (z + 0.5f) * cellDepth;
+					glm::vec3 shelfPos = vec3(worldX, libraryCenter.y, worldZ); // Base position on ground
+
+					// Shelf transform (Position only, assuming no rotation for collision)
+					// The scale is applied to the local AABB above
+					glm::mat4 shelfTransform = glm::translate(glm::mat4(1.0f), shelfPos);
+
+					glm::vec3 shelfWorldMin, shelfWorldMax;
+					updateBoundingBox(collisionShelfLocalMin, collisionShelfLocalMax, shelfTransform, shelfWorldMin, shelfWorldMax);
+
+					// 4. Check for Overlap
+					if (checkAABBCollision(playerWorldMin, playerWorldMax, shelfWorldMin, shelfWorldMax)) {
+						// cout << "[DEBUG] Collision DETECTED with shelf at grid (" << x << "," << z << ")" << endl;
+						return true; // Collision found
+					}
+				}
+			}
+		}
+
+		return false; // No collision found
+	}
+
+	// --- Modified charMove ---
 	vec3 charMove() {
-		float moveSpeed = 0.045;
-		vec3 moveDir = vec3(0.0f, 0.0f, 0.0f);
-
-		if (movingForward) {
-			player->move(manMoveDir);
-			eye += manMoveDir * moveSpeed;
-			player->setRotY(manRot.y + 0.0f);
-			
-		}
-		else if (movingBackward) {
-			player->move(-manMoveDir);
-			eye -= manMoveDir * moveSpeed;
-			player->setRotY(manRot.y + 3.14f);
-		}
-		if (movingRight) {
-			player->move(right);
-			eye += right * moveSpeed;
-			player->setRotY(manRot.y + 4.71);
-		}
-		else if (movingLeft) {
-			player->move(-right);
-			eye -= right * moveSpeed;
-			player->setRotY(manRot.y + 1.57);
+		// Calculate player's local AABB once if not done yet
+		if (!playerAABBCalculated) {
+			calculatePlayerLocalAABB();
 		}
 
-		lookAt = player->getPosition();
-		normalize(characterMovement);
-		return characterMovement;
+		float moveSpeed = 4.5f * AnimDeltaTime; // Use frame-rate independent speed
+		vec3 desiredMoveDelta = vec3(0.0f);
+
+		// Calculate desired movement direction based on input
+		if (movingForward)  desiredMoveDelta += manMoveDir;
+		if (movingBackward) desiredMoveDelta -= manMoveDir;
+		if (movingLeft)     desiredMoveDelta -= right;
+		if (movingRight)    desiredMoveDelta += right;
+
+		// Normalize and scale movement delta
+		float moveLength = length(desiredMoveDelta);
+		if (moveLength > 0.0f) {
+			desiredMoveDelta = (desiredMoveDelta / moveLength) * moveSpeed;
+		}
+		else {
+			return characterMovement; // No movement input, stay put
+		}
+
+		// --- Collision Detection and Resolution ---
+		vec3 currentPos = characterMovement;
+		vec3 nextPos = currentPos + desiredMoveDelta;
+		nextPos.y = groundY; // Keep player on the ground plane
+
+		// Player orientation for AABB calculation
+		glm::quat playerOrientation = glm::angleAxis(manRot.y, glm::vec3(0, 1, 0));
+
+		// --- Simple Stop Method ---
+		/*
+		if (checkCollisionAt(nextPos, playerOrientation)) {
+			 // Don't update characterMovement, effectively stopping before collision
+			 cout << "[DEBUG] Collision prevented movement." << endl;
+			 return currentPos; // Return current position
+		} else {
+			 // No collision detected, allow full movement
+			 characterMovement = nextPos;
+		}
+		*/
+
+		// --- Sliding Method (Separate Axes) ---
+		vec3 allowedPos = currentPos; // Start with current position
+
+		// Try moving along X only
+		vec3 nextPosX = vec3(nextPos.x, currentPos.y, currentPos.z);
+		if (!checkCollisionAt(nextPosX, playerOrientation)) {
+			allowedPos.x = nextPos.x; // Allow X movement
+		}
+		else {
+			cout << "[DEBUG] X-Collision prevented." << endl;
+		}
+
+
+		// Try moving along Z only (starting from potentially updated X)
+		vec3 nextPosZ = vec3(allowedPos.x, currentPos.y, nextPos.z); // Use allowedPos.x
+		if (!checkCollisionAt(nextPosZ, playerOrientation)) {
+			allowedPos.z = nextPos.z; // Allow Z movement
+		}
+		else {
+			cout << "[DEBUG] Z-Collision prevented." << endl;
+		}
+
+
+		// Final position is the allowed position after checking both axes
+		characterMovement = allowedPos;
+		characterMovement.y = groundY; // Ensure Y stays correct
+
+
+		// Update camera based on final position (done in render)
+		return characterMovement; // Return the final, potentially adjusted, position
+	}
+
+	// --- Shooting Function ---
+	void shootSpell() {
+		cout << "[DEBUG] shootSpell() called. Orbs: " << orbsCollectedCount << endl;
+		if (orbsCollectedCount <= 0 || !sphere || !sphereAABBCalculated) {
+			cout << "[DEBUG] Cannot shoot: No orbs or sphere model not ready." << endl;
+			return; // Need orbs and the sphere model/AABB
+		}
+
+		// Consume an orb
+		orbsCollectedCount--;
+		// Remove visual orb logic... (find first collected orb and erase)
+		for (auto it = orbCollectibles.begin(); it != orbCollectibles.end(); ++it) {
+			if (it->collected) {
+				orbCollectibles.erase(it);
+				break;
+			}
+		}
+
+		// *** Use Character's Forward Direction ***
+		// 'manMoveDir' is updated in updateCameraVectors based on manRot.y (which matches theta)
+		vec3 shootDir = manMoveDir; // Already normalized and horizontal
+
+		// *** Use Character's Right Vector ***
+		// Calculate the horizontal right vector based on manMoveDir
+		vec3 playerRight = normalize(cross(manMoveDir, vec3(0.0f, 1.0f, 0.0f)));
+
+
+		// Spawn Position Calculation (relative to character's position and orientation)
+		float forwardOffset = 0.5f; // How far in front of player center
+		float upOffset = 0.8f;      // Height relative to player base (groundY)
+		float rightOffset = 0.2f;   // Offset to the side (e.g., right hand)
+
+		vec3 spawnPos = characterMovement
+			+ vec3(0.0f, upOffset, 0.0f) // Vertical offset from base
+			+ shootDir * forwardOffset   // Forward offset along character's facing direction
+			+ playerRight * rightOffset; // Sideways offset along character's right
+
+		// Create and add projectile
+		activeSpells.emplace_back(spawnPos, shootDir, (float)glfwGetTime(), sphere);
+		cout << "[DEBUG] Spell Fired! Start:(" << spawnPos.x << "," << spawnPos.y << "," << spawnPos.z
+			<< ") Dir: (" << shootDir.x << "," << shootDir.y << "," << shootDir.z // y should be 0
+			<< "). Active spells: " << activeSpells.size() << endl;
+	}
+
+	// --- updateProjectiles ---
+	void updateProjectiles(float deltaTime) {
+		if (!sphereAABBCalculated) return;
+
+		float damageAmount = 25.0f;
+
+		// Iterate using index for potential removal
+		for (int i = 0; i < activeSpells.size(); ++i) {
+			if (!activeSpells[i].active) continue;
+
+			SpellProjectile& proj = activeSpells[i]; // Use reference
+
+			// Check lifetime
+			if (glfwGetTime() - proj.spawnTime > proj.lifetime) {
+				proj.active = false;
+				// cout << "[DEBUG] Spell lifetime expired." << endl;
+				continue;
+			}
+
+			// Update position
+			proj.position += proj.direction * proj.speed * deltaTime;
+
+			// Calculate transform HERE
+			glm::quat rotation = glm::rotation(glm::vec3(0.0f, 0.0f, 1.0f), proj.direction);
+			proj.transform = glm::translate(glm::mat4(1.0f), proj.position) * glm::mat4_cast(rotation) * glm::scale(glm::mat4(1.0f), proj.scale);
+
+			// Update AABB using Application's function
+			this->updateBoundingBox(baseSphereLocalAABBMin, baseSphereLocalAABBMax, proj.transform, proj.aabbMin, proj.aabbMax);
+
+			// Check collision with enemies
+			for (auto* enemy : enemies) {
+				if (!enemy || !enemy->isAlive()) continue;
+
+				// Ensure enemy AABB is up-to-date (call if they move)
+				// enemy->updateAABB();
+
+				if (checkAABBCollision(proj.aabbMin, proj.aabbMax, enemy->getAABBMin(), enemy->getAABBMax())) {
+					cout << "[DEBUG] Spell HIT enemy!" << endl;
+					enemy->takeDamage(damageAmount);
+					proj.active = false; // Deactivate projectile
+					break; // Hit one enemy
+				}
+			}
+		} // End loop
+
+		// Remove inactive projectiles
+		activeSpells.erase(
+			std::remove_if(activeSpells.begin(), activeSpells.end(),
+				[](const SpellProjectile& p) { return !p.active; }),
+			activeSpells.end()
+		);
+	}
+
+	void drawProjectiles(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
+		if (!shader || !Model || !sphere) return; // Need shader, stack, model
+
+		shader->bind();
+		// Set material for projectiles (e.g., bright yellow/white, maybe emissive if shader supports)
+		SetMaterialMan(shader, 0); // Gold material for now
+		glUniform3f(shader->getUniform("MatAmb"), 0.8f, 0.8f, 0.1f);
+		glUniform3f(shader->getUniform("MatDif"), 1.0f, 1.0f, 0.5f);
+		glUniform3f(shader->getUniform("MatSpec"), 1.0f, 1.0f, 1.0f);
+		glUniform1f(shader->getUniform("MatShine"), 64.0f);
+		// Optional: Emissive properties if shader supports them
+		// if(shader->hasUniform("hasEmittance")) glUniform1i(shader->getUniform("hasEmittance"), 1);
+		// if(shader->hasUniform("MatEmitt")) glUniform3f(shader->getUniform("MatEmitt"), 1.0f, 1.0f, 0.8f);
+
+		for (const auto& proj : activeSpells) {
+			if (!proj.active) continue;
+
+			Model->pushMatrix();
+			Model->loadIdentity(); // Start from identity for projectile
+
+			// Use the pre-calculated transform from updateAABB
+			Model->multMatrix(proj.transform);
+
+			/* // --- Manual Transform Calculation (Alternative to using proj.transform) ---
+			Model->translate(proj.position);
+			// Calculate rotation to align local Z with direction
+			glm::quat rotation = glm::rotation(glm::vec3(0.0f, 0.0f, 1.0f), proj.direction);
+			Model->multMatrix(glm::mat4_cast(rotation));
+			Model->scale(proj.scale);
+			*/
+
+			setModel(shader, Model);
+			proj.model->Draw(shader); // Draw the sphere model
+
+			Model->popMatrix();
+		}
+
+		shader->unbind();
 	}
 
 	void render(float frametime, float animTime) {
@@ -1240,65 +1773,116 @@ public:
 		auto View = make_shared<MatrixStack>();
 		auto Model = make_shared<MatrixStack>();
 
+		// --- Update Game Logic ---
+		charMove();
+		updateCameraVectors();
 		updateBooks(frametime);
-		updateOrbs(glfwGetTime());
+		updateOrbs((float)glfwGetTime());
 		updateEnemies(frametime);
+		updateProjectiles(frametime);
 
-		// Apply perspective projection
+		// --- Setup Camera ---
 		Projection->pushMatrix();
-
-		// Projection->perspective(45.0f, aspect, 0.01f, 200.0f);
-		Projection->perspective(45.0f, aspect, 0.01f, 400.0f);
-
-		// View is global translation along negative z for now
+		Projection->perspective(radians(45.0f), aspect, 0.1f, 1000.0f); // Adjusted near/far
 		View->pushMatrix();
 		View->loadIdentity();
-		View->lookAt(eye, lookAt, vec3(0, 1, 0));
+		View->lookAt(eye, lookAt, up); // Use updated eye/lookAt
 
-		// Setup Shaders
-		prog2->bind();
-		glUniformMatrix4fv(prog2->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
-		glUniformMatrix4fv(prog2->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
-		glUniform3f(prog2->getUniform("lightColor[0]"), 1.0, 1.0, 1.0); // white light
-		glUniform1f(prog2->getUniform("lightIntensity[0]"), 1.0); // light intensity
-		glUniform3f(prog2->getUniform("lightPos[0]"), 0, 2, 0); // light position at the computer screen
-		glUniform1i(prog2->getUniform("numLights"), 1); // light position at the computer screen
-		prog2->unbind();
+		// --- Setup Lights ---
+		// Example: One bright light in the library, one dimmer in boss area
+		vec3 lightPositions[NUM_LIGHTS] = {
+			libraryCenter + vec3(0, 15, 0),      // Library light overhead
+			bossAreaCenter + vec3(0, 10, 0),     // Boss area light overhead
+			characterMovement + vec3(0, 1, 0.5), // Small light near player (optional)
+			vec3(0, 0, 0)                        // Unused or ambient fill
+		};
+		vec3 lightColors[NUM_LIGHTS] = {
+			vec3(1.0f, 1.0f, 0.9f), // Slightly warm white
+			vec3(0.8f, 0.6f, 1.0f), // Dim purple/blue
+			vec3(0.3f, 0.3f, 0.3f),
+			vec3(0.1f, 0.1f, 0.1f)
+		};
+		float lightIntensities[NUM_LIGHTS] = {
+			1.5f, // Bright library
+			0.8f, // Dimmer boss area
+			0.5f, // Player light
+			0.0f
+		};
+		int numActiveLights = 3; // How many lights we're actually using
 
-		assimptexProg->bind();
-		glUniformMatrix4fv(assimptexProg->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
-		glUniformMatrix4fv(assimptexProg->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
-		glUniform3f(assimptexProg->getUniform("lightColor[0]"), 1.0, 1.0, 1.0); // white light
-		glUniform1f(assimptexProg->getUniform("lightIntensity[0]"), 0.0); // light intensity
-		glUniform3f(assimptexProg->getUniform("lightPos[0]"), 0, 10, 0); // light position at the computer screen
-		glUniform1i(assimptexProg->getUniform("numLights"), 1); // light position at the computer screen
-		assimptexProg->unbind();
+		// --- Update Shader Uniforms (Lights, P, V) ---
+		// Update prog2 (Simple Lighting)
+		if (prog2) {
+			prog2->bind();
+			glUniformMatrix4fv(prog2->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
+			glUniformMatrix4fv(prog2->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
+			glUniform1i(prog2->getUniform("numLights"), numActiveLights);
+			for (int i = 0; i < numActiveLights; ++i) {
+				string prefix = "lightPos[" + to_string(i) + "]";
+				glUniform3fv(prog2->getUniform(prefix), 1, value_ptr(lightPositions[i]));
+				prefix = "lightColor[" + to_string(i) + "]";
+				glUniform3fv(prog2->getUniform(prefix), 1, value_ptr(lightColors[i]));
+				prefix = "lightIntensity[" + to_string(i) + "]";
+				glUniform1f(prog2->getUniform(prefix), lightIntensities[i]);
+			}
+			prog2->unbind();
+		}
 
-		texProg->bind();
-		glUniformMatrix4fv(texProg->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
-		glUniformMatrix4fv(texProg->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
-		glUniform3f(texProg->getUniform("lightColor[0]"), 1.0, 1.0, 1.0); // White light
-		glUniform1f(texProg->getUniform("lightIntensity[0]"), 5.0); // High intensity for visibility
-		glUniform3f(texProg->getUniform("lightPos[0]"), 0, 2, 0);
-		glUniform1i(texProg->getUniform("numLights"), 1);
-		glUniform3f(texProg->getUniform("MatAmb"), 0.5, 0.5, 0.5); // Bright ambient
-		glUniform3f(texProg->getUniform("MatSpec"), 0.8, 0.8, 0.8); // Strong specular
-		glUniform1f(texProg->getUniform("MatShine"), 32.0f); // High shininess
-		texProg->unbind();
+		// Update assimptexProg (Textured/Animated Lighting)
+		if (assimptexProg) {
+			assimptexProg->bind();
+			glUniformMatrix4fv(assimptexProg->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
+			glUniformMatrix4fv(assimptexProg->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
+			glUniform1i(assimptexProg->getUniform("numLights"), numActiveLights);
+			for (int i = 0; i < numActiveLights; ++i) {
+				string prefix = "lightPos[" + to_string(i) + "]";
+				glUniform3fv(assimptexProg->getUniform(prefix), 1, value_ptr(lightPositions[i]));
+				prefix = "lightColor[" + to_string(i) + "]";
+				glUniform3fv(assimptexProg->getUniform(prefix), 1, value_ptr(lightColors[i]));
+				prefix = "lightIntensity[" + to_string(i) + "]";
+				glUniform1f(assimptexProg->getUniform(prefix), lightIntensities[i]);
+			}
+			assimptexProg->unbind();
+		}
 
-		drawGround(prog2, Model);
+		// --- Draw Scene Elements ---
+		// ORDER MATTERS for transparency, but with opaque objects and depth testing, it's less critical.
+		// Drawing grounds first is logical.
 
-		drawEnemies(prog2, Model);
+		// 1. Draw Ground, Path
+		drawGroundSections(prog2, Model);
 
-		drawPlayer(assimptexProg, Model, animTime);
-		
-		drawOrbs(prog2, Model);
+		drawBorder(prog2, Model);
 
+		// 2. Draw the Static Library Shelves
+		drawLibrary(assimptexProg, Model);
+
+		// 3. Draw the Door
+		drawDoor(prog2, Model);
+
+		// 4. Draw Falling/Interactable Books
 		drawBooks(prog2, Model);
 
-		// Pop matrix stacks
+		// 5. Draw Enemies
+		drawEnemies(prog2, Model);
+
+		// 6. Draw Collectible Orbs
+		drawOrbs(prog2, Model);
+
+		drawProjectiles(prog2, Model);
+
+		// 7. Draw Player (often drawn last or near last)
+		drawPlayer(assimptexProg, Model, animTime);
+
+		drawSkybox(assimptexProg, Model); // Draw the skybox last
+
+		// --- Cleanup ---
 		Projection->popMatrix();
 		View->popMatrix();
+
+		// Unbind any VAO or Program that might be lingering (belt-and-suspenders)
+		glBindVertexArray(0);
+		glUseProgram(0);
 	}
 };
 
@@ -1316,7 +1900,7 @@ int main(int argc, char *argv[])
 	{
 		resourceDir = argv[1];
 	}
-	
+
 	Application *application = new Application();
 
 	std::shared_ptr<Player> playerPtr = std::make_shared<Player>(
@@ -1351,10 +1935,11 @@ int main(int argc, char *argv[])
 
 	glfwSetInputMode(windowManager->getHandle(), GLFW_STICKY_KEYS, GLFW_TRUE);
 
+	cout << "Controls: " << endl << "WASD: Move" << endl << "Mouse: Look around" << endl
+		<< "'F': Interact with book" << "F11 Fullscreen" << endl << "'L': Toggle cursor mode" << endl;
 
 	// Loop until the user closes the window.
-	while (! glfwWindowShouldClose(windowManager->getHandle()))
-	{
+	while (! glfwWindowShouldClose(windowManager->getHandle())) {
 		auto nextLastTIme = chrono::high_resolution_clock::now();
 
 		float deltaTime = chrono::duration_cast<chrono::microseconds>(chrono::high_resolution_clock::now() - lastTime).count();
