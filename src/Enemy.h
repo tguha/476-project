@@ -3,11 +3,8 @@
 #include "Entity.h"
 
 class Enemy : public Entity {
-public:
-    // --- Constructor ---
-    // MODIFIED: Now accepts model and scale, passes them to Entity constructor
-    Enemy(const glm::vec3& position, float hitpoints, float moveSpeed,
-        AssimpModel* model, const glm::vec3& scale = glm::vec3(1.0f));
+    public:
+        Enemy(const glm::vec3& position, const glm::vec3& scale = glm::vec3(1.0f), const glm::vec3& rotation, float hitpoints, float moveSpeed, AssimpModel* model);
 
     // --- Override virtual functions if needed ---
     // virtual void move(const glm::vec3& direction) override; // Example override

@@ -1,13 +1,14 @@
 #include "Entity.h"
 
 // --- Constructor Implementation ---
-Entity::Entity(const glm::vec3& startPosition, float hp, float speed, AssimpModel* model, const glm::vec3& scale)
+Entity::Entity(const glm::vec3& startPosition, const glm::vec3& scale, const glm::vec3& rotation, float hp, float speed, AssimpModel* model)
     : position(startPosition),
+    collisionScale(scale),
+    rotation(rotation),
     hitpoints(hp),
     moveSpeed(speed),
     alive(true), // Start alive
     collisionModel(model),
-    collisionScale(scale),
     aabbMin(startPosition), // Initialize AABB roughly
     aabbMax(startPosition)
 {
@@ -37,8 +38,47 @@ glm::vec3 Entity::getAABBMax() const {
 
 // --- Setter Implementation ---
 void Entity::setPosition(const glm::vec3 pos) {
-    position = pos;
-    updateAABB(); // Recalculate AABB whenever position changes
+    this->position = pos;
+    updateAABB();
+}
+
+glm::vec3 Entity::getScale() const {
+    return scale;
+}
+
+void Entity::setScale(const glm::vec3 scale) {
+    this->scale = scale;
+}
+
+glm::vec3 Entity::getRotation() const {
+    return rotation;
+}
+
+void Entity::setRotation(const glm::vec3 rotation) {
+    this->rotation = rotation;
+}
+
+float Entity::getRotX() const {
+    return rotation.x;
+}
+void Entity::setRotX(float rotX) {
+    this->rotation.x = rotX;
+}
+
+float Entity::getRotY() const {
+    return rotation.y;
+}
+
+void Entity::setRotY(float rotY) {
+    this->rotation.y = rotY;
+}
+
+float Entity::getRotZ() const {
+    return rotation.z;
+}
+
+void Entity::setRotZ(float rotZ) {
+    this->rotation.z = rotZ;
 }
 
 // --- Action Implementations ---
