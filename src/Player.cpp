@@ -1,7 +1,7 @@
 #include "Player.h"
 
-Player::Player(const glm::vec3& position, const glm::vec3& scale, const glm::vec3& rotation, float hitpoints, float moveSpeed, AssimpModel* model)
-    : Entity(position, scale, rotation, hitpoints, moveSpeed, model) {
+Player::Player(const glm::vec3& position, float hitpoints, float moveSpeed, AssimpModel* model, const glm::vec3& scale, const glm::vec3& rotation)
+    : Entity(position, hitpoints, moveSpeed, model, scale, rotation) {
     // Add any Player-specific initialization here
     std::cout << "Player Entity Created." << std::endl;
 }

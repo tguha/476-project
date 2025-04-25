@@ -1,8 +1,8 @@
 #include "Enemy.h"
 
 // --- Constructor Implementation ---
-Enemy::Enemy(const glm::vec3& position, const glm::vec3& scale, const glm::vec3& rotation, float hitpoints, float moveSpeed, AssimpModel* model)
-            : Entity(position, scale, rotation, hitpoints, moveSpeed, model) {}
+Enemy::Enemy(const glm::vec3& position, float hitpoints, float moveSpeed, AssimpModel* model, const glm::vec3& scale, const glm::vec3& rotation)
+            : Entity(position, hitpoints, moveSpeed, model, scale, rotation) {}
 
 
 

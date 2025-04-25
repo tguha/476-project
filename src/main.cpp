@@ -19,7 +19,6 @@
 #include "LibraryGen.h"
 // #include "Grid.h"
 #include "Enemy.h"
-#include "Player.h"
 
 // value_ptr for glm
 #include <glm/gtc/type_ptr.hpp>
@@ -292,8 +291,6 @@ class Application : public EventCallbacks {
 public:
 	WindowManager * windowManager = nullptr;
 
-	std::shared_ptr<Player> player;
-
 	bool windowMaximized = false;
 	int window_width = 640;
 	int window_height = 480;
@@ -371,8 +368,7 @@ public:
 
 	vec3 eye = vec3(-6, 1.03, 0);
 	// vec3 lookAt = vec3(-1.58614, -0.9738, 0.0436656);
-	// vec3 lookAt = characterMovement;
-	vec3 lookAt = vec3(0, 0, 0);
+	vec3 lookAt = characterMovement;
 	vec3 up = vec3(0, 1, 0);
 
 	vec3 right = normalize(cross(manMoveDir, up));
@@ -565,8 +561,8 @@ public:
 		front.y = radius * sin(phi);
 		front.z = radius * cos(phi) * cos((pi<float>()/2) - theta);
 
-		eye = player->getPosition() - front;
-		lookAt = player->getPosition();
+		eye = characterMovement - front;
+		lookAt = characterMovement;
 
 		manRot.y = theta + radians(-90.0f);
 		manRot.y = - manRot.y;
@@ -577,6 +573,8 @@ public:
 		right = normalize(cross(manMoveDir, up));
 
 		// lookAt = eye + front;
+
+
 	}
 
 	void mouseCallback(GLFWwindow *window, int button, int action, int mods)
@@ -723,6 +721,7 @@ public:
 
 		// load the sphere (spell)
 		sphere = new AssimpModel(resourceDirectory + "/SmoothSphere.obj");
+
 		baseSphereLocalAABBMin = sphere->getBoundingBoxMin();
 		baseSphereLocalAABBMax = sphere->getBoundingBoxMax();
 		sphereAABBCalculated = true;
@@ -737,9 +736,9 @@ public:
 
 		// Check if sphere model is loaded before creating enemies that use it
 		if (sphere) {
-			enemies.push_back(new Enemy(bossSpawnPos, 200.0f, 0.0f, sphere, enemyCollisionScale)); // <<-- Pass sphere and scale
+			enemies.push_back(new Enemy(bossSpawnPos, 200.0f, 0.0f, sphere, enemyCollisionScale, vec3(0.0f))); // <<-- Pass sphere and scale
 			cout << " Enemy placed at boss area: (" << bossSpawnPos.x << ", " << bossSpawnPos.y << ", " << bossSpawnPos.z << ")" << endl;
-			enemies.push_back(new Enemy(libraryCenter + vec3(-5.0f, 0.8f, 8.0f), 50.0f, 0.0f, sphere, enemyCollisionScale)); // <<-- Pass sphere and scale
+			enemies.push_back(new Enemy(libraryCenter + vec3(-5.0f, 0.8f, 8.0f), 50.0f, 0.0f, sphere, enemyCollisionScale, vec3(0.0f))); // <<-- Pass sphere and scale
 		}
 		else {
 			cerr << "ERROR: Sphere model not loaded, cannot create enemies." << endl;
@@ -959,7 +958,6 @@ public:
 		// Model matrix setup
 		Model->pushMatrix();
 		Model->loadIdentity();
-
 		Model->translate(characterMovement); // Use final player position
 		// *** USE CAMERA ROTATION FOR MODEL ***
 		Model->rotate(manRot.y, vec3(0, 1, 0)); // <<-- FIXED ROTATION
@@ -968,7 +966,6 @@ public:
 		// Update VISUAL bounding box (can be different from collision box if needed)
 		// Using the same AABB calculation logic as before for consistency
 		glm::mat4 manTransform = Model->topMatrix();
-
 		updateBoundingBox(stickfigure_running->getBoundingBoxMin(),
 			stickfigure_running->getBoundingBoxMax(),
 			manTransform,
@@ -1090,6 +1087,7 @@ public:
 		shader->unbind();
 	}
 
+
 void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		// --- Collision Check Logic ---
 		for (auto& orb : orbCollectibles) {
@@ -1124,7 +1122,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 				glm::vec3 playerRight = normalize(cross(playerForward, playerUp));
 				float currentUpOffset = upOffsetBase + (collectedOrbDrawIndex * stackOffset);
 				float currentSideOffset = (collectedOrbDrawIndex % 2 == 0 ? -sideOffset : sideOffset);
-				currentDrawPosition = player->getPosition() - playerForward * backOffset
+				currentDrawPosition = charMove() - playerForward * backOffset
 					+ playerUp * currentUpOffset
 					+ playerRight * currentSideOffset;
 				collectedOrbDrawIndex++;
@@ -1902,15 +1900,6 @@ int main(int argc, char *argv[])
 	}
 
 	Application *application = new Application();
-
-	std::shared_ptr<Player> playerPtr = std::make_shared<Player>(
-		vec3(0, 0, 0),
-		vec3(0.01, 0.01, 0.01),
-		vec3(0.0f, 0.0f, 0.0f),
-		PLAYER_HP_MAX,
-		PLAYER_MOVE_SPEED
-	);
-	application->player = playerPtr;
 
 	// Your main will always include a similar set up to establish your window
 	// and GL context, etc

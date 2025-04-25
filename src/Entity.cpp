@@ -1,14 +1,14 @@
 #include "Entity.h"
 
 // --- Constructor Implementation ---
-Entity::Entity(const glm::vec3& startPosition, const glm::vec3& scale, const glm::vec3& rotation, float hp, float speed, AssimpModel* model)
+Entity::Entity(const glm::vec3& startPosition, float hp, float speed, AssimpModel* model, const glm::vec3& scale, const glm::vec3& rotation)
     : position(startPosition),
-    collisionScale(scale),
-    rotation(rotation),
     hitpoints(hp),
     moveSpeed(speed),
     alive(true), // Start alive
     collisionModel(model),
+    collisionScale(scale),
+    rotation(rotation),
     aabbMin(startPosition), // Initialize AABB roughly
     aabbMax(startPosition)
 {
