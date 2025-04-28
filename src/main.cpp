@@ -754,9 +754,9 @@ public:
 
 		// Check if sphere model is loaded before creating enemies that use it
 		if (sphere) {
-			enemies.push_back(new Enemy(bossSpawnPos, 200.0f, 0.0f, sphere, enemyCollisionScale)); // <<-- Pass sphere and scale
+			enemies.push_back(new Enemy(bossSpawnPos, 200.0f, 0.0f, sphere, enemyCollisionScale, vec3(0.0f))); // <<-- Pass sphere and scale
 			cout << " Enemy placed at boss area: (" << bossSpawnPos.x << ", " << bossSpawnPos.y << ", " << bossSpawnPos.z << ")" << endl;
-			enemies.push_back(new Enemy(libraryCenter + vec3(-5.0f, 0.8f, 8.0f), 50.0f, 0.0f, sphere, enemyCollisionScale)); // <<-- Pass sphere and scale
+			enemies.push_back(new Enemy(libraryCenter + vec3(-5.0f, 0.8f, 8.0f), 50.0f, 0.0f, sphere, enemyCollisionScale, vec3(0.0f))); // <<-- Pass sphere and scale
 		}
 		else {
 			cerr << "ERROR: Sphere model not loaded, cannot create enemies." << endl;

@@ -5,7 +5,9 @@
 #include "Spell.h"
 
 #define INVENTORY_SIZE 8
-#define PLAYER_MAX_HEALTH 100.0f
+#define PLAYER_HP_MAX 100.0f
+#define PLAYER_HP_MIN 0.0f
+#define PLAYER_MOVE_SPEED 0.045f
 
 typedef enum {
     SLOT_LEFT,
@@ -39,8 +41,7 @@ class Player : public Entity {
         bool dodgeFlag;
 
     public:
-        Player(const glm::vec3& position, float hitpoints, float moveSpeed,
-            AssimpModel* model, const glm::vec3& scale);
+        Player(const glm::vec3& position, float hitpoints, float moveSpeed, AssimpModel* model, const glm::vec3& scale, const glm::vec3& rotation);
 
         void move(const glm::vec3& direction);
         SpellSlot getActiveSpellSlot();
