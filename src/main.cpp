@@ -35,6 +35,8 @@ using namespace glm;
 #define NUM_LIGHTS 4
 #define MAX_BONES 200
 
+#define SHOW_HEALTHBAR 0
+
 float randFloat(float l, float h) {
 	float r = rand() / (float)RAND_MAX;
 	return (1.0f - r) * l + r * h;
@@ -290,6 +292,7 @@ public:
 class Application : public EventCallbacks {
 
 public:
+	std::shared_ptr<Player> player;
 	WindowManager * windowManager = nullptr;
 
 	bool windowMaximized = false;
@@ -349,11 +352,9 @@ public:
 
 	int change_mat = 0;
 
-	vec3 characterMovement = vec3(0, 0, 0);
+	// vec3 characterMovement = vec3(0, 0, 0);
 	vec3 manScale = vec3(0.01, 0.01, 0.01);
-	vec3 manRot = vec3(radians(0.0f), radians(0.0f), radians(0.0f));
-
-	vec3 manMoveDir = vec3(sin(manRot.y), 0, cos(manRot.y));
+	vec3 manMoveDir = vec3(sin(radians(0.0f)), 0, cos(radians(0.0f)));
 
 	// initial position of light cycles
 	vec3 start_lightcycle1_pos = vec3(-384, -11, 31);
@@ -370,8 +371,7 @@ public:
 	float wasd_sens = 0.5f;
 
 	vec3 eye = vec3(-6, 1.03, 0);
-	// vec3 lookAt = vec3(-1.58614, -0.9738, 0.0436656);
-	vec3 lookAt = characterMovement;
+	vec3 lookAt = vec3(0, 0, 0);
 	vec3 up = vec3(0, 1, 0);
 
 	vec3 right = normalize(cross(manMoveDir, up));
@@ -564,15 +564,18 @@ public:
 		front.y = radius * sin(phi);
 		front.z = radius * cos(phi) * cos((pi<float>()/2) - theta);
 
-		eye = characterMovement - front;
-		lookAt = characterMovement;
+		eye = player->getPosition() - front;
+		lookAt = player->getPosition();
 
-		manRot.y = theta + radians(-90.0f);
-		manRot.y = - manRot.y;
-		manRot.x = phi;
+		// manRot.y = theta + radians(-90.0f);
+		// manRot.y = - manRot.y;
+		// manRot.x = phi;
+
+		player->setRotY(-(theta + radians(-90.0f)));
+		player->setRotX(phi);
 
 		// cout << "Theta: " << theta << " Phi: " << phi << endl;
-		manMoveDir = vec3(sin(manRot.y), 0, cos(manRot.y));
+		manMoveDir = vec3(sin(player->getRotY()), 0, cos(player->getRotY()));
 		right = normalize(cross(manMoveDir, up));
 
 		// lookAt = eye + front;
@@ -976,9 +979,11 @@ public:
 		// Model matrix setup
 		Model->pushMatrix();
 		Model->loadIdentity();
-		Model->translate(characterMovement); // Use final player position
+		// Model->translate(characterMovement); // Use final player position
+		Model->translate(player->getPosition());
 		// *** USE CAMERA ROTATION FOR MODEL ***
-		Model->rotate(manRot.y, vec3(0, 1, 0)); // <<-- FIXED ROTATION
+		// Model->rotate(manRot.y, vec3(0, 1, 0)); // <<-- FIXED ROTATION
+		Model->rotate(player->getRotY(), vec3(0, 1, 0)); // <<-- FIXED ROTATION
 		Model->scale(manScale);
 
 		// Update VISUAL bounding box (can be different from collision box if needed)
@@ -1408,7 +1413,8 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 					float shelfWorldZ = libraryCenter.z - gridWorldDepth * 0.5f + (z + 0.5f) * cellDepth;
 					glm::vec3 shelfCenterPos = glm::vec3(shelfWorldX, groundY + 1.0f, shelfWorldZ);
 
-					glm::vec3 diff = shelfCenterPos - characterMovement;
+					// glm::vec3 diff = shelfCenterPos - characterMovement;
+					glm::vec3 diff = shelfCenterPos - player->getPosition(); 
 					diff.y = 0.0f; // Ignore Y difference for interaction distance
 					float distSq = dot(diff, diff); // Use dot product for squared distance
 
@@ -1430,7 +1436,8 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 						Book& newBook = books.back();
 
 						// --- PASS Player Position to startFalling ---
-						newBook.startFalling(groundY, characterMovement); // <<-- MODIFIED call
+						// newBook.startFalling(groundY, characterMovement); // <<-- MODIFIED call
+						newBook.startFalling(groundY, player->getPosition());
 
 						interacted = true;
 						break;
@@ -1581,16 +1588,22 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			desiredMoveDelta = (desiredMoveDelta / moveLength) * moveSpeed;
 		}
 		else {
-			return characterMovement; // No movement input, stay put
+			// return characterMovement; // No movement input, stay put
+			return player->getPosition();
 		}
 
 		// --- Collision Detection and Resolution ---
-		vec3 currentPos = characterMovement;
+		// vec3 currentPos = characterMovement;
+		// vec3 nextPos = currentPos + desiredMoveDelta;
+		// nextPos.y = groundY; // Keep player on the ground plane
+
+		vec3 currentPos = player->getPosition();
 		vec3 nextPos = currentPos + desiredMoveDelta;
 		nextPos.y = groundY; // Keep player on the ground plane
 
 		// Player orientation for AABB calculation
-		glm::quat playerOrientation = glm::angleAxis(manRot.y, glm::vec3(0, 1, 0));
+		// glm::quat playerOrientation = glm::angleAxis(manRot.y, glm::vec3(0, 1, 0));
+		glm::quat playerOrientation = glm::angleAxis(player->getRotY(), glm::vec3(0, 1, 0));
 
 		// --- Simple Stop Method ---
 		/*
@@ -1628,12 +1641,15 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 
 		// Final position is the allowed position after checking both axes
-		characterMovement = allowedPos;
-		characterMovement.y = groundY; // Ensure Y stays correct
+		// characterMovement = allowedPos;
+		// characterMovement.y = groundY; // Ensure Y stays correct
+
+		player->setPosition(vec3(allowedPos.x, groundY, allowedPos.z)); // Update player position
 
 
 		// Update camera based on final position (done in render)
-		return characterMovement; // Return the final, potentially adjusted, position
+		// return characterMovement; // Return the final, potentially adjusted, position
+		return player->getPosition(); // Return the final position
 	}
 
 	// --- Shooting Function ---
@@ -1668,10 +1684,15 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		float upOffset = 0.8f;      // Height relative to player base (groundY)
 		float rightOffset = 0.2f;   // Offset to the side (e.g., right hand)
 
-		vec3 spawnPos = characterMovement
-			+ vec3(0.0f, upOffset, 0.0f) // Vertical offset from base
-			+ shootDir * forwardOffset   // Forward offset along character's facing direction
-			+ playerRight * rightOffset; // Sideways offset along character's right
+		// vec3 spawnPos = characterMovement
+		// 	+ vec3(0.0f, upOffset, 0.0f) // Vertical offset from base
+		// 	+ shootDir * forwardOffset   // Forward offset along character's facing direction
+		// 	+ playerRight * rightOffset; // Sideways offset along character's right
+
+		vec3 spawnPos = player->getPosition()
+		+ vec3(0.0f, upOffset, 0.0f) // Vertical offset from base
+		+ shootDir * forwardOffset   // Forward offset along character's facing direction
+		+ playerRight * rightOffset; // Sideways offset along character's right
 
 		// Create and add projectile
 		activeSpells.emplace_back(spawnPos, shootDir, (float)glfwGetTime(), sphere);
@@ -1785,7 +1806,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		hudProg->bind();
 		glUniformMatrix4fv(hudProg->getUniform("projection"), 1, GL_FALSE, value_ptr(projection));
 		glUniformMatrix4fv(hudProg->getUniform("model"), 1, GL_FALSE, value_ptr(model));
-		glUniform1f(hudProg->getUniform("healthPercent"), 50.0f / PLAYER_MAX_HEALTH); // Pass health value
+		glUniform1f(hudProg->getUniform("healthPercent"), player->getHitpoints() / PLAYER_HP_MAX); // Pass health value
 		glUniform1f(hudProg->getUniform("BarStartX"), 100.0); // Pass max health value
 		glUniform1f(hudProg->getUniform("BarWidth"), 500.0); // Pass max health value
 	
@@ -1827,12 +1848,20 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 		// --- Setup Lights ---
 		// Example: One bright light in the library, one dimmer in boss area
+		// vec3 lightPositions[NUM_LIGHTS] = {
+		// 	libraryCenter + vec3(0, 15, 0),      // Library light overhead
+		// 	bossAreaCenter + vec3(0, 10, 0),     // Boss area light overhead
+		// 	characterMovement + vec3(0, 1, 0.5), // Small light near player (optional)
+		// 	vec3(0, 0, 0)                        // Unused or ambient fill
+		// };
+
 		vec3 lightPositions[NUM_LIGHTS] = {
 			libraryCenter + vec3(0, 15, 0),      // Library light overhead
 			bossAreaCenter + vec3(0, 10, 0),     // Boss area light overhead
-			characterMovement + vec3(0, 1, 0.5), // Small light near player (optional)
+			player->getPosition() + vec3(0, 1, 0.5), // Small light near player (optional)
 			vec3(0, 0, 0)                        // Unused or ambient fill
 		};
+
 		vec3 lightColors[NUM_LIGHTS] = {
 			vec3(1.0f, 1.0f, 0.9f), // Slightly warm white
 			vec3(0.8f, 0.6f, 1.0f), // Dim purple/blue
@@ -1913,7 +1942,9 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 		drawSkybox(assimptexProg, Model); // Draw the skybox last
 
+		#if SHOW_HEALTHBAR
 		drawHealthBar();
+		#endif
 
 		// --- Cleanup ---
 		Projection->popMatrix();
@@ -1941,6 +1972,16 @@ int main(int argc, char *argv[])
 	}
 
 	Application *application = new Application();
+
+	std::shared_ptr<Player> playerPtr = std::make_shared<Player>(
+		vec3(0, 0, 0),
+		20.0f,
+		PLAYER_MOVE_SPEED,
+		application->sphere,
+		vec3(1.0f, 1.0f, 1.0f),
+		vec3(0.0f, 0.0f, 0.0f)
+	);
+	application->player = playerPtr;
 
 	// Your main will always include a similar set up to establish your window
 	// and GL context, etc
