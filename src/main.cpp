@@ -35,7 +35,7 @@ using namespace glm;
 #define NUM_LIGHTS 4
 #define MAX_BONES 200
 
-#define SHOW_HEALTHBAR 0
+#define SHOW_HEALTHBAR 1 // 1 = show health bar, 0 = hide health bar
 
 float randFloat(float l, float h) {
 	float r = rand() / (float)RAND_MAX;
@@ -1795,20 +1795,24 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 	}
 
 	void drawHealthBar() {
+		float heatlhBarWidth = 350.0f;
+		float healthBarHeight = 25.0f;
+		float healthBarStartX = 100.0f;
+		float healthBarStartY = 100.0f;
 		int screenWidth, screenHeight;
 		glfwGetFramebufferSize(windowManager->getHandle(), &screenWidth, &screenHeight);
 	
 		glm::mat4 projection = glm::ortho(0.0f, (float)screenWidth, 0.0f, (float)screenHeight, -1.0f, 1.0f);
 		
-		glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(100.0f, 100.0f, 0.0f));  // HUD position
-		model = glm::scale(model, glm::vec3(500.0f, 50.0f, 1.0f));                          // HUD size
+		glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(healthBarStartX, healthBarStartY, 0.0f));  // HUD position
+		model = glm::scale(model, glm::vec3(heatlhBarWidth, healthBarHeight, 1.0f));                          // HUD size
 	
 		hudProg->bind();
 		glUniformMatrix4fv(hudProg->getUniform("projection"), 1, GL_FALSE, value_ptr(projection));
 		glUniformMatrix4fv(hudProg->getUniform("model"), 1, GL_FALSE, value_ptr(model));
 		glUniform1f(hudProg->getUniform("healthPercent"), player->getHitpoints() / PLAYER_HP_MAX); // Pass health value
-		glUniform1f(hudProg->getUniform("BarStartX"), 100.0); // Pass max health value
-		glUniform1f(hudProg->getUniform("BarWidth"), 500.0); // Pass max health value
+		glUniform1f(hudProg->getUniform("BarStartX"), healthBarStartX); // Pass max health value
+		glUniform1f(hudProg->getUniform("BarWidth"), heatlhBarWidth); // Pass max health value
 	
 		healthBar->Draw(hudProg);
 		hudProg->unbind();
@@ -1975,7 +1979,7 @@ int main(int argc, char *argv[])
 
 	std::shared_ptr<Player> playerPtr = std::make_shared<Player>(
 		vec3(0, 0, 0),
-		20.0f,
+		PLAYER_HP_MAX,
 		PLAYER_MOVE_SPEED,
 		application->sphere,
 		vec3(1.0f, 1.0f, 1.0f),
