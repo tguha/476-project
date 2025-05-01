@@ -8,24 +8,170 @@
 #include "Pathfinder.h"
 #include <random>
 #include <iostream>
+#include <map>
 
 class LibraryGen {
     public:
-        LibraryGen() : grid(glm::ivec2(1, 1), glm::ivec2(0, 0), NONE) {}
+        LibraryGen() : grid(glm::ivec2(1, 1), glm::ivec2(0, 0), Cell(CellType::NONE)) {}
 
-        enum CellType {NONE, SHELF, PATH, SPAWN, BOSS_ENTRANCE, TOP_BORDER, BOTTOM_BORDER, LEFT_BORDER, RIGHT_BORDER};
+        // enum CellType {NONE, SHELF, PATH, SPAWN, BOSS_ENTRANCE, TOP_BORDER, BOTTOM_BORDER, LEFT_BORDER, RIGHT_BORDER};
+
+        enum class CellType {
+            NONE, // Empty space
+            CLUSTER,
+            PATH,
+            SPAWN,
+            BOSS_ENTRANCE,
+            BORDER,
+        };
+
+        enum class ClusterType {
+            NONE,
+            SHELF1, // Cluster types for shelves maybe different layouts or different models
+            SHELF2,
+            SHELF3,
+            GLOWING_SHELF1,
+            GLOWING_SHELF2,
+            LAYOUT1,
+            LAYOUT2,
+            LAYOUT3,
+            ONLY_TABLE,
+            ONLY_CLOCK,
+            ONLY_CANDELABRA,
+            ONLY_CHEST,
+            ONLY_BOOKSTAND,
+        };
+
+        enum class BorderType {
+            NONE,
+            TOP_BORDER,
+            BOTTOM_BORDER,
+            LEFT_BORDER,
+            RIGHT_BORDER,
+        };
+
+        enum class CellObjType {
+            NONE,
+            BOOKSHELF,
+            TABLE,
+            CHAIR,
+            TABLE_AND_CHAIR1,
+            TABLE_AND_CHAIR2,
+            DOOR,
+            CANDELABRA,
+            BOOK,
+            GRANDFATHER_CLOCK,
+            CHEST,
+            ROTATED_BOOKSHELF,
+            SHELF_WITH_ABILITY,
+            SHELF_WITH_ABILITY_ROTATED,
+            BOOKSTAND,
+        };
+
+        struct Cell {
+            CellType type;
+            // union {
+            //     ClusterType clusterType; // if type == CLUSTER
+            //     BorderType borderType; // if type == BORDER
+            // };
+            ClusterType clusterType = ClusterType::NONE; // Default to NONE
+            BorderType borderType = BorderType::NONE; // Default to NONE
+            CellObjType objectType = CellObjType::NONE; // Default to NONE
+
+            Cell() : type(CellType::NONE) {} // Default constructor
+            Cell(CellType t) : type(t) {} // Constructor with type
+            Cell(CellType t, ClusterType ct) : type(t), clusterType(ct) {} // Constructor with type and cluster type
+            Cell(CellType t, BorderType bt) : type(t), borderType(bt) {} // Constructor with type and border type
+            Cell(CellType t, ClusterType ct, CellObjType ot) : type(t), clusterType(ct), objectType(ot) {} // Constructor with type, cluster type and object type
+            Cell(CellType t, CellObjType ot) : type(t), objectType(ot) {} // Constructor with type and object type
+        };
+
+
+        // };
 
         void generate(glm::ivec2 size, glm::ivec2 offset = {0, 0},
             glm::vec3 spawnPos = {0, 0, 0}, glm::vec2 bossEntrDir = {1, 0});
-        const Grid<CellType>& getGrid() const { return grid; }
-        CellType getCell(const glm::ivec2& pos) const { return grid.getCell(pos); }
+        const Grid<Cell>& getGrid() const { return grid; }
+        // Cell getCell(const glm::ivec2& pos) const { return grid.getCell(pos); }
+        std::mt19937& getSeedGen() { return seedGen; }
 
     private:
-        Grid<CellType> grid; // Grid of CellType
+        Grid<Cell> grid; // Grid of CellType
         std::vector<glm::vec2> clusterCenters;
         std::mt19937 seedGen;
         glm::vec2 spawnPosinGrid;
         glm::vec2 bossEntranceDir;
+        std::vector<glm::vec2> avoidPoints;
+        glm::ivec2 gridSize;
+
+        // struct Layout {
+        //     std::vector<glm::ivec2> relativePositions;
+        //     std::vector<CellType> objectTypes;
+        // };
+
+        std::map<ClusterType, float> objMinSpacing = {
+            {ClusterType::SHELF1, 5.0f},
+            {ClusterType::SHELF2, 3.0f},
+            {ClusterType::SHELF3, 3.0f},
+            {ClusterType::LAYOUT1, 6.0f},
+            {ClusterType::LAYOUT2, 5.0f},
+            {ClusterType::LAYOUT3, 5.0f},
+            {ClusterType::ONLY_TABLE, 3.0f},
+            {ClusterType::ONLY_CLOCK, 1.0f},
+            {ClusterType::ONLY_CANDELABRA, 1.0f},
+            {ClusterType::ONLY_CHEST, 1.0f},
+            {ClusterType::ONLY_BOOKSTAND, 0.5f},
+            {ClusterType::GLOWING_SHELF1, 3.0f},
+            {ClusterType::GLOWING_SHELF2, 3.0f},
+        };
+
+        std::map<ClusterType, int> MaxobjAmount = {
+            // {ClusterType::SHELF1, 1},
+            // {ClusterType::SHELF2, 1},
+            // {ClusterType::SHELF3, 1},
+            {ClusterType::LAYOUT1, 2},
+            // {ClusterType::LAYOUT2, 2},
+            // {ClusterType::LAYOUT3, 2},
+            {ClusterType::ONLY_TABLE, 1},
+            {ClusterType::ONLY_CLOCK, 2},
+            {ClusterType::ONLY_CANDELABRA, 4},
+            {ClusterType::ONLY_CHEST, 1},
+            {ClusterType::ONLY_BOOKSTAND, 1},
+            {ClusterType::GLOWING_SHELF1, 2},
+            {ClusterType::GLOWING_SHELF2, 2},
+        };
+
+        std::map<ClusterType, int> objAmount = {
+            {ClusterType::SHELF1, 0},
+            // {ClusterType::SHELF2, 0},
+            // {ClusterType::SHELF3, 0},
+            {ClusterType::LAYOUT1, 0},
+            // {ClusterType::LAYOUT2, 0},
+            // {ClusterType::LAYOUT3, 0},
+            {ClusterType::ONLY_TABLE, 0},
+            {ClusterType::ONLY_CLOCK, 0},
+            {ClusterType::ONLY_CANDELABRA, 0},
+            {ClusterType::ONLY_CHEST, 0},
+            {ClusterType::ONLY_BOOKSTAND, 0},
+            {ClusterType::GLOWING_SHELF1, 0},
+            {ClusterType::GLOWING_SHELF2, 0},
+        };
+
+        std::vector<ClusterType> clusterOptions = {
+            ClusterType::SHELF1,
+            // ClusterType::SHELF2,
+            ClusterType::SHELF3,
+            ClusterType::LAYOUT1,
+            // ClusterType::LAYOUT2,
+            // ClusterType::LAYOUT3,
+            // ClusterType::ONLY_TABLE,
+            ClusterType::ONLY_CLOCK,
+            ClusterType::ONLY_CANDELABRA,
+            ClusterType::ONLY_CHEST,
+            ClusterType::ONLY_BOOKSTAND,
+            ClusterType::GLOWING_SHELF1,
+            ClusterType::GLOWING_SHELF2,
+        };
 
         std::vector<std::pair<glm::ivec2, glm::ivec2>> selectedEdges;
 
