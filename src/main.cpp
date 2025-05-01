@@ -762,7 +762,7 @@ public:
 		carpetTex->setWrapModes(GL_REPEAT, GL_REPEAT);
 
 
-		library->generate(gridSize, glm::ivec2(0, 0), characterMovement, glm::ivec2(0, 1));
+		library->generate(gridSize, glm::ivec2(0, 0), player->getPosition(), glm::ivec2(0, 1));
 		grid = library->getGrid();
 		addWall(gridSize.x * 2, vec3(grid.mapGridXtoWorldX(gridSize.x - 1), 0, grid.mapGridYtoWorldZ(0) + 2), vec3(-1, 0, 0), 10.0f, borderWallTex);
 		addWall(gridSize.x - 3, vec3(grid.mapGridXtoWorldX(gridSize.x - 1), 0, grid.mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 10.0f, borderWallTex);
@@ -2028,7 +2028,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 					glm::vec3 shelfCenterPos = glm::vec3(shelfWorldX, groundY + 1.0f, shelfWorldZ);
 
 					// glm::vec3 diff = shelfCenterPos - characterMovement;
-					glm::vec3 diff = shelfCenterPos - player->getPosition(); 
+					glm::vec3 diff = shelfCenterPos - player->getPosition();
 					diff.y = 0.0f; // Ignore Y difference for interaction distance
 					float distSq = dot(diff, diff); // Use dot product for squared distance
 
@@ -2502,23 +2502,23 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		float healthBarStartY = 100.0f;
 		int screenWidth, screenHeight;
 		glfwGetFramebufferSize(windowManager->getHandle(), &screenWidth, &screenHeight);
-	
+
 		glm::mat4 projection = glm::ortho(0.0f, (float)screenWidth, 0.0f, (float)screenHeight, -1.0f, 1.0f);
-		
+
 		glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(healthBarStartX, healthBarStartY, 0.0f));  // HUD position
 		model = glm::scale(model, glm::vec3(heatlhBarWidth, healthBarHeight, 1.0f));                          // HUD size
-	
+
 		hudProg->bind();
 		glUniformMatrix4fv(hudProg->getUniform("projection"), 1, GL_FALSE, value_ptr(projection));
 		glUniformMatrix4fv(hudProg->getUniform("model"), 1, GL_FALSE, value_ptr(model));
 		glUniform1f(hudProg->getUniform("healthPercent"), player->getHitpoints() / PLAYER_HP_MAX); // Pass health value
 		glUniform1f(hudProg->getUniform("BarStartX"), healthBarStartX); // Pass max health value
 		glUniform1f(hudProg->getUniform("BarWidth"), heatlhBarWidth); // Pass max health value
-	
+
 		healthBar->Draw(hudProg);
 		hudProg->unbind();
 	}
-	
+
 
 	void render(float frametime, float animTime) {
 		// Get current frame buffer size.
