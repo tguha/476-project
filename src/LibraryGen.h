@@ -12,7 +12,7 @@
 
 class LibraryGen {
     public:
-        LibraryGen() : grid(glm::ivec2(1, 1), glm::ivec2(0, 0), Cell(CellType::NONE)) {}
+        LibraryGen() : grid(glm::ivec2(1, 1), Cell(CellType::NONE)) {}
 
         // enum CellType {NONE, SHELF, PATH, SPAWN, BOSS_ENTRANCE, TOP_BORDER, BOTTOM_BORDER, LEFT_BORDER, RIGHT_BORDER};
 
@@ -89,11 +89,43 @@ class LibraryGen {
 
         // };
 
-        void generate(glm::ivec2 size, glm::ivec2 offset = {0, 0},
+        void generate(glm::ivec2 size, glm::vec3 worldOrigin = glm::vec3(0, 0, 0),
             glm::vec3 spawnPos = {0, 0, 0}, glm::vec2 bossEntrDir = {1, 0});
         const Grid<Cell>& getGrid() const { return grid; }
         // Cell getCell(const glm::ivec2& pos) const { return grid.getCell(pos); }
         std::mt19937& getSeedGen() { return seedGen; }
+
+        int mapXtoGridX(float x) const {
+            // float worldXwidth = size.x;
+            // return (x-(-(size.x))/worldXwidth) * size.x;
+            float worldXWidth = grid.getSize().x * 2;
+            float localX = x - LibraryworldOrigin.x;
+            // return (x - (-size.x)) /  (worldXWidth / (size.x - 1));
+            return static_cast<int>((localX - (-grid.getSize().x)) / (worldXWidth / (grid.getSize().x - 1)));
+        }
+
+        int mapZtoGridY(float z) const {
+            // float worldZwidth = size.y;
+            // return (z-(-(size.y))/worldZwidth) * size.y;
+            float worldZwidth = grid.getSize().y * 2;
+            // return (z - (-size.y)) / (worldZwidth / (size.y - 1));
+            float localZ = z - LibraryworldOrigin.z;
+            return static_cast<int>((localZ - (-grid.getSize().y)) / (worldZwidth / (grid.getSize().y - 1)));
+        }
+
+        float mapGridXtoWorldX(int x) const {
+            float worldXwidth = grid.getSize().x * 2;
+            // return (x * (worldXwidth / (size.x - 1))) - size.x;
+            float localX = (-grid.getSize().x) + (x * (worldXwidth / (grid.getSize().x - 1)));
+            return LibraryworldOrigin.x + localX;
+        }
+
+        float mapGridYtoWorldZ(int y) const {
+            float worldZwidth = grid.getSize().y * 2;
+            // return (y * (worldZwidth / (size.y - 1))) - size.y;
+            float localZ = (-grid.getSize().y) + (y * (worldZwidth / (grid.getSize().y - 1)));
+            return LibraryworldOrigin.z + localZ;
+        }
 
     private:
         Grid<Cell> grid; // Grid of CellType
@@ -103,6 +135,7 @@ class LibraryGen {
         glm::vec2 bossEntranceDir;
         std::vector<glm::vec2> avoidPoints;
         glm::ivec2 gridSize;
+        glm::vec3 LibraryworldOrigin = glm::vec3(0, 0, 0); // World origin for the grid
 
         // struct Layout {
         //     std::vector<glm::ivec2> relativePositions;
