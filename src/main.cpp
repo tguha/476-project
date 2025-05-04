@@ -417,7 +417,7 @@ public:
 
 	vec3 eye = vec3(-6, 1.03, 0); /*MINI MAP*/
 	// vec3 lookAt = vec3(-1.58614, -0.9738, 0.0436656);
-	vec3 lookAt = characterMovement; /*MINI MAP*/
+	vec3 lookAt = vec3(0, 0, 0); /*MINI MAP*/
   //not sure which to keep, main had lookAt = vec3(0, 0, 0)
 	vec3 up = vec3(0, 1, 0);
 	bool CULL = false;
@@ -1711,11 +1711,13 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		shader->unbind();
 	}
 
-	void drawLibrary(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
+	void drawLibrary(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model, bool cullFlag) {
 		if (!shader || !Model || !book_shelf1 || grid.getSize().x == 0 || grid.getSize().y == 0) return; // Safety checks
 
 		shader->bind();
-		glUniform1i(shader->getUniform("hasTexture"), 1); // Bookshelves should use texture
+		if (shader == assimptexProg) {
+			glUniform1i(shader->getUniform("hasTexture"), 1); // Bookshelves should use texture
+		}
 
 		float gridWorldWidth = groundSize * 2.0f; // The world space the grid should occupy (library floor width)
 		float gridWorldDepth = groundSize * 2.0f; // The world space the grid should occupy (library floor depth)
@@ -1728,7 +1730,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 				glm::ivec2 gridPos(x, z);
 				float i = library->mapGridXtoWorldX(x); // Center the shelf in the cell
 				float j = library->mapGridYtoWorldZ(z); // Center the shelf in the cell
-				if (!ViewFrustCull(glm::vec3(i, 0, j), 2.0f, planes)) {
+				if (!cullFlag || !ViewFrustCull(glm::vec3(i, 0, j), 2.0f, planes)) {
 					if (grid[gridPos].type == LibraryGen::CellType::CLUSTER) {
 						if (grid[gridPos].clusterType == LibraryGen::ClusterType::SHELF1) {
 							Model->pushMatrix();
@@ -1910,16 +1912,18 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		shader->unbind();
 	}
 
-	void drawBossRoom(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
+	void drawBossRoom(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model, bool cullFlag) {
 		if (!shader || !Model) return;
 		shader->bind();
-		glUniform1i(shader->getUniform("hasTexture"), 1); // Use texture for the boss room
+		if (shader == assimptexProg) {
+			glUniform1i(shader->getUniform("hasTexture"), 1);
+		}
 		for (int z = 0; z < bossGrid.getSize().y; ++z) {
 			for (int x = 0; x < bossGrid.getSize().x; ++x) {
 				glm::ivec2 gridPos(x, z);
 				float i = bossRoom->mapGridXtoWorldX(x); // Center the shelf in the cell
 				float j = bossRoom->mapGridYtoWorldZ(z); // Center the shelf in the cell
-				if (!ViewFrustCull(glm::vec3(i, 0, j), 2.0f, planes)) {
+				if (!cullFlag || !ViewFrustCull(glm::vec3(i, 0, j), 2.0f, planes)) {
 					if (bossGrid[gridPos].type == BossRoomGen::CellType::BORDER) {
 						int test = bossRoom->mapXtoGridX(i);
 						int test2 = bossRoom->mapZtoGridY(j);
@@ -2554,7 +2558,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 	/* top down camera view  */
 	mat4 SetTopView(shared_ptr<Program> curShade) { /*MINI MAP*/
-		mat4 Cam = glm:: lookAt(eye + vec3(0, 9, 0), eye, lookAt - eye); 
+		mat4 Cam = glm:: lookAt(eye + vec3(0, 9, 0), eye, lookAt - eye);
 		glUniformMatrix4fv(curShade->getUniform("V"), 1, GL_FALSE, value_ptr(Cam));
 		return Cam;
 	}
@@ -2574,7 +2578,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		// Model matrix setup
 		Model->pushMatrix();
 		Model->loadIdentity();
-		Model->translate(characterMovement); // Use final player position
+		Model->translate(player->getPosition()); // Use final player position
 		// *** USE CAMERA ROTATION FOR MODEL ***
 		// Model->rotate(manRot.y, vec3(0, 1, 0)); // <<-- FIXED ROTATION
 		Model->scale(1.0);
@@ -2738,7 +2742,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		// drawBorder(prog2, Model);
 
 		// 2. Draw the Static Library Shelves
-		drawLibrary(assimptexProg, Model);
+		drawLibrary(assimptexProg, Model, true);
 
 		// 3. Draw the Door
 		// drawDoor(prog2, Model);
@@ -2763,7 +2767,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 		drawLibGrnd(assimptexProg, Model); // Draw the library ground
 
-		drawBossRoom(assimptexProg, Model); // Draw the boss room
+		drawBossRoom(assimptexProg, Model, true); // Draw the boss room
 
 		#if SHOW_HEALTHBAR
 		drawHealthBar();
@@ -2777,14 +2781,16 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			SetTopView(prog2); /*MINI MAP*/
 			//drawScene(prog2, CULL);
 			/* draws */
-			drawGroundSections(prog2, Model);
-			drawBorder(prog2, Model);
-			drawLibrary(prog2, Model);
+			// drawGroundSections(prog2, Model);
+			// drawBorder(prog2, Model);
+			drawLibrary(prog2, Model, false);
+			drawBossRoom(prog2, Model, false);
 			drawDoor(prog2, Model);
 			drawBooks(prog2, Model);
 			drawEnemies(prog2, Model);
 			drawOrbs(prog2, Model);
 			drawMiniPlayer(prog2, Model);
+
 			//stripped down player draw
 
 			// if (SD)
