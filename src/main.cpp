@@ -1762,7 +1762,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 	/* top down camera view  */
 	mat4 SetTopView(shared_ptr<Program> curShade) { /*MINI MAP*/
-		mat4 Cam = glm:: lookAt(eye + vec3(0, 7, 0), eye, lookAt - eye); 
+		mat4 Cam = glm:: lookAt(eye + vec3(0, 9, 0), eye, lookAt - eye); 
 		glUniformMatrix4fv(curShade->getUniform("V"), 1, GL_FALSE, value_ptr(Cam));
 		return Cam;
 	}
@@ -1774,9 +1774,10 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		return ortho;
   }
 
-  void drawMiniPlayer(shared_ptr<Program> curS, shared_ptr<MatrixStack> Model, float animTime) { /*MINI MAP*/
+  void drawMiniPlayer(shared_ptr<Program> curS, shared_ptr<MatrixStack> Model) { /*MINI MAP*/
 
   //sphere->Draw(shader);
+		curS->bind();
 
 		// Model matrix setup
 		Model->pushMatrix();
@@ -1784,7 +1785,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		Model->translate(characterMovement); // Use final player position
 		// *** USE CAMERA ROTATION FOR MODEL ***
 		// Model->rotate(manRot.y, vec3(0, 1, 0)); // <<-- FIXED ROTATION
-		//Model->scale(manScale);
+		Model->scale(1.0);
 
 		// Update VISUAL bounding box (can be different from collision box if needed)
 		// Using the same AABB calculation logic as before for consistency
@@ -1796,46 +1797,18 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			manAABBmax);
 
 		// Set uniforms and draw
-		glUniform1i(curS->getUniform("hasTexture"), 1);
+		//glUniform1i(curS->getUniform("hasTexture"), 1); //0.6f, 0.2f, 0.8f
+		glUniform3f(curS->getUniform("MatAmb"), 0.6f * 0.3f,0.2f * 0.3f, 0.8f * 0.3f);
+		glUniform3f(curS->getUniform("MatDif"), 0.6f, 0.2f, 0.8f);
+		glUniform3f(curS->getUniform("MatSpec"), 0.3f, 0.3f, 0.3f);
+		glUniform1f(curS->getUniform("MatShine"), 8.0f);
 		setModel(curS, Model);
-		stickfigure_running->Draw(curS);
+		//stickfigure_running->Draw(curS);
+		sphere->Draw(curS);
 
 		Model->popMatrix();
 		curS->unbind();
 	}
-
-
-		// 	// Model->rotate(manRot.y, vec3(0, 1, 0)); // <<-- FIXED ROTATION
-		// 	// Model->scale(manScale);
-
-		// 	// Update VISUAL bounding box (can be different from collision box if needed)
-		// 	// Using the same AABB calculation logic as before for consistency
-		// 	glm::mat4 manTransform = Model->topMatrix();
-		// 	updateBoundingBox(stickfigure_running->getBoundingBoxMin(),
-		// 		stickfigure_running->getBoundingBoxMax(),
-		// 		manTransform,
-		// 		manAABBmin, // This is the visual/interaction AABB
-		// 		manAABBmax);
-
-		// 	// Set uniforms and draw
-		// 	glUniform1i(curS->getUniform("hasTexture"), 1); //0.6f, 0.2f, 0.8f
-		// 	// glUniform3f(curS->getUniform("MatAmb"), 0.6f * 0.3f,0.2f * 0.3f, 0.8f * 0.3f);
-		// 	// glUniform3f(curS->getUniform("MatDif"), 0.6f, 0.2f, 0.8f);
-		// 	// glUniform3f(curS->getUniform("MatSpec"), 0.3f, 0.3f, 0.3f);
-		// 	// glUniform1f(curS->getUniform("MatShine"), 8.0f);
-
-		// 	setModel(curS, Model);
-		// 	stickfigure_running->Draw(curS);
-		// 	// sphere->Draw(curS);
-
-		// Model->popMatrix();
-		// curS->unbind();
-
-	
-
-
-  
-
 	void render(float frametime, float animTime) {
 		// Get current frame buffer size.
 		int width, height;
@@ -1958,7 +1931,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		/*MINI MAP*/
 		prog2->bind();
 			glClear( GL_DEPTH_BUFFER_BIT);
-			glViewport(0, height-500, 300, 300);
+			glViewport(0, height-300, 300, 300);
 			SetOrthoMatrix(prog2);
 			SetTopView(prog2); /*MINI MAP*/
 			//drawScene(prog2, CULL);
@@ -1970,7 +1943,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			drawBooks(prog2, Model);
 			drawEnemies(prog2, Model);
 			drawOrbs(prog2, Model);
-			drawMiniPlayer(prog2, Model, animTime);
+			drawMiniPlayer(prog2, Model);
 			//stripped down player draw
 
 			// if (SD)
