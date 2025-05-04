@@ -88,6 +88,34 @@ class Grid {
         glm::ivec2 getOffset() const { return offset; }
         glm::ivec2 getSize() const { return size; }
 
+        int mapXtoGridX(float x) const {
+            // float worldXwidth = size.x;
+            // return (x-(-(size.x))/worldXwidth) * size.x;
+            float worldXWidth = size.x * 2;
+            // return (x - (-size.x)) /  (worldXWidth / (size.x - 1));
+            return static_cast<int>((x - (-size.x)) / (worldXWidth / (size.x - 1)));
+        }
+
+        int mapZtoGridY(float z) const {
+            // float worldZwidth = size.y;
+            // return (z-(-(size.y))/worldZwidth) * size.y;
+            float worldZwidth = size.y * 2;
+            // return (z - (-size.y)) / (worldZwidth / (size.y - 1));
+            return static_cast<int>((z - (-size.y)) / (worldZwidth / (size.y - 1)));
+        }
+
+        float mapGridXtoWorldX(int x) const {
+            float worldXwidth = size.x * 2;
+            // return (x * (worldXwidth / (size.x - 1))) - size.x;
+            return (-size.x) + (x * (worldXwidth / (size.x - 1)));
+        }
+
+        float mapGridYtoWorldZ(int y) const {
+            float worldZwidth = size.y * 2;
+            // return (y * (worldZwidth / (size.y - 1))) - size.y;
+            return (-size.y) + (y * (worldZwidth / (size.y - 1)));
+        }
+
     private:
         glm::ivec2 size;
         glm::ivec2 offset;

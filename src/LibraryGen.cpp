@@ -9,13 +9,30 @@
     *
     */
 
-void LibraryGen::generate(glm::ivec2 size, glm::ivec2 offset) {
+void LibraryGen::generate(glm::ivec2 size, glm::ivec2 offset, glm::vec3 spawnPos, glm::vec2 bossEntrDir) {
 
     std::cout << "Grid size: " << size.x << ", " << size.y << std::endl;
 
 
-    grid = Grid<CellType>(size, offset, NONE); // Initialize the grid with the given size and offset
+    grid = Grid<Cell>(size, offset, Cell(CellType::NONE)); // Initialize the grid with the given size and offset
 
+    int i = grid.mapXtoGridX(spawnPos.x);
+    int j = grid.mapZtoGridY(spawnPos.z);
+
+    gridSize = size; // Store the grid size
+
+    spawnPosinGrid = glm::vec2(i, j); // Convert the spawn position to grid coordinates
+
+    if (grid.inBounds(spawnPosinGrid)) {
+        grid[spawnPosinGrid] = CellType::SPAWN; // Mark the spawn position in the grid
+        std::cout << "Spawn position in grid: " << spawnPosinGrid.x << ", " << spawnPosinGrid.y << std::endl;
+    } else {
+        std::cerr << "Spawn not in grid bounds: " << spawnPosinGrid.x << ", " << spawnPosinGrid.y << std::endl;
+    }
+
+    bossEntranceDir = bossEntrDir; // Set the boss entrance direction
+
+    std::cout << "boss entrance direction: " << bossEntranceDir.x << ", " << bossEntranceDir.y << std::endl;
 
     std::cout << "Generating library layout..." << std::endl;
 
@@ -23,20 +40,18 @@ void LibraryGen::generate(glm::ivec2 size, glm::ivec2 offset) {
 
     seedGen.seed(std::random_device()());
 
-    int numberOfClusters = size.x * size.y / 50; // Destiny controls the number of clusters
-    // int numberOfClusters = 10;
+    placeBorder();
+
+    // int numberOfClusters = size.x * size.y / 50; // Destiny controls the number of clusters
+    int numberOfClusters = 40;
 
     placeClusters(numberOfClusters);
 
     std::cout << "Placed " << clusterCenters.size() << " clusters." << std::endl;
 
-    triangulateClusters();
-
-    std::cout << "Triangulated clusters." << std::endl;
+    // triangulateClusters();
 
     // generatePaths();
-
-    std::cout << "Generated paths." << std::endl;
 
     // addShelfWalls();
 }
@@ -46,9 +61,20 @@ void LibraryGen::placeClusters(int count) {
     std::uniform_int_distribution<int> distX(0, grid.getSize().x - 1);
     std::uniform_int_distribution<int> distY(0, grid.getSize().y - 1);
 
+    std::uniform_int_distribution<int> clusterTypeDist(0, clusterOptions.size() - 1);
+
     std::cout << "Placing clusters..." << std::endl;
 
-    while (clusterCenters.size() < count) {
+    int attempts = 0;
+    int maxAttempts = grid.getSize().x * grid.getSize().y / 5; // Limit attempts to avoid infinite loop
+    bool placedBookstand = false; // Flag to check if bookshelf is placed
+
+    for (auto& obj : objAmount) {
+        obj.second = 0; // Reset object amounts
+    }
+
+    while (clusterCenters.size() < count && attempts < maxAttempts) {
+        attempts++;
         glm::ivec2 pos{distX(seedGen), distY(seedGen)};
 
         // Ensure minimum spacing between clusters
@@ -56,9 +82,29 @@ void LibraryGen::placeClusters(int count) {
 
         std::cout << "Trying to place cluster at: " << pos.x << ", " << pos.y << std::endl;
 
+        if (grid[pos].type == CellType::SPAWN ||
+            grid[pos].type == CellType::BOSS_ENTRANCE) {
+            valid = false; // Position is already occupied by spawn or wall no need to check further
+        }
+
         // Check if the position is already occupied or too close to existing clusters
         for (const auto& center : clusterCenters) {
-            if (glm::distance(glm::vec2(center), glm::vec2(pos)) < 3.0f) { // Adjust this number for spacing
+            // check if the distance between the new position and existing cluster centers is too small
+            // and if the new position is either the spawn position or too close to it
+            float requiredSpacing = objMinSpacing[grid[center].clusterType]; // Get the required spacing for the cluster type
+            for (const auto& avoidPoint : avoidPoints) {
+                if (glm::distance(glm::vec2(pos), glm::vec2(avoidPoint)) < requiredSpacing) {
+                    valid = false;
+                    break;
+                }
+            }
+
+            if (glm::distance(glm::vec2(center), glm::vec2(pos)) < requiredSpacing ||
+                glm::distance(glm::vec2(pos), glm::vec2(pos.x, gridSize.y - 1)) < requiredSpacing || // check distance against all 4 borders
+                glm::distance(glm::vec2(pos), glm::vec2(pos.x, 0)) < requiredSpacing ||
+                glm::distance(glm::vec2(pos), glm::vec2(gridSize.x - 1, pos.y)) < requiredSpacing ||
+                glm::distance(glm::vec2(pos), glm::vec2(0, pos.y)) < requiredSpacing ||
+                glm::distance(glm::vec2(pos), glm::vec2(spawnPosinGrid)) < 3.0f) {
                 valid = false;
                 break;
             }
@@ -66,34 +112,193 @@ void LibraryGen::placeClusters(int count) {
 
         // Check if the position is within bounds
         if (valid) {
+
             // if the position is valid, add it to the cluster centers
             clusterCenters.push_back(pos);
+            ClusterType randomClusterType;
 
-            // Controls whats inside the cluster - currently just a 3x3 square
-            // for (int y = -1; y <= 1; y++) {
-            //     for (int x = -1; x <= 1; x++) {
-            //         glm::ivec2 shelfPos = pos + glm::ivec2(x, y);
-            //         if (grid.inBounds(shelfPos)) {
-            //             grid[shelfPos] = SHELF;
-            //         }
-            //     }
+            if (!placedBookstand) {
+                randomClusterType = ClusterType::ONLY_BOOKSTAND;
+                placedBookstand = true;
+            } else {
+                randomClusterType = clusterOptions[clusterTypeDist(seedGen)];
+            }
 
-            // side by side shelves
-            // for (int y = -1; y < 1; y++) {
-            //     for (int x = -1; x < 1; x++) {
-            //         glm::ivec2 shelfPos = pos + glm::ivec2(y, x);
-            //         if (grid.inBounds(shelfPos)) {
-            //             grid[shelfPos] = SHELF;
-            //         }
-            //     }
+            while (MaxobjAmount.count(randomClusterType) && objAmount[randomClusterType] >= MaxobjAmount[randomClusterType]) {
+                randomClusterType = clusterOptions[clusterTypeDist(seedGen)];
+            }
+            // add if the cluster type is in the map
+            if (objAmount.count(randomClusterType)) {
+                objAmount[randomClusterType]++;
+            }
+
+
+            if (randomClusterType == ClusterType::SHELF1) {
+                for (int dx = -1; dx <= 1; ++dx) {
+                    glm::ivec2 shelfPos = pos + glm::ivec2(dx, 0);
+                    if (grid.inBounds(shelfPos)) {
+                        grid[shelfPos] = Cell(CellType::CLUSTER, randomClusterType); // Mark the cluster position in the grid
+                    }
+                }
+            } else if (randomClusterType == ClusterType::SHELF2) {
+                // Place a different type of shelf cluster
+                if (grid.inBounds(pos)) {
+                    grid[pos] = Cell(CellType::CLUSTER, randomClusterType); // Mark the cluster position in the grid
+                }
+            } else if (randomClusterType == ClusterType::SHELF3) {
+                // Place another type of shelf cluster
+                // will be rotated in drawwing function
+                for (int dx = -1; dx <= 1; ++dx) {
+                    glm::ivec2 shelfPos = pos + glm::ivec2(0, dx);
+                    if (grid.inBounds(shelfPos)) {
+                        grid[shelfPos] = Cell(CellType::CLUSTER, randomClusterType); // Mark the cluster position in the grid
+                    }
+                }
+            } else if (randomClusterType == ClusterType::LAYOUT1) {
+                if (grid.inBounds(pos)) {
+                    grid[pos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::TABLE_AND_CHAIR1);
+                }
+                glm::ivec2 layoutpos = pos + glm::ivec2(1, 0);
+                if (grid.inBounds(layoutpos)) {
+                    grid[layoutpos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::ROTATED_BOOKSHELF);
+                }
+                layoutpos = pos + glm::ivec2(1, 1);
+                if (grid.inBounds(layoutpos)) {
+                    grid[layoutpos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::ROTATED_BOOKSHELF);
+                }
+                layoutpos = pos + glm::ivec2(1, -1);
+                if (grid.inBounds(layoutpos)) {
+                    grid[layoutpos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::ROTATED_BOOKSHELF);
+                }
+                layoutpos = pos + glm::ivec2(0, -2);
+                if (grid.inBounds(layoutpos)) {
+                    grid[layoutpos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::BOOKSHELF);
+                }
+                layoutpos = pos + glm::ivec2(0, 2);
+                if (grid.inBounds(layoutpos)) {
+                    grid[layoutpos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::BOOKSHELF);
+                }
+                layoutpos = pos + glm::ivec2(0, 1);
+                if (grid.inBounds(layoutpos)) {
+                    grid[layoutpos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::CHEST);
+                }
+                layoutpos = pos + glm::ivec2(0, -1);
+                if (grid.inBounds(layoutpos)) {
+                    grid[layoutpos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::CANDELABRA);
+                }
+            } else if (randomClusterType == ClusterType::LAYOUT2) {
+                if (grid.inBounds(pos)) {
+                    grid[pos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::TABLE_AND_CHAIR2);
+                }
+                glm::ivec2 layoutpos = pos + glm::ivec2(0, 1);
+                if (grid.inBounds(layoutpos)) {
+                    grid[layoutpos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::BOOKSHELF);
+                }
+            } else if (randomClusterType == ClusterType::LAYOUT3) {
+                if (grid.inBounds(pos)) {
+                    grid[pos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::TABLE);
+                }
+                glm::ivec2 layoutpos = pos + glm::ivec2(1, 1);
+                if (grid.inBounds(layoutpos)) {
+                    grid[layoutpos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::CHAIR);
+                }
+            } else if (randomClusterType == ClusterType::ONLY_CANDELABRA) {
+                if (grid.inBounds(pos)) {
+                    grid[pos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::CANDELABRA); // Mark the cluster position in the grid
+                }
+            } else if (randomClusterType == ClusterType::ONLY_CLOCK) {
+                if (grid.inBounds(pos)) {
+                    grid[pos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::GRANDFATHER_CLOCK); // Mark the cluster position in the grid
+                }
+            } else if (randomClusterType == ClusterType::ONLY_CHEST) {
+                if (grid.inBounds(pos)) {
+                    grid[pos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::CHEST); // Mark the cluster position in the grid
+                }
+            } else if (randomClusterType == ClusterType::ONLY_TABLE) {
+                if (grid.inBounds(pos)) {
+                    grid[pos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::TABLE_AND_CHAIR1); // Mark the cluster position in the grid
+                }
+            } else if (randomClusterType == ClusterType::ONLY_BOOKSTAND) {
+                glm::ivec2 layoutpos = glm::ivec2(spawnPosinGrid.x, spawnPosinGrid.y) + glm::ivec2(1, 0);
+                if (grid.inBounds(layoutpos)) {
+                    grid[layoutpos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::BOOKSTAND); // Mark the cluster position in the grid
+                }
+            } else if (randomClusterType == ClusterType::GLOWING_SHELF1) {
+                if (grid.inBounds(pos)) {
+                    grid[pos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::SHELF_WITH_ABILITY); // Mark the cluster position in the grid
+                }
+                glm::ivec2 layoutpos = pos + glm::ivec2(1, 0);
+                if (grid.inBounds(layoutpos)) {
+                    grid[layoutpos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::BOOKSHELF); // Mark the cluster position in the grid
+                }
+                layoutpos = pos + glm::ivec2(-1, 0);
+                if (grid.inBounds(layoutpos)) {
+                    grid[layoutpos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::BOOKSHELF); // Mark the cluster position in the grid
+                }
+            } else if (randomClusterType == ClusterType::GLOWING_SHELF2) {
+                if (grid.inBounds(pos)) {
+                    grid[pos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::SHELF_WITH_ABILITY_ROTATED); // Mark the cluster position in the grid
+                }
+                glm::ivec2 layoutpos = pos + glm::ivec2(0, 1);
+                if (grid.inBounds(layoutpos)) {
+                    grid[layoutpos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::ROTATED_BOOKSHELF); // Mark the cluster position in the grid
+                }
+                layoutpos = pos + glm::ivec2(0, -1);
+                if (grid.inBounds(layoutpos)) {
+                    grid[layoutpos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::ROTATED_BOOKSHELF); // Mark the cluster position in the grid
+                }
+            }
+            else {
+                std::cerr << "Unknown cluster type: " << static_cast<int>(randomClusterType) << std::endl;
+            }
+
+            // if (grid.inBounds(pos)) {
+            //     grid[pos] = Cell(CellType::CLUSTER, ClusterType::SHELF1); // Mark the cluster position in the grid
             // }
 
-            if (grid.inBounds(pos)) {
-                grid[pos] = SHELF; // Mark the position as a shelf
-            } else {
-                std::cerr << "Cluster position out of bounds: " << pos.x << ", " << pos.y << std::endl;
-            }
+            attempts = 0; // Reset attempts if a cluster is successfully placed
+            std::cout << "Placed cluster at: " << pos.x << ", " << pos.y << std::endl;
+            std::cout << "Cluster type: " << static_cast<int>(randomClusterType) << std::endl;
         }
+
+    }
+}
+
+void LibraryGen::placeBorder() {
+    // Place a border around the grid
+    std::cout << "Placing border..." << std::endl;
+
+    for (int x = 0; x < grid.getSize().x; ++x) {
+        grid[glm::ivec2(x, 0)] = Cell(CellType::BORDER, BorderType::BOTTOM_BORDER); // Bottom border
+        grid[glm::ivec2(x, grid.getSize().y - 1)] = Cell(CellType::BORDER, BorderType::TOP_BORDER); // Top border
+    }
+
+    for (int y = 0; y < grid.getSize().y; ++y) {
+        grid[glm::ivec2(0, y)] = Cell(CellType::BORDER, BorderType::LEFT_BORDER); // Left border
+        grid[glm::ivec2(grid.getSize().x - 1, y)] = Cell(CellType::BORDER, BorderType::RIGHT_BORDER); // Right border
+    }
+
+    if (bossEntranceDir.x > 0) {
+        // in middle of the right wall assuming even number of cells
+        grid[glm::ivec2(grid.getSize().x - 1, grid.getSize().y / 2)] = Cell(CellType::BOSS_ENTRANCE); // Right entrance
+        grid[glm::ivec2(grid.getSize().x - 1, grid.getSize().y / 2 - 1)] = Cell(CellType::BOSS_ENTRANCE); // Right entrance
+        avoidPoints.push_back(glm::vec2(grid.getSize().x - 1, grid.getSize().y / 2)); // Add to avoid points
+        avoidPoints.push_back(glm::vec2(grid.getSize().x - 1, grid.getSize().y / 2 - 1)); // Add to avoid points
+    } else if (bossEntranceDir.x < 0) {
+        grid[glm::ivec2(0, grid.getSize().y / 2)] = Cell(CellType::BOSS_ENTRANCE); // Left entrance
+        grid[glm::ivec2(0, grid.getSize().y / 2 - 1)] = Cell(CellType::BOSS_ENTRANCE); // Left entrance
+        avoidPoints.push_back(glm::vec2(0, grid.getSize().y / 2)); // Add to avoid points
+        avoidPoints.push_back(glm::vec2(0, grid.getSize().y / 2 - 1)); // Add to avoid points
+    } else if (bossEntranceDir.y > 0) {
+        grid[glm::ivec2(grid.getSize().x / 2, grid.getSize().y - 1)] = Cell(CellType::BOSS_ENTRANCE); // Top entrance
+        grid[glm::ivec2(grid.getSize().x / 2 - 1, grid.getSize().y - 1)] = Cell(CellType::BOSS_ENTRANCE); // Top entrance
+        avoidPoints.push_back(glm::vec2(grid.getSize().x / 2, grid.getSize().y - 1)); // Add to avoid points
+        avoidPoints.push_back(glm::vec2(grid.getSize().x / 2 - 1, grid.getSize().y - 1)); // Add to avoid points
+    } else if (bossEntranceDir.y < 0) {
+        grid[glm::ivec2(grid.getSize().x / 2, 0)] = Cell(CellType::BOSS_ENTRANCE); // Bottom entrance
+        grid[glm::ivec2(grid.getSize().x / 2 - 1, 0)] = Cell(CellType::BOSS_ENTRANCE); // Bottom entrance
+        avoidPoints.push_back(glm::vec2(grid.getSize().x / 2, 0)); // Add to avoid points
+        avoidPoints.push_back(glm::vec2(grid.getSize().x / 2 - 1, 0)); // Add to avoid points
     }
 }
 
@@ -168,125 +373,125 @@ void LibraryGen::triangulateClusters() {
     std::cout << "Selected " << selectedEdges.size() << " edges for path generation." << std::endl;
 }
 
-void LibraryGen::generatePaths() {
-    // Check if there are enough centers to create paths
-    if (selectedEdges.empty()) {
-        std::cerr << "No edges selected for path generation." << std::endl;
-        return;
-    }
+// void LibraryGen::generatePaths() {
+//     // Check if there are enough centers to create paths
+//     if (selectedEdges.empty()) {
+//         std::cerr << "No edges selected for path generation." << std::endl;
+//         return;
+//     }
 
-    std::cout << "Generating paths for " << selectedEdges.size() << " edges." << std::endl;
-
-
-    Pathfinder pathfinder(grid.getSize());
-
-    // Connect all clusters with paths
-    for (const auto& edge : selectedEdges) {
-        glm::ivec2 start = edge.first;
-        glm::ivec2 end = edge.second;
-
-        // Ensure the start and end points are in bounds
-        if (!grid.inBounds(start) || !grid.inBounds(end)) {
-            std::cerr << "Start or end point out of bounds: " << start.x << ", " << start.y << " to " << end.x << ", " << end.y << std::endl;
-            continue;
-        }
-
-        std::cout << "Finding path from " << start.x << ", " << start.y << " to " << end.x << ", " << end.y << std::endl;
-
-        auto path = pathfinder.findPath(start, end, [this](Pathfinder::Node* from, Pathfinder::Node* to) {
-            return calcCost(from->position, to->position);
-            }
-        );
-
-        if (path.empty()) {
-            std::cerr << "No path found from " << start.x << ", " << start.y << " to " << end.x << ", " << end.y << std::endl;
-            continue;
-        }
-
-        // Mark the path in the grid
-        for (const auto& pos : path) {
-            if (grid[pos] == NONE) {
-                grid[pos] = PATH;
-            } else {
-                std::cerr << "Path overlaps with existing shelf at: " << pos.x << ", " << pos.y << std::endl;
-            }
-        }
-
-        std::cout << "Path found with " << path.size() << " steps." << std::endl;
-    }
-}
-
-void LibraryGen::addShelfWalls() {
-    std::cout << "Adding walls around shelves..." << std::endl;
-
-    // Add walls around the shelves - Direction for the 4-connected neighbors
-    const std::vector<glm::ivec2> directions = {
-        {1, 0}, {-1, 0}, {0, 1}, {0, -1}
-    };
-
-    // Temporary grid to track new shelves/walls
-    Grid<CellType> newShelves(grid.getSize(), {0, 0}, NONE);
-
-    // Add walls around the paths
-    int wallsAdded = 0;
-    for (int y = 0; y < grid.getSize().y; ++y) {
-        for (int x = 0; x < grid.getSize().x; ++x) {
-            glm::ivec2 pos(x, y);
-
-            // Verify if the position is in bounds (should be, but just in case)
-            if (!grid.inBounds(pos)) {
-                continue;
-            }
-
-            if (grid[pos] == PATH) {
-                // Check all 4 directions
-                for (const auto& dir : directions) {
-                    glm::ivec2 neighborPos = pos + dir;
-                    if (grid.inBounds(neighborPos) && grid[neighborPos] == NONE) {
-                        // If the neighbor is empty, mark it as a wall
-                        newShelves[neighborPos] = SHELF;
-                        wallsAdded++;
-                    }
-                }
-            }
-        }
-    }
-
-    // Merge new shelves into the main grid
-    for (int y = 0; y < grid.getSize().y; ++y) {
-        for (int x = 0; x < grid.getSize().x; ++x) {
-            glm::ivec2 pos(x, y);
-
-            // Verify if the position is in bounds (should be, but just in case)
-            if (!newShelves.inBounds(pos)) {
-                continue;
-            }
-
-            if (newShelves[pos] == SHELF) {
-                grid[pos] = SHELF;
-            }
-        }
-    }
-
-    std::cout << "Added " << wallsAdded << " walls around shelves." << std::endl;
-
-}
+//     std::cout << "Generating paths for " << selectedEdges.size() << " edges." << std::endl;
 
 
-Pathfinder::PathCost LibraryGen::calcCost(const glm::ivec2& from, const glm::ivec2& to) {
-    Pathfinder::PathCost cost;
-    cost.traversable = grid.inBounds(to) && grid[to] != SHELF;
+//     Pathfinder pathfinder(grid.getSize());
 
-    if (grid[to] == PATH) {
-        cost.cost = 1.0f; // Path cost
-    } else if (grid[to] == NONE) {
-        cost.cost = 5.0f; // Empty space cost
-    } else {
-        cost.cost = 0.0f; // Shelf cost (not traversable)
-    }
+//     // Connect all clusters with paths
+//     for (const auto& edge : selectedEdges) {
+//         glm::ivec2 start = edge.first;
+//         glm::ivec2 end = edge.second;
 
-    return cost;
-}
+//         // Ensure the start and end points are in bounds
+//         if (!grid.inBounds(start) || !grid.inBounds(end)) {
+//             std::cerr << "Start or end point out of bounds: " << start.x << ", " << start.y << " to " << end.x << ", " << end.y << std::endl;
+//             continue;
+//         }
+
+//         std::cout << "Finding path from " << start.x << ", " << start.y << " to " << end.x << ", " << end.y << std::endl;
+
+//         auto path = pathfinder.findPath(start, end, [this](Pathfinder::Node* from, Pathfinder::Node* to) {
+//             return calcCost(from->position, to->position);
+//             }
+//         );
+
+//         if (path.empty()) {
+//             std::cerr << "No path found from " << start.x << ", " << start.y << " to " << end.x << ", " << end.y << std::endl;
+//             continue;
+//         }
+
+//         // Mark the path in the grid
+//         for (const auto& pos : path) {
+//             if (grid[pos] == NONE) {
+//                 grid[pos] = PATH;
+//             } else {
+//                 std::cerr << "Path overlaps with existing shelf at: " << pos.x << ", " << pos.y << std::endl;
+//             }
+//         }
+
+//         std::cout << "Path found with " << path.size() << " steps." << std::endl;
+//     }
+// }
+
+// void LibraryGen::addShelfWalls() {
+//     std::cout << "Adding walls around shelves..." << std::endl;
+
+//     // Add walls around the shelves - Direction for the 4-connected neighbors
+//     const std::vector<glm::ivec2> directions = {
+//         {1, 0}, {-1, 0}, {0, 1}, {0, -1}
+//     };
+
+//     // Temporary grid to track new shelves/walls
+//     Grid<CellType> newShelves(grid.getSize(), {0, 0}, NONE);
+
+//     // Add walls around the paths
+//     int wallsAdded = 0;
+//     for (int y = 0; y < grid.getSize().y; ++y) {
+//         for (int x = 0; x < grid.getSize().x; ++x) {
+//             glm::ivec2 pos(x, y);
+
+//             // Verify if the position is in bounds (should be, but just in case)
+//             if (!grid.inBounds(pos)) {
+//                 continue;
+//             }
+
+//             if (grid[pos] == PATH) {
+//                 // Check all 4 directions
+//                 for (const auto& dir : directions) {
+//                     glm::ivec2 neighborPos = pos + dir;
+//                     if (grid.inBounds(neighborPos) && grid[neighborPos] == NONE) {
+//                         // If the neighbor is empty, mark it as a wall
+//                         newShelves[neighborPos] = SHELF;
+//                         wallsAdded++;
+//                     }
+//                 }
+//             }
+//         }
+//     }
+
+//     // Merge new shelves into the main grid
+//     for (int y = 0; y < grid.getSize().y; ++y) {
+//         for (int x = 0; x < grid.getSize().x; ++x) {
+//             glm::ivec2 pos(x, y);
+
+//             // Verify if the position is in bounds (should be, but just in case)
+//             if (!newShelves.inBounds(pos)) {
+//                 continue;
+//             }
+
+//             if (newShelves[pos] == SHELF) {
+//                 grid[pos] = SHELF;
+//             }
+//         }
+//     }
+
+//     std::cout << "Added " << wallsAdded << " walls around shelves." << std::endl;
+
+// }
+
+
+// Pathfinder::PathCost LibraryGen::calcCost(const glm::ivec2& from, const glm::ivec2& to) {
+//     Pathfinder::PathCost cost;
+//     cost.traversable = grid.inBounds(to) && grid[to] != SHELF;
+
+//     if (grid[to] == PATH) {
+//         cost.cost = 1.0f; // Path cost
+//     } else if (grid[to] == NONE) {
+//         cost.cost = 5.0f; // Empty space cost
+//     } else {
+//         cost.cost = 0.0f; // Shelf cost (not traversable)
+//     }
+
+//     return cost;
+// }
 
 
 
