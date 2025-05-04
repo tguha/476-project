@@ -20,6 +20,7 @@ void BossRoomGen::generate(glm::ivec2 bossGridSize, glm::ivec2 libraryGridSize, 
     std::cout << "Boss room world origin: " << BossroomworldOrigin.x << ", " << BossroomworldOrigin.y << ", " << BossroomworldOrigin.z << std::endl;
     placeBorder();
     placeEntrance(); // Place the entrance in the boss room
+    placeExit();
 }
 
 void BossRoomGen::placeBorder() {
@@ -54,6 +55,7 @@ void BossRoomGen::placeBorder() {
                         continue; // Leave opening
                     } else if ((y > center.y && std::abs(x - center.x) < entranceWidth / 2.0f)) {
                         grid[glm::ivec2(x, y)] = Cell(CellType::EXIT); // Leave opening
+                        ExitCenters.push_back(glm::vec2(x, y));
                         continue; // Leave opening
                     }
                 } else if (bossEntranceDir.y < 0) {
@@ -63,6 +65,7 @@ void BossRoomGen::placeBorder() {
                         continue; // Leave opening
                     } else if ((y < center.y && std::abs(x - center.x) < entranceWidth / 2.0f)) {
                         grid[glm::ivec2(x, y)] = Cell(CellType::EXIT); // Leave opening
+                        ExitCenters.push_back(glm::vec2(x, y));
                         continue; // Leave opening
                     }
                 } else if (bossEntranceDir.x > 0) {
@@ -72,6 +75,7 @@ void BossRoomGen::placeBorder() {
                         continue; // Leave opening
                     } else if ((x > center.x && std::abs(y - center.y) < entranceWidth / 2.0f)) {
                         grid[glm::ivec2(x, y)] = Cell(CellType::EXIT); // Leave opening
+                        ExitCenters.push_back(glm::vec2(x, y));
                         continue; // Leave opening
                     }
                 } else if (bossEntranceDir.x < 0) {
@@ -81,6 +85,7 @@ void BossRoomGen::placeBorder() {
                         continue; // Leave opening
                     } else if ((x < center.x && std::abs(y - center.y) < entranceWidth / 2.0f)) {
                         grid[glm::ivec2(x, y)] = Cell(CellType::EXIT); // Leave opening
+                        ExitCenters.push_back(glm::vec2(x, y));
                         continue; // Leave opening
                     }
                 }
@@ -141,4 +146,43 @@ void BossRoomGen::placeEntrance() {
     }
 
     std::cout << "[BossRoomGen] Entrance placed.\n";
+}
+
+void BossRoomGen::placeExit() {
+    // Place the exit in the boss room
+    std::cout << "[BossRoomGen] Placing exit..." << std::endl;
+    const glm::ivec2 size = this->gridSize; // Size of the grid
+
+    for (const auto& center : ExitCenters) {
+        grid[glm::ivec2(center)] = Cell(CellType::EXIT); // Mark the exit position in the grid
+        if (center.x == (size.x / 2) || center.y == (size.y / 2)) {
+            grid[glm::ivec2(center)].borderType = BorderType::EXIT_MIDDLE;
+            grid[glm::ivec2(center)].transformData.rotation = 180.0f; // in degrees
+        } else {
+            grid[glm::ivec2(center)].borderType = BorderType::EXIT_SIDE;
+            if (bossEntranceDir.y > 0) {
+                for (int i = center.y; i < size.y; ++i) {
+                    Cell borderCell(CellType::BORDER, BorderType::EXIT_SIDE); // Create a border cell
+                    borderCell.transformData.rotation = 90.0f; // in degrees
+                    grid[glm::ivec2(center.x, i)] = borderCell; // Set the cell in the grid
+                }
+            } else if (bossEntranceDir.y < 0) {
+                for (int i = center.y; i >= 0; --i) {
+                    Cell borderCell(CellType::BORDER, BorderType::EXIT_SIDE); // Create a border cell
+                    borderCell.transformData.rotation = 90.0f; // in degrees
+                    grid[glm::ivec2(center.x, i)] = borderCell; // Set the cell in the grid
+                }
+            } else if (bossEntranceDir.x > 0) {
+                for (int i = center.x; i >= 0; --i) {
+                    Cell borderCell(CellType::BORDER, BorderType::EXIT_SIDE); // Create a border cell
+                    grid[glm::ivec2(i, center.y)] = borderCell; // Set the cell in the grid
+                }
+            } else if (bossEntranceDir.x < 0) {
+                for (int i = center.x; i < size.x; ++i) {
+                    Cell borderCell(CellType::BORDER, BorderType::EXIT_SIDE); // Create a border cell
+                    grid[glm::ivec2(i, center.y)] = borderCell;
+                }
+            }
+        }
+    }
 }

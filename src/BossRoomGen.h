@@ -31,6 +31,8 @@ class BossRoomGen {
             CIRCULAR_BORDER,
             ENTRANCE_MIDDLE,
             ENTRANCE_SIDE,
+            EXIT_MIDDLE,
+            EXIT_SIDE,
         };
 
         enum class CellObjType {
@@ -106,6 +108,7 @@ class BossRoomGen {
     private:
         Grid<Cell> grid; // Grid of CellType
         std::vector<glm::vec2> EntranceCenters;
+        std::vector<glm::vec2> ExitCenters;
         std::mt19937 seedGen;
         glm::vec2 spawnPosinGrid;
         glm::vec2 bossEntranceDir;
@@ -130,6 +133,7 @@ class BossRoomGen {
 
         void placeBorder();
         void placeEntrance(); // Place the entrance in the boss room
+        void placeExit(); // Place the exit in the boss room
 };
 
 #endif // BOSSROOMGEN_H
