@@ -34,6 +34,7 @@ using namespace glm;
 #define NUM_LIGHTS 4
 #define MAX_BONES 200
 
+
 float randFloat(float l, float h) {
 	float r = rand() / (float)RAND_MAX;
 	return (1.0f - r) * l + r * h;
@@ -330,9 +331,9 @@ public:
 
 	AssimpModel *cube, *sphere;
   
-  AssimpModel *sky_sphere;
+ 	 AssimpModel *sky_sphere;
   
-  AssimpModel *border;
+ 	 AssimpModel *border;
 
 	//  vector of books
 	vector<Book> books;
@@ -370,6 +371,7 @@ public:
 	// vec3 lookAt = vec3(-1.58614, -0.9738, 0.0436656);
 	vec3 lookAt = characterMovement; /*MINI MAP*/
 	vec3 up = vec3(0, 1, 0);
+	bool CULL = false;
 
 	vec3 right = normalize(cross(manMoveDir, up));
 
@@ -980,6 +982,8 @@ public:
 		Model->popMatrix();
 		curS->unbind();
 	}
+
+
 
 	void drawBooks(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		shader->bind();
@@ -1758,10 +1762,79 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 	/* top down camera view  */
 	mat4 SetTopView(shared_ptr<Program> curShade) { /*MINI MAP*/
-		mat4 Cam = lookAt(eye + vec3(0, 7, 0), eye, lookAt - eye);
+		mat4 Cam = glm:: lookAt(eye + vec3(0, 7, 0), eye, lookAt - eye); 
 		glUniformMatrix4fv(curShade->getUniform("V"), 1, GL_FALSE, value_ptr(Cam));
 		return Cam;
 	}
+
+	mat4 SetOrthoMatrix(shared_ptr<Program> curShade) {/*MINI MAP*/
+		float wS = 1.5;
+		mat4 ortho = glm::ortho(-15.0f*wS, 15.0f*wS, -15.0f*wS, 15.0f*wS, 2.1f, 100.f);
+		glUniformMatrix4fv(curShade->getUniform("P"), 1, GL_FALSE, value_ptr(ortho));
+		return ortho;
+  }
+
+  void drawMiniPlayer(shared_ptr<Program> curS, shared_ptr<MatrixStack> Model, float animTime) { /*MINI MAP*/
+
+  //sphere->Draw(shader);
+
+		// Model matrix setup
+		Model->pushMatrix();
+		Model->loadIdentity();
+		Model->translate(characterMovement); // Use final player position
+		// *** USE CAMERA ROTATION FOR MODEL ***
+		// Model->rotate(manRot.y, vec3(0, 1, 0)); // <<-- FIXED ROTATION
+		//Model->scale(manScale);
+
+		// Update VISUAL bounding box (can be different from collision box if needed)
+		// Using the same AABB calculation logic as before for consistency
+		glm::mat4 manTransform = Model->topMatrix();
+		updateBoundingBox(stickfigure_running->getBoundingBoxMin(),
+			stickfigure_running->getBoundingBoxMax(),
+			manTransform,
+			manAABBmin, // This is the visual/interaction AABB
+			manAABBmax);
+
+		// Set uniforms and draw
+		glUniform1i(curS->getUniform("hasTexture"), 1);
+		setModel(curS, Model);
+		stickfigure_running->Draw(curS);
+
+		Model->popMatrix();
+		curS->unbind();
+	}
+
+
+		// 	// Model->rotate(manRot.y, vec3(0, 1, 0)); // <<-- FIXED ROTATION
+		// 	// Model->scale(manScale);
+
+		// 	// Update VISUAL bounding box (can be different from collision box if needed)
+		// 	// Using the same AABB calculation logic as before for consistency
+		// 	glm::mat4 manTransform = Model->topMatrix();
+		// 	updateBoundingBox(stickfigure_running->getBoundingBoxMin(),
+		// 		stickfigure_running->getBoundingBoxMax(),
+		// 		manTransform,
+		// 		manAABBmin, // This is the visual/interaction AABB
+		// 		manAABBmax);
+
+		// 	// Set uniforms and draw
+		// 	glUniform1i(curS->getUniform("hasTexture"), 1); //0.6f, 0.2f, 0.8f
+		// 	// glUniform3f(curS->getUniform("MatAmb"), 0.6f * 0.3f,0.2f * 0.3f, 0.8f * 0.3f);
+		// 	// glUniform3f(curS->getUniform("MatDif"), 0.6f, 0.2f, 0.8f);
+		// 	// glUniform3f(curS->getUniform("MatSpec"), 0.3f, 0.3f, 0.3f);
+		// 	// glUniform1f(curS->getUniform("MatShine"), 8.0f);
+
+		// 	setModel(curS, Model);
+		// 	stickfigure_running->Draw(curS);
+		// 	// sphere->Draw(curS);
+
+		// Model->popMatrix();
+		// curS->unbind();
+
+	
+
+
+  
 
 	void render(float frametime, float animTime) {
 		// Get current frame buffer size.
@@ -1885,12 +1958,23 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		/*MINI MAP*/
 		prog2->bind();
 			glClear( GL_DEPTH_BUFFER_BIT);
-			glViewport(0, height-300, 300, 300);
-			SetOrthoMatrix(prog);
-			SetTopView(prog); /*MINI MAP*/
-			drawScene(prog, CULL);
+			glViewport(0, height-500, 300, 300);
+			SetOrthoMatrix(prog2);
+			SetTopView(prog2); /*MINI MAP*/
+			//drawScene(prog2, CULL);
+			/* draws */
+			drawGroundSections(prog2, Model);
+			drawBorder(prog2, Model);
+			drawLibrary(prog2, Model);
+			drawDoor(prog2, Model);
+			drawBooks(prog2, Model);
+			drawEnemies(prog2, Model);
+			drawOrbs(prog2, Model);
+			drawMiniPlayer(prog2, Model, animTime);
+			//stripped down player draw
+
 			// if (SD)
-			// 	drawOccupied(prog);
+			// 	drawOccupied(prog2);
 
 		prog2->unbind();
 
