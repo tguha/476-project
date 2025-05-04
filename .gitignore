@@ -4,3 +4,4 @@ x64/
 ext/assimp/
 .DS_Store
 resources/.DS_Store
+.vscode/

@@ -20,6 +20,8 @@
 // #include "Grid.h"
 #include "Enemy.h"
 #include "Player.h"
+#include "BossRoomGen.h"
+#include "FrustumCulling.h"
 
 // value_ptr for glm
 #include <glm/gtc/type_ptr.hpp>
@@ -324,6 +326,7 @@ public:
 		int GiboLen;
 
 		shared_ptr<Texture> texture; // Texture for the wall
+		int id; // ID for the wall object
 	};
 
 	struct LibGrndObject {
@@ -337,13 +340,16 @@ public:
 		int GiboLen;
 
 		shared_ptr<Texture> texture; // Texture for the library
+		int id; // ID for the library ground object
 	};
 
 	vector<WallObject> borderWalls;
 	shared_ptr<Texture> borderWallTex;
+	std::unordered_set<int> borderWallIDs; // Set to track unique IDs
 
 	vector<LibGrndObject> libraryGrounds;
 	shared_ptr<Texture> libraryGroundTex;
+	std::unordered_set<int> libraryGroundIDs; // Set to track unique IDs
 
 	shared_ptr<Texture> carpetTex;
 
@@ -369,7 +375,7 @@ public:
 	glm::vec3 manAABBmin, manAABBmax;
 
 	AssimpModel *book_shelf1, *book_shelf2;
-	AssimpModel *candelabra, *chest, *library_bench, *low_poly_bookshelf, *table_chairs1, *table_chairs2, *grandfather_clock, *bookstand;
+	AssimpModel *candelabra, *chest, *library_bench, *low_poly_bookshelf, *table_chairs1, *table_chairs2, *grandfather_clock, *bookstand, *door;
 
 	AssimpModel *healthBar;
 
@@ -447,6 +453,14 @@ public:
 	LibraryGen *library = new LibraryGen();
 	Grid<LibraryGen::Cell> grid;
 	ivec2 gridSize = glm::ivec2(30, 30); // Size of the grid (number of cells in each dimension)
+
+	BossRoomGen *bossRoom = new BossRoomGen();
+	Grid<BossRoomGen::Cell> bossGrid;
+	ivec2 bossGridSize = glm::ivec2(30, 30); // Size of the grid (number of cells in each dimension)
+
+	ivec2 bossEntranceDir = glm::ivec2(0, 1); // Direction of the boss entrance (relative to the library grid)
+
+	glm::vec4 planes[6]; // Frustum planes
 
 	void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods)
 	{
@@ -766,18 +780,44 @@ public:
 		carpetTex->init();
 		carpetTex->setUnit(0);
 		carpetTex->setWrapModes(GL_REPEAT, GL_REPEAT);
+	}
 
-
-		library->generate(gridSize, glm::ivec2(0, 0), player->getPosition(), glm::ivec2(0, 1));
+	void initMapGen()
+	{
+		library->generate(gridSize, glm::vec3(0, 0, 0), player->getPosition(), bossEntranceDir);
 		grid = library->getGrid();
-		addWall(gridSize.x * 2, vec3(grid.mapGridXtoWorldX(gridSize.x - 1), 0, grid.mapGridYtoWorldZ(0) + 2), vec3(-1, 0, 0), 10.0f, borderWallTex);
-		addWall(gridSize.x - 3, vec3(grid.mapGridXtoWorldX(gridSize.x - 1), 0, grid.mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 10.0f, borderWallTex);
-		addWall(gridSize.x - 3, vec3(grid.mapGridXtoWorldX((gridSize.x - 1) / 2), 0, grid.mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 10.0f, borderWallTex);
-		addWall(gridSize.y * 2, vec3(grid.mapGridXtoWorldX(0) + 2, 0, grid.mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
-		addWall(gridSize.y * 2, vec3(grid.mapGridXtoWorldX(gridSize.x - 1), 0, grid.mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
 
-		addLibGrnd(gridSize.x * 2, gridSize.y * 2, 0.0f, vec3(0, 0, 0), libraryGroundTex);
+		if (bossEntranceDir.y > 0) {
+			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(0) + 2), vec3(-1, 0, 0), 10.0f, borderWallTex, 0);
+			addWall(gridSize.x - 3, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 10.0f, borderWallTex, 1);
+			addWall(gridSize.x - 3, vec3(library->mapGridXtoWorldX((gridSize.x - 1) / 2), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 10.0f, borderWallTex, 2);
+			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(0) + 2, 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex, 3);
+			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex, 4);
+		} else if (bossEntranceDir.y < 0) {
+			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 10.0f, borderWallTex, 0);
+			addWall(gridSize.x - 3, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(0) + 2), vec3(-1, 0, 0), 10.0f, borderWallTex, 1);
+			addWall(gridSize.x - 3, vec3(library->mapGridXtoWorldX((gridSize.x - 1) / 2), 0, library->mapGridYtoWorldZ(0) + 2), vec3(-1, 0, 0), 10.0f, borderWallTex, 2);
+			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(0) + 2, 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex, 3);
+			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex, 4);
+		} else if (bossEntranceDir.x > 0) {
+			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 10.0f, borderWallTex, 0);
+			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(0) + 2), vec3(-1, 0, 0), 10.0f, borderWallTex, 1);
+			addWall(gridSize.y - 3, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex, 2);
+			addWall(gridSize.y - 3, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ((gridSize.y - 1) / 2)), vec3(0, 0, -1), 10.0f, borderWallTex, 3);
+			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(0) + 2, 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex, 4);
+		} else if (bossEntranceDir.x < 0) {
+			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1) + 2), vec3(-1, 0, 0), 10.0f, borderWallTex, 0);
+			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(0)), vec3(-1, 0, 0), 10.0f, borderWallTex, 1);
+			addWall(gridSize.y - 3, vec3(library->mapGridXtoWorldX(0) + 2, 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex, 2);
+			addWall(gridSize.y - 3, vec3(library->mapGridXtoWorldX(0) + 2, 0, library->mapGridYtoWorldZ((gridSize.y - 1) / 2)), vec3(0, 0, -1), 10.0f, borderWallTex, 3);
+			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex, 4);
+		}
 
+		addLibGrnd(gridSize.x * 2, gridSize.y * 2, 0.0f, vec3(0, 0, 0), libraryGroundTex, 0);
+
+		bossRoom->generate(bossGridSize, gridSize, glm::vec3(0, 0, 0), bossEntranceDir);
+		bossGrid = bossRoom->getGrid();
+		addLibGrnd(bossGridSize.x * 2, bossGridSize.y * 2, 0.0f, bossRoom->getWorldOrigin(), libraryGroundTex, 1);
 	}
 
 	void initGeom(const std::string& resourceDirectory)
@@ -851,6 +891,9 @@ public:
 
 		bookstand = new AssimpModel(resourceDirectory + "/cluster_assets/bookstand/bookstand.obj");
 		bookstand->assignTexture("texture_diffuse1", resourceDirectory + "/cluster_assets/bookstand/textures/bookstand_diffuse.png");
+
+		door = new AssimpModel(resourceDirectory + "/cluster_assets/door/door.obj");
+		door->assignTexture("texture_diffuse1", resourceDirectory + "/cluster_assets/door/Door_diffuse.png");
 
 		sky_sphere = new AssimpModel(resourceDirectory + "/sky_sphere/skybox_sphere.obj");
 		sky_sphere->assignTexture("texture_diffuse1", resourceDirectory + "/sky_sphere/sky_sphere.fbm/infinite_lib2.png");
@@ -1138,14 +1181,19 @@ public:
 		glBindVertexArray(0);
 	}
 
-	void addLibGrnd(float length, float width, float height, vec3 center_pos, shared_ptr<Texture> tex) {
+	void addLibGrnd(float length, float width, float height, vec3 center_pos, shared_ptr<Texture> tex, int id) {
 		// Check if already initialized
+		if (libraryGroundIDs.find(id) != libraryGroundIDs.end()) {
+			return;
+		}
+
 		LibGrndObject newLibGrnd;
 		newLibGrnd.length = length;
 		newLibGrnd.width = width;
 		newLibGrnd.height = height;
 		newLibGrnd.center_pos = center_pos;
 		newLibGrnd.texture = tex;
+		newLibGrnd.id = id;
 
 		initLibGrnd(length, width, height, center_pos,
 			newLibGrnd.VAO, newLibGrnd.BuffObj, newLibGrnd.NorBuffObj,
@@ -1251,14 +1299,20 @@ public:
 		glBindVertexArray(0);
 	}
 
-	void addWall(float length, vec3 pos, vec3 dir, float height, shared_ptr<Texture> tex) {
+	void addWall(float length, vec3 pos, vec3 dir, float height, shared_ptr<Texture> tex, int id) {
 		// Check if already initialized
+		if (borderWallIDs.find(id) != borderWallIDs.end()) {
+			return;
+		}
+
+
 		WallObject newBorder;
 		newBorder.length = length;
 		newBorder.position = pos;
 		newBorder.direction = dir;
 		newBorder.height = height;
 		newBorder.texture = tex;
+		newBorder.id = id;
 
 		initWall(length, pos, dir, height,
 			newBorder.WallVAID, newBorder.BuffObj, newBorder.NorBuffObj,
@@ -1672,16 +1726,203 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		for (int z = 0; z < grid.getSize().y; ++z) {
 			for (int x = 0; x < grid.getSize().x; ++x) {
 				glm::ivec2 gridPos(x, z);
-				if (grid[gridPos].type == LibraryGen::CellType::CLUSTER) {
-					if (grid[gridPos].clusterType == LibraryGen::ClusterType::SHELF1) {
-						// Calculate world position based on grid cell, centering the grid on libraryCenter
-						float i = grid.mapGridXtoWorldX(x); // Center the shelf in the cell
-						float j = grid.mapGridYtoWorldZ(z); // Center the shelf in the cell
-						// float worldX = libraryCenter.x - gridWorldWidth * 0.5f + (x + 0.5f) * cellWidth;
-						// float worldZ = libraryCenter.z - gridWorldDepth * 0.5f + (z + 0.5f) * cellDepth;
+				float i = library->mapGridXtoWorldX(x); // Center the shelf in the cell
+				float j = library->mapGridYtoWorldZ(z); // Center the shelf in the cell
+				if (!ViewFrustCull(glm::vec3(i, 0, j), 2.0f, planes)) {
+					if (grid[gridPos].type == LibraryGen::CellType::CLUSTER) {
+						if (grid[gridPos].clusterType == LibraryGen::ClusterType::SHELF1) {
+							Model->pushMatrix();
+							Model->loadIdentity();
+							// Model->translate(vec3(worldX, libraryCenter.y, worldZ)); // Position shelf at cell center on ground
+							Model->translate(vec3(i, libraryCenter.y, j)); // Position wall at cell center on ground
+							Model->scale(vec3(2.0f));
+							setModel(shader, Model);
+							book_shelf1->Draw(shader);
+							Model->popMatrix();
+						} else if (grid[gridPos].clusterType == LibraryGen::ClusterType::SHELF2) {
+							// Calculate world position based on grid cell, centering the grid on libraryCenter
 
-						int test = grid.mapXtoGridX(i);
-						int test2 = grid.mapZtoGridY(j);
+							Model->pushMatrix();
+							Model->loadIdentity();
+							Model->translate(vec3(i, libraryCenter.y, j)); // Position wall at cell center on ground
+							Model->scale(vec3(1.0f));
+							setModel(shader, Model);
+							book_shelf1->Draw(shader);
+							Model->popMatrix();
+						} else if (grid[gridPos].clusterType == LibraryGen::ClusterType::SHELF3) {
+							Model->pushMatrix();
+							Model->loadIdentity();
+							Model->translate(vec3(i, libraryCenter.y, j)); // Position wall at cell center on ground
+							Model->rotate(glm::radians(90.0f), vec3(0, 1, 0)); // Rotate for left/right walls
+							Model->scale(vec3(2.0f));
+							setModel(shader, Model);
+							book_shelf1->Draw(shader);
+							Model->popMatrix();
+						} else if (grid[gridPos].clusterType == LibraryGen::ClusterType::ONLY_CANDELABRA) {
+							Model->pushMatrix();
+							Model->loadIdentity();
+							Model->translate(vec3(i, libraryCenter.y, j)); // Position wall at cell center on ground
+							Model->scale(vec3(0.5f));
+							setModel(shader, Model);
+							candelabra->Draw(shader);
+							Model->popMatrix();
+						} else if (grid[gridPos].clusterType == LibraryGen::ClusterType::ONLY_CHEST) {
+							Model->pushMatrix();
+							Model->loadIdentity();
+							Model->translate(vec3(i, libraryCenter.y, j)); // Position wall at cell center on ground
+							Model->scale(vec3(0.25f));
+							setModel(shader, Model);
+							chest->Draw(shader);
+							Model->popMatrix();
+						} else if (grid[gridPos].clusterType == LibraryGen::ClusterType::ONLY_TABLE) {
+							Model->pushMatrix();
+							Model->loadIdentity();
+							Model->translate(vec3(i, libraryCenter.y, j)); // Position wall at cell center on ground
+							Model->scale(vec3(0.35f));
+							setModel(shader, Model);
+							table_chairs1->Draw(shader);
+							Model->popMatrix();
+
+							addLibGrnd(5.0f, 5.0f, 1.0f, vec3(i, libraryCenter.y + 0.1f, j), carpetTex, 2);
+						} else if (grid[gridPos].clusterType == LibraryGen::ClusterType::ONLY_CLOCK) {
+							Model->pushMatrix();
+							Model->loadIdentity();
+							Model->translate(vec3(i, libraryCenter.y, j)); // Position wall at cell center on ground
+							Model->scale(vec3(0.5f));
+							setModel(shader, Model);
+							grandfather_clock->Draw(shader);
+							Model->popMatrix();
+						} else if (grid[gridPos].clusterType == LibraryGen::ClusterType::LAYOUT1) {
+							if (grid[gridPos].objectType == LibraryGen::CellObjType::BOOKSHELF) {
+								Model->pushMatrix();
+								Model->loadIdentity();
+								Model->translate(vec3(i, libraryCenter.y, j)); // Position shelf at cell center on ground
+								Model->scale(vec3(2.0f)); // Scale set in class members
+								setModel(shader, Model);
+								book_shelf1->Draw(shader);
+								Model->popMatrix();
+							} else if (grid[gridPos].objectType == LibraryGen::CellObjType::ROTATED_BOOKSHELF) {
+								Model->pushMatrix();
+								Model->loadIdentity();
+								Model->translate(vec3(i, libraryCenter.y, j)); // Position shelf at cell center on ground
+								Model->rotate(glm::radians(90.0f), vec3(0, 1, 0)); // Rotate for left/right walls
+								Model->scale(vec3(2.0f)); // Scale set in class members
+								setModel(shader, Model);
+								book_shelf1->Draw(shader);
+								Model->popMatrix();
+							} else if (grid[gridPos].objectType == LibraryGen::CellObjType::TABLE_AND_CHAIR2) {
+								Model->pushMatrix();
+								Model->loadIdentity();
+								Model->translate(vec3(i, libraryCenter.y, j)); // Position shelf at cell center on ground
+								Model->scale(vec3(0.35f)); // Scale set in class members
+								setModel(shader, Model);
+								table_chairs1->Draw(shader);
+								Model->popMatrix();
+
+								addLibGrnd(5.0f, 5.0f, 1.0f, vec3(i, libraryCenter.y + 0.1f, j), carpetTex, 3);
+
+							}else if (grid[gridPos].objectType == LibraryGen::CellObjType::TABLE_AND_CHAIR1) {
+								Model->pushMatrix();
+								Model->loadIdentity();
+								Model->translate(vec3(i, libraryCenter.y, j)); // Position shelf at cell center on ground
+								Model->scale(vec3(0.35f)); // Scale set in class members
+								setModel(shader, Model);
+								table_chairs1->Draw(shader);
+								Model->popMatrix();
+
+								addLibGrnd(5.0f, 5.0f, 1.0f, vec3(i, libraryCenter.y + 0.1f, j), carpetTex, 4);
+							} else if (grid[gridPos].objectType == LibraryGen::CellObjType::CANDELABRA) {
+								Model->pushMatrix();
+								Model->loadIdentity();
+								Model->translate(vec3(i, libraryCenter.y, j)); // Position shelf at cell center on ground
+								Model->scale(vec3(0.5f)); // Scale set in class members
+								setModel(shader, Model);
+								candelabra->Draw(shader);
+								Model->popMatrix();
+							} else if (grid[gridPos].objectType == LibraryGen::CellObjType::GRANDFATHER_CLOCK) {
+								Model->pushMatrix();
+								Model->loadIdentity();
+								Model->translate(vec3(i, libraryCenter.y, j)); // Position shelf at cell center on ground
+								Model->scale(vec3(0.5f)); // Scale set in class members
+								setModel(shader, Model);
+								grandfather_clock->Draw(shader);
+								Model->popMatrix();
+							} else if (grid[gridPos].objectType == LibraryGen::CellObjType::CHEST) {
+								Model->pushMatrix();
+								Model->loadIdentity();
+								Model->translate(vec3(i, libraryCenter.y, j)); // Position shelf at cell center on ground
+								Model->scale(vec3(0.25f)); // Scale set in class members
+								setModel(shader, Model);
+								chest->Draw(shader);
+								Model->popMatrix();
+							}
+						} else if (grid[gridPos].clusterType == LibraryGen::ClusterType::ONLY_BOOKSTAND) {
+							Model->pushMatrix();
+							Model->loadIdentity();
+							Model->translate(vec3(i, libraryCenter.y, j)); // Position shelf at cell center on ground
+							Model->scale(vec3(0.75f)); // Scale set in class members
+							setModel(shader, Model);
+							bookstand->Draw(shader);
+							Model->popMatrix();
+						} else if (grid[gridPos].clusterType == LibraryGen::ClusterType::GLOWING_SHELF1) {
+							if (grid[gridPos].objectType == LibraryGen::CellObjType::SHELF_WITH_ABILITY) {
+								Model->pushMatrix();
+								Model->loadIdentity();
+								Model->translate(vec3(i, libraryCenter.y, j)); // Position shelf at cell center on ground
+								Model->scale(vec3(2.0f)); // Scale set in class members
+								setModel(shader, Model);
+								book_shelf2->Draw(shader);
+								Model->popMatrix();
+							} else if (grid[gridPos].objectType == LibraryGen::CellObjType::BOOKSHELF) {
+								Model->pushMatrix();
+								Model->loadIdentity();
+								Model->translate(vec3(i, libraryCenter.y, j)); // Position shelf at cell center on ground
+								Model->scale(vec3(2.0f)); // Scale set in class members
+								setModel(shader, Model);
+								book_shelf1->Draw(shader);
+								Model->popMatrix();
+							}
+						} else if (grid[gridPos].clusterType == LibraryGen::ClusterType::GLOWING_SHELF2) {
+							if (grid[gridPos].objectType == LibraryGen::CellObjType::SHELF_WITH_ABILITY_ROTATED) {
+								Model->pushMatrix();
+								Model->loadIdentity();
+								Model->translate(vec3(i, libraryCenter.y, j)); // Position shelf at cell center on ground
+								Model->rotate(glm::radians(90.0f), vec3(0, 1, 0)); // Rotate for left/right walls
+								Model->scale(vec3(2.0f)); // Scale set in class members
+								setModel(shader, Model);
+								book_shelf2->Draw(shader);
+								Model->popMatrix();
+							} else if (grid[gridPos].objectType == LibraryGen::CellObjType::ROTATED_BOOKSHELF) {
+								Model->pushMatrix();
+								Model->loadIdentity();
+								Model->translate(vec3(i, libraryCenter.y, j)); // Position shelf at cell center on ground
+								Model->rotate(glm::radians(90.0f), vec3(0, 1, 0)); // Rotate for left/right walls
+								Model->scale(vec3(2.0f)); // Scale set in class members
+								setModel(shader, Model);
+								book_shelf1->Draw(shader);
+								Model->popMatrix();
+							}
+						}
+					}
+				}
+			}
+		}
+		shader->unbind();
+	}
+
+	void drawBossRoom(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
+		if (!shader || !Model) return;
+		shader->bind();
+		glUniform1i(shader->getUniform("hasTexture"), 1); // Use texture for the boss room
+		for (int z = 0; z < bossGrid.getSize().y; ++z) {
+			for (int x = 0; x < bossGrid.getSize().x; ++x) {
+				glm::ivec2 gridPos(x, z);
+				float i = bossRoom->mapGridXtoWorldX(x); // Center the shelf in the cell
+				float j = bossRoom->mapGridYtoWorldZ(z); // Center the shelf in the cell
+				if (!ViewFrustCull(glm::vec3(i, 0, j), 2.0f, planes)) {
+					if (bossGrid[gridPos].type == BossRoomGen::CellType::BORDER) {
+						int test = bossRoom->mapXtoGridX(i);
+						int test2 = bossRoom->mapZtoGridY(j);
 
 						if (!debug_shelf) {
 							std::cout << "Shelf Position in Grid: (" << x << ", " << z << ")" << std::endl;
@@ -1692,269 +1933,53 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 						Model->pushMatrix();
 						Model->loadIdentity();
-						// Model->translate(vec3(worldX, libraryCenter.y, worldZ)); // Position shelf at cell center on ground
-						Model->translate(vec3(i, libraryCenter.y, j)); // Position wall at cell center on ground
-						// Scale based on cell size and factor, adjust Y scale for desired height
-						// Model->scale(vec3(shelfScaleFactor * cFellWidth * 1.5f, // Adjust scale factor
-						// 	shelfScaleFactor * 1.8f, // Taller shelves
-						// 	shelfScaleFactor * cellDepth * 1.5f));
-						// // Optional: Add random rotation?
-						Model->scale(vec3(2.0f));
-						// Model->rotate(randFloat(0.f, 3.14f), vec3(0, 1, 0));
+						Model->translate(vec3(i, libraryCenter.y, j)); // Position set in class members
+						Model->rotate(glm::radians(bossGrid[gridPos].transformData.rotation), vec3(0, 1, 0)); // Rotate for left/right walls
+						Model->scale(2.5f);
 						setModel(shader, Model);
-						book_shelf1->Draw(shader);
+						book_shelf1->Draw(shader); // Use the bookshelf model for the border
 						Model->popMatrix();
-					} else if (grid[gridPos].clusterType == LibraryGen::ClusterType::SHELF2) {
-						// Calculate world position based on grid cell, centering the grid on libraryCenter
-						float i = grid.mapGridXtoWorldX(x); // Center the shelf in the cell
-						float j = grid.mapGridYtoWorldZ(z); // Center the shelf in the cell
-						// float worldX = libraryCenter.x - gridWorldWidth * 0.5f + (x + 0.5f) * cellWidth;
-						// float worldZ = libraryCenter.z - gridWorldDepth * 0.5f + (z + 0.5f) * cellDepth;
-
-						Model->pushMatrix();
-						Model->loadIdentity();
-						// Model->translate(vec3(worldX, libraryCenter.y, worldZ)); // Position shelf at cell center on ground
-						Model->translate(vec3(i, libraryCenter.y, j)); // Position wall at cell center on ground
-						// Scale based on cell size and factor, adjust Y scale for desired height
-						// Model->scale(vec3(shelfScaleFactor * cFellWidth * 1.5f, // Adjust scale factor
-						// 	shelfScaleFactor * 1.8f, // Taller shelves
-						// 	shelfScaleFactor * cellDepth * 1.5f));
-						// // Optional: Add random rotation?
-						Model->scale(vec3(1.0f));
-						// Model->rotate(randFloat(0.f, 3.14f), vec3(0, 1, 0));
-						setModel(shader, Model);
-						book_shelf1->Draw(shader);
-						Model->popMatrix();
-					} else if (grid[gridPos].clusterType == LibraryGen::ClusterType::SHELF3) {
-						// Calculate world position based on grid cell, centering the grid on libraryCenter
-						float i = grid.mapGridXtoWorldX(x); // Center the shelf in the cell
-						float j = grid.mapGridYtoWorldZ(z); // Center the shelf in the cell
-						// float worldX = libraryCenter.x - gridWorldWidth * 0.5f + (x + 0.5f) * cellWidth;
-						// float worldZ = libraryCenter.z - gridWorldDepth * 0.5f + (z + 0.5f) * cellDepth;
-
-						Model->pushMatrix();
-						Model->loadIdentity();
-						// Model->translate(vec3(worldX, libraryCenter.y, worldZ)); // Position shelf at cell center on ground
-						Model->translate(vec3(i, libraryCenter.y, j)); // Position wall at cell center on ground
-						// Scale based on cell size and factor, adjust Y scale for desired height
-						// Model->scale(vec3(shelfScaleFactor * cFellWidth * 1.5f, // Adjust scale factor
-						// 	shelfScaleFactor * 1.8f, // Taller shelves
-						// 	shelfScaleFactor * cellDepth * 1.5f));
-						Model->rotate(glm::radians(90.0f), vec3(0, 1, 0)); // Rotate for left/right walls
-						Model->scale(vec3(2.0f));
-						// Model->rotate(randFloat(0.f, 3.14f), vec3(0, 1, 0));
-						setModel(shader, Model);
-						book_shelf1->Draw(shader);
-						Model->popMatrix();
-					} else if (grid[gridPos].clusterType == LibraryGen::ClusterType::ONLY_CANDELABRA) {
-						// Calculate world position based on grid cell, centering the grid on libraryCenter
-						float i = grid.mapGridXtoWorldX(x); // Center the shelf in the cell
-						float j = grid.mapGridYtoWorldZ(z); // Center the shelf in the cell
-
-						Model->pushMatrix();
-						Model->loadIdentity();
-						// Model->translate(vec3(worldX, libraryCenter.y, worldZ)); // Position shelf at cell center on ground
-						Model->translate(vec3(i, libraryCenter.y, j)); // Position wall at cell center on ground
-						// Scale based on cell size and factor, adjust Y scale for desired height
-						// Model->scale(vec3(shelfScaleFactor * cFellWidth * 1.5f, // Adjust scale factor
-						// 	shelfScaleFactor * 1.8f, // Taller shelves
-						// 	shelfScaleFactor * cellDepth * 1.5f));
-						Model->scale(vec3(0.5f));
-						// Model->rotate(randFloat(0.f, 3.14f), vec3(0, 1, 0));
-						setModel(shader, Model);
-						candelabra->Draw(shader);
-						Model->popMatrix();
-					} else if (grid[gridPos].clusterType == LibraryGen::ClusterType::ONLY_CHEST) {
-						// Calculate world position based on grid cell, centering the grid on libraryCenter
-						float i = grid.mapGridXtoWorldX(x); // Center the shelf in the cell
-						float j = grid.mapGridYtoWorldZ(z); // Center the shelf in the cell
-
-						Model->pushMatrix();
-						Model->loadIdentity();
-						// Model->translate(vec3(worldX, libraryCenter.y, worldZ)); // Position shelf at cell center on ground
-						Model->translate(vec3(i, libraryCenter.y, j)); // Position wall at cell center on ground
-						// Scale based on cell size and factor, adjust Y scale for desired height
-						// Model->scale(vec3(shelfScaleFactor * cFellWidth * 1.5f, // Adjust scale factor
-						// 	shelfScaleFactor * 1.8f, // Taller shelves
-						// 	shelfScaleFactor * cellDepth * 1.5f));
-						Model->scale(vec3(0.25f));
-						// Model->rotate(randFloat(0.f, 3.14f), vec3(0, 1, 0));
-						setModel(shader, Model);
-						chest->Draw(shader);
-						Model->popMatrix();
-					} else if (grid[gridPos].clusterType == LibraryGen::ClusterType::ONLY_TABLE) {
-						// Calculate world position based on grid cell, centering the grid on libraryCenter
-						float i = grid.mapGridXtoWorldX(x); // Center the shelf in the cell
-						float j = grid.mapGridYtoWorldZ(z); // Center the shelf in the cell
-
-						Model->pushMatrix();
-						Model->loadIdentity();
-						// Model->translate(vec3(worldX, libraryCenter.y, worldZ)); // Position shelf at cell center on ground
-						Model->translate(vec3(i, libraryCenter.y, j)); // Position wall at cell center on ground
-						// Scale based on cell size and factor, adjust Y scale for desired height
-						// Model->scale(vec3(shelfScaleFactor * cFellWidth * 1.5f, // Adjust scale factor
-						// 	shelfScaleFactor * 1.8f, // Taller shelves
-						// 	shelfScaleFactor * cellDepth * 1.5f));
-						Model->scale(vec3(0.35f));
-						setModel(shader, Model);
-						table_chairs1->Draw(shader);
-						Model->popMatrix();
-
-						addLibGrnd(5.0f, 5.0f, 1.0f, vec3(i, libraryCenter.y + 0.1f, j), carpetTex);
-					} else if (grid[gridPos].clusterType == LibraryGen::ClusterType::ONLY_CLOCK) {
-						// Calculate world position based on grid cell, centering the grid on libraryCenter
-						float i = grid.mapGridXtoWorldX(x); // Center the shelf in the cell
-						float j = grid.mapGridYtoWorldZ(z); // Center the shelf in the cell
-
-						Model->pushMatrix();
-						Model->loadIdentity();
-						// Model->translate(vec3(worldX, libraryCenter.y, worldZ)); // Position shelf at cell center on ground
-						Model->translate(vec3(i, libraryCenter.y, j)); // Position wall at cell center on ground
-						// Scale based on cell size and factor, adjust Y scale for desired height
-						// Model->scale(vec3(shelfScaleFactor * cFellWidth * 1.5f, // Adjust scale factor
-						// 	shelfScaleFactor * 1.8f, // Taller shelves
-						// 	shelfScaleFactor * cellDepth * 1.5f));
-						Model->scale(vec3(0.5f));
-						setModel(shader, Model);
-						grandfather_clock->Draw(shader);
-						Model->popMatrix();
-					} else if (grid[gridPos].clusterType == LibraryGen::ClusterType::LAYOUT1) {
-						float i = grid.mapGridXtoWorldX(x); // Center the shelf in the cell
-						float j = grid.mapGridYtoWorldZ(z); // Center the shelf in the cell
-
-						if (grid[gridPos].objectType == LibraryGen::CellObjType::BOOKSHELF) {
+					} else if (bossGrid[gridPos].type == BossRoomGen::CellType::ENTRANCE) {
+						if (bossGrid[gridPos].borderType == BossRoomGen::BorderType::ENTRANCE_MIDDLE) {
 							Model->pushMatrix();
 							Model->loadIdentity();
-							Model->translate(vec3(i, libraryCenter.y, j)); // Position shelf at cell center on ground
-							Model->scale(vec3(2.0f)); // Scale set in class members
+							Model->translate(vec3(i, 0, j));
+							Model->rotate(glm::radians(bossGrid[gridPos].transformData.rotation), vec3(0, 1, 0)); // Rotate for left/right walls
+							Model->scale(1.0f);
 							setModel(shader, Model);
-							book_shelf1->Draw(shader);
+							door->Draw(shader); // Use the door model for the entrance
 							Model->popMatrix();
-						} else if (grid[gridPos].objectType == LibraryGen::CellObjType::ROTATED_BOOKSHELF) {
+						} else if (bossGrid[gridPos].borderType == BossRoomGen::BorderType::ENTRANCE_SIDE) {
 							Model->pushMatrix();
 							Model->loadIdentity();
-							Model->translate(vec3(i, libraryCenter.y, j)); // Position shelf at cell center on ground
-							Model->rotate(glm::radians(90.0f), vec3(0, 1, 0)); // Rotate for left/right walls
-							Model->scale(vec3(2.0f)); // Scale set in class members
+							Model->translate(vec3(i, 0, j));
+							Model->rotate(glm::radians(bossGrid[gridPos].transformData.rotation), vec3(0, 1, 0)); // Rotate for left/right walls
+							Model->scale(1.0f);
 							setModel(shader, Model);
-							book_shelf1->Draw(shader);
-							Model->popMatrix();
-						} else if (grid[gridPos].objectType == LibraryGen::CellObjType::TABLE_AND_CHAIR2) {
-							Model->pushMatrix();
-							Model->loadIdentity();
-							Model->translate(vec3(i, libraryCenter.y, j)); // Position shelf at cell center on ground
-							Model->scale(vec3(0.35f)); // Scale set in class members
-							setModel(shader, Model);
-							table_chairs1->Draw(shader);
-							Model->popMatrix();
-
-							addLibGrnd(5.0f, 5.0f, 1.0f, vec3(i, libraryCenter.y + 0.1f, j), carpetTex);
-
-						}else if (grid[gridPos].objectType == LibraryGen::CellObjType::TABLE_AND_CHAIR1) {
-							Model->pushMatrix();
-							Model->loadIdentity();
-							Model->translate(vec3(i, libraryCenter.y, j)); // Position shelf at cell center on ground
-							Model->scale(vec3(0.35f)); // Scale set in class members
-							setModel(shader, Model);
-							table_chairs1->Draw(shader);
-							Model->popMatrix();
-
-							addLibGrnd(5.0f, 5.0f, 1.0f, vec3(i, libraryCenter.y + 0.1f, j), carpetTex);
-						} else if (grid[gridPos].objectType == LibraryGen::CellObjType::CANDELABRA) {
-							Model->pushMatrix();
-							Model->loadIdentity();
-							Model->translate(vec3(i, libraryCenter.y, j)); // Position shelf at cell center on ground
-							Model->scale(vec3(0.5f)); // Scale set in class members
-							setModel(shader, Model);
-							candelabra->Draw(shader);
-							Model->popMatrix();
-						} else if (grid[gridPos].objectType == LibraryGen::CellObjType::GRANDFATHER_CLOCK) {
-							Model->pushMatrix();
-							Model->loadIdentity();
-							Model->translate(vec3(i, libraryCenter.y, j)); // Position shelf at cell center on ground
-							Model->scale(vec3(0.5f)); // Scale set in class members
-							setModel(shader, Model);
-							grandfather_clock->Draw(shader);
-							Model->popMatrix();
-						} else if (grid[gridPos].objectType == LibraryGen::CellObjType::CHEST) {
-							Model->pushMatrix();
-							Model->loadIdentity();
-							Model->translate(vec3(i, libraryCenter.y, j)); // Position shelf at cell center on ground
-							Model->scale(vec3(0.25f)); // Scale set in class members
-							setModel(shader, Model);
-							chest->Draw(shader);
+							book_shelf1->Draw(shader); // Use the door model for the entrance
 							Model->popMatrix();
 						}
-					} else if (grid[gridPos].clusterType == LibraryGen::ClusterType::ONLY_BOOKSTAND) {
-						int i = grid.mapGridXtoWorldX(x); // Center the shelf in the cell
-						int j = grid.mapGridYtoWorldZ(z); // Center the shelf in the cell
-
-						Model->pushMatrix();
-						Model->loadIdentity();
-						Model->translate(vec3(i, libraryCenter.y, j)); // Position shelf at cell center on ground
-						Model->scale(vec3(0.75f)); // Scale set in class members
-						setModel(shader, Model);
-						bookstand->Draw(shader);
-						Model->popMatrix();
-					} else if (grid[gridPos].clusterType == LibraryGen::ClusterType::GLOWING_SHELF1) {
-						int i = grid.mapGridXtoWorldX(x); // Center the shelf in the cell
-						int j = grid.mapGridYtoWorldZ(z); // Center the shelf in the cell
-
-						if (grid[gridPos].objectType == LibraryGen::CellObjType::SHELF_WITH_ABILITY) {
+					} else if (bossGrid[gridPos].type == BossRoomGen::CellType::EXIT) {
+						if (bossGrid[gridPos].borderType == BossRoomGen::BorderType::EXIT_MIDDLE) {
 							Model->pushMatrix();
 							Model->loadIdentity();
-							Model->translate(vec3(i, libraryCenter.y, j)); // Position shelf at cell center on ground
-							Model->scale(vec3(2.0f)); // Scale set in class members
+							Model->translate(vec3(i, 0, j));
+							Model->rotate(glm::radians(bossGrid[gridPos].transformData.rotation), vec3(0, 1, 0)); // Rotate for left/right walls
+							Model->scale(1.0f);
 							setModel(shader, Model);
-							book_shelf2->Draw(shader);
+							door->Draw(shader); // Use the door model for the entrance
 							Model->popMatrix();
-						} else if (grid[gridPos].objectType == LibraryGen::CellObjType::BOOKSHELF) {
+						} else if (bossGrid[gridPos].borderType == BossRoomGen::BorderType::EXIT_SIDE) {
 							Model->pushMatrix();
 							Model->loadIdentity();
-							Model->translate(vec3(i, libraryCenter.y, j)); // Position shelf at cell center on ground
-							Model->scale(vec3(2.0f)); // Scale set in class members
+							Model->translate(vec3(i, 0, j));
+							Model->rotate(glm::radians(bossGrid[gridPos].transformData.rotation), vec3(0, 1, 0)); // Rotate for left/right walls
+							Model->scale(1.0f);
 							setModel(shader, Model);
-							book_shelf1->Draw(shader);
-							Model->popMatrix();
-						}
-					} else if (grid[gridPos].clusterType == LibraryGen::ClusterType::GLOWING_SHELF2) {
-						int i = grid.mapGridXtoWorldX(x); // Center the shelf in the cell
-						int j = grid.mapGridYtoWorldZ(z); // Center the shelf in the cell
-
-						if (grid[gridPos].objectType == LibraryGen::CellObjType::SHELF_WITH_ABILITY_ROTATED) {
-							Model->pushMatrix();
-							Model->loadIdentity();
-							Model->translate(vec3(i, libraryCenter.y, j)); // Position shelf at cell center on ground
-							Model->rotate(glm::radians(90.0f), vec3(0, 1, 0)); // Rotate for left/right walls
-							Model->scale(vec3(2.0f)); // Scale set in class members
-							setModel(shader, Model);
-							book_shelf2->Draw(shader);
-							Model->popMatrix();
-						} else if (grid[gridPos].objectType == LibraryGen::CellObjType::ROTATED_BOOKSHELF) {
-							Model->pushMatrix();
-							Model->loadIdentity();
-							Model->translate(vec3(i, libraryCenter.y, j)); // Position shelf at cell center on ground
-							Model->rotate(glm::radians(90.0f), vec3(0, 1, 0)); // Rotate for left/right walls
-							Model->scale(vec3(2.0f)); // Scale set in class members
-							setModel(shader, Model);
-							book_shelf1->Draw(shader);
+							book_shelf1->Draw(shader); // Use the door model for the entrance
 							Model->popMatrix();
 						}
 					}
-				} else if (grid[gridPos].type == LibraryGen::CellType::BOSS_ENTRANCE) {
-					float i = grid.mapGridXtoWorldX(x); // Center the shelf in the cell
-					float j = grid.mapGridYtoWorldZ(z); // Center the shelf in the cell
-
-					Model->pushMatrix();
-					Model->loadIdentity();
-					Model->translate(vec3(i, doorPosition.y, j)); // Position set in class members
-					Model->scale(doorScale);      // Scale set in class members
-
-					SetMaterialMan(shader, 5); // Use Wood material
-					setModel(shader, Model);
-					cube->Draw(shader);
-
-					Model->popMatrix();
 				}
 			}
 		}
@@ -2031,8 +2056,8 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 				if (grid[gridPos].objectType == LibraryGen::CellObjType::SHELF_WITH_ABILITY || grid[gridPos].objectType == LibraryGen::CellObjType::SHELF_WITH_ABILITY_ROTATED) {
 					// float shelfWorldX = libraryCenter.x - gridWorldWidth * 0.5f + (x + 0.5f) * cellWidth;
 					// float shelfWorldZ = libraryCenter.z - gridWorldDepth * 0.5f + (z + 0.5f) * cellDepth;
-					float shelfWorldX = grid.mapGridXtoWorldX(x); // Center the shelf in the cell
-					float shelfWorldZ = grid.mapGridYtoWorldZ(z); // Center the shelf in the cell
+					float shelfWorldX = library->mapGridXtoWorldX(x); // Center the shelf in the cell
+					float shelfWorldZ = library->mapGridYtoWorldZ(z); // Center the shelf in the cell
 					glm::vec3 shelfCenterPos = glm::vec3(shelfWorldX, groundY + 1.0f, shelfWorldZ);
 
 					// glm::vec3 diff = shelfCenterPos - characterMovement;
@@ -2163,22 +2188,22 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 		// spatial detection for library grid
 
-		int gridX = grid.mapXtoGridX(checkPos.x);
-		int gridZ = grid.mapZtoGridY(checkPos.z);
+		int gridX = library->mapXtoGridX(checkPos.x);
+		int gridZ = library->mapZtoGridY(checkPos.z);
 
 		glm::ivec2 gridPos(gridX, gridZ);
 
-		float gridtoworldX = grid.mapGridXtoWorldX(gridPos.x); // check back against the specific world position
-		float gridtoworldZ = grid.mapGridYtoWorldZ(gridPos.y);
+		float gridtoworldX = library->mapGridXtoWorldX(gridPos.x); // check back against the specific world position
+		float gridtoworldZ = library->mapGridYtoWorldZ(gridPos.y);
 
-		// gridX = grid.mapXtoGridX(gridtoworldX);
-		// gridZ = grid.mapZtoGridY(gridtoworldZ);
+		// gridX = library->mapXtoGridX(gridtoworldX);
+		// gridZ = library->mapZtoGridY(gridtoworldZ);
 
 		// gridPos = glm::ivec2(gridX, gridZ);
 
 
-		// gridX = grid.mapXtoGridX(gridtoworldX);
-		// gridZ = grid.mapZtoGridY(gridtoworldZ);
+		// gridX = library->mapXtoGridX(gridtoworldX);
+		// gridZ = library->mapZtoGridY(gridtoworldZ);
 
 		if (grid.inBounds(glm::ivec2(gridX, gridZ))) {
 			// std::cout << "[DEBUG] Player Position: (" << checkPos.x << "," << checkPos.y << "," << checkPos.z << ")" << std::endl;
@@ -2210,6 +2235,28 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 				return true; // Collision found
 			}
 		}
+
+		// spatial detection for boss room grid
+
+		// gridX = bossRoom->mapXtoGridX(checkPos.x);
+		// gridZ = bossRoom->mapZtoGridY(checkPos.z);
+
+		// gridPos = glm::ivec2(gridX, gridZ);
+
+		// gridtoworldX = bossRoom->mapGridXtoWorldX(gridPos.x); // check back against the specific world position
+		// gridtoworldZ = bossRoom->mapGridYtoWorldZ(gridPos.y);
+
+		// if (bossGrid.inBounds(glm::ivec2(gridX, gridZ))) {
+		// 	// std::cout << "[DEBUG] Player Position: (" << checkPos.x << "," << checkPos.y << "," << checkPos.z << ")" << std::endl;
+		// 	// std::cout << "[DEBUG] Grid Position: (" << gridX << "," << gridZ << ")" << std::endl;
+		// 	// std::cout << "[DEBUG] Grid to World Position: (" << gridtoworldX << "," << libraryCenter.y << "," << gridtoworldZ << ")" << std::endl;
+		// 	// std::cout << "Grid Cell Value: " << static_cast<int>(grid[gridPos].type) << std::endl;
+
+		// 	if (bossGrid[gridPos].type == BossRoomGen::CellType::BORDER ||
+		// 		bossGrid[gridPos].borderType == BossRoomGen::BorderType::ENTRANCE_SIDE) {
+		// 		return true; // Collision found
+		// 	}
+		// }
 
 		// for (int z = 0; z < grid.getSize().y; ++z) {
 		// 	for (int x = 0; x < grid.getSize().x; ++x) {
@@ -2614,6 +2661,8 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		View->loadIdentity();
 		View->lookAt(eye, lookAt, up); // Use updated eye/lookAt
 
+		ExtractVFPlanes(Projection->topMatrix(), View->topMatrix(), planes); // Update frustum planes
+
 		// --- Setup Lights ---
 		// Example: One bright light in the library, one dimmer in boss area
 		// vec3 lightPositions[NUM_LIGHTS] = {
@@ -2684,7 +2733,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		// Drawing grounds first is logical.
 
 		// 1. Draw Ground, Path
-		drawGroundSections(prog2, Model);
+		// drawGroundSections(prog2, Model);
 
 		// drawBorder(prog2, Model);
 
@@ -2713,6 +2762,8 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		drawBorderWalls(assimptexProg, Model); // Draw the borders
 
 		drawLibGrnd(assimptexProg, Model); // Draw the library ground
+
+		drawBossRoom(assimptexProg, Model); // Draw the boss room
 
 		#if SHOW_HEALTHBAR
 		drawHealthBar();
@@ -2794,6 +2845,7 @@ int main(int argc, char *argv[])
 	// may need to initialize or set up different data and state
 
 	application->init(resourceDir);
+	application->initMapGen();
 	application->initGeom(resourceDir);
 	application->initGround();
 

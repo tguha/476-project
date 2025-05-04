@@ -9,17 +9,19 @@
     *
     */
 
-void LibraryGen::generate(glm::ivec2 size, glm::ivec2 offset, glm::vec3 spawnPos, glm::vec2 bossEntrDir) {
+void LibraryGen::generate(glm::ivec2 size, glm::vec3 worldOrigin, glm::vec3 spawnPos, glm::vec2 bossEntrDir) {
 
     std::cout << "Grid size: " << size.x << ", " << size.y << std::endl;
 
+    this->LibraryworldOrigin = worldOrigin; // Set the world origin for the grid
 
-    grid = Grid<Cell>(size, offset, Cell(CellType::NONE)); // Initialize the grid with the given size and offset
 
-    int i = grid.mapXtoGridX(spawnPos.x);
-    int j = grid.mapZtoGridY(spawnPos.z);
+    grid = Grid<Cell>(size, Cell(CellType::NONE)); // Initialize the grid with the given size and offset
 
-    gridSize = size; // Store the grid size
+    int i = mapXtoGridX(spawnPos.x);
+    int j = mapZtoGridY(spawnPos.z);
+
+    this->gridSize = size; // Store the grid size
 
     spawnPosinGrid = glm::vec2(i, j); // Convert the spawn position to grid coordinates
 
@@ -35,8 +37,6 @@ void LibraryGen::generate(glm::ivec2 size, glm::ivec2 offset, glm::vec3 spawnPos
     std::cout << "boss entrance direction: " << bossEntranceDir.x << ", " << bossEntranceDir.y << std::endl;
 
     std::cout << "Generating library layout..." << std::endl;
-
-    std::cout << "offset: " << grid.getOffset().x << ", " << grid.getOffset().y << std::endl;
 
     seedGen.seed(std::random_device()());
 
