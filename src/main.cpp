@@ -1798,8 +1798,10 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 		// Set uniforms and draw
 		//glUniform1i(curS->getUniform("hasTexture"), 1); //0.6f, 0.2f, 0.8f
-		glUniform3f(curS->getUniform("MatAmb"), 0.6f * 0.3f,0.2f * 0.3f, 0.8f * 0.3f);
-		glUniform3f(curS->getUniform("MatDif"), 0.6f, 0.2f, 0.8f);
+		//0.8f, 0.4f, 0.2f
+		// 0.95, 0.78, 0.14
+		glUniform3f(curS->getUniform("MatAmb"), 0.95f , 0.78f , 0.14f );
+		glUniform3f(curS->getUniform("MatDif"), 0.95f, 0.78f, 0.14f);
 		glUniform3f(curS->getUniform("MatSpec"), 0.3f, 0.3f, 0.3f);
 		glUniform1f(curS->getUniform("MatShine"), 8.0f);
 		setModel(curS, Model);
