@@ -22,6 +22,7 @@
 #include "Player.h"
 #include "BossRoomGen.h"
 #include "FrustumCulling.h"
+#include "../particles/particleGen.h"
 
 // value_ptr for glm
 #include <glm/gtc/type_ptr.hpp>
@@ -306,6 +307,7 @@ public:
 
 	// Our shader programs
 	std::shared_ptr<Program> texProg, hudProg, prog2, assimptexProg;
+	std::shared_ptr<Program> particleProg; // Add particle program
 
 	// ground data - Reused for all flat ground planes
 	GLuint GrndBuffObj = 0, GrndNorBuffObj = 0, GIndxBuffObj = 0; // Initialize to 0
@@ -352,6 +354,7 @@ public:
 	std::unordered_set<int> libraryGroundIDs; // Set to track unique IDs
 
 	shared_ptr<Texture> carpetTex;
+	shared_ptr<Texture> particleAlphaTex; // Add particle alpha texture
 
 	// Scene layout parameters
 	vec3 libraryCenter = vec3(0.0f, groundY, 0.0f);
@@ -367,6 +370,7 @@ public:
 
 	// --- Spell Projectiles ---
 	std::vector<SpellProjectile> activeSpells;
+	std::shared_ptr<particleGen> particleSystem; // Add particle system
 	glm::vec3 baseSphereLocalAABBMin; // Store base sphere AABB once
 	glm::vec3 baseSphereLocalAABBMax;
 	bool sphereAABBCalculated = false;
@@ -761,6 +765,18 @@ public:
 		hudProg->addUniform("BarStartX");
 		hudProg->addUniform("BarWidth");
 
+		// Initialize the particle program
+		particleProg = make_shared<Program>();
+		particleProg->setVerbose(true);
+		particleProg->setShaderNames(resourceDirectory + "/particle_vert.glsl", resourceDirectory + "/particle_frag.glsl");
+		particleProg->init();
+		particleProg->addUniform("P");
+		particleProg->addUniform("V");
+		particleProg->addUniform("M");
+		particleProg->addUniform("alphaTexture");
+		particleProg->addAttribute("vertPos");
+		particleProg->addAttribute("vertColor");
+
 		updateCameraVectors();
 
 		borderWallTex = make_shared<Texture>();
@@ -780,6 +796,17 @@ public:
 		carpetTex->init();
 		carpetTex->setUnit(0);
 		carpetTex->setWrapModes(GL_REPEAT, GL_REPEAT);
+
+		// Initialize particle alpha texture
+		particleAlphaTex = make_shared<Texture>();
+		particleAlphaTex->setFilename(resourceDirectory + "/alpha.bmp");
+		particleAlphaTex->init();
+		particleAlphaTex->setUnit(1);
+		particleAlphaTex->setWrapModes(GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE);
+
+		// Initialize particle system
+		particleSystem = make_shared<particleGen>(vec3(0.0f), 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.1f, 0.2f);
+		particleSystem->gpuSetup();
 	}
 
 	void initMapGen()
@@ -2657,6 +2684,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		updateOrbs((float)glfwGetTime());
 		updateEnemies(frametime);
 		updateProjectiles(frametime);
+		particleSystem->update(frametime); // Update particles
 
 		// --- Setup Camera ---
 		Projection->pushMatrix();
@@ -2757,6 +2785,15 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		drawOrbs(prog2, Model);
 
 		drawProjectiles(prog2, Model);
+
+		// Draw particles
+		particleProg->bind();
+		glUniformMatrix4fv(particleProg->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
+		glUniformMatrix4fv(particleProg->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
+		glUniformMatrix4fv(particleProg->getUniform("M"), 1, GL_FALSE, value_ptr(Model->topMatrix()));
+		particleAlphaTex->bind(particleProg->getUniform("alphaTexture"));
+		particleSystem->drawMe(particleProg);
+		particleProg->unbind();
 
 		// 7. Draw Player (often drawn last or near last)
 		drawPlayer(assimptexProg, Model, animTime);
