@@ -2125,6 +2125,25 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			// enemy->setPosition(glm::vec3(currentPos.x, 0.8f + sin(glfwGetTime() * bobSpeed) * bobHeight, currentPos.z));
 			 // IMPORTANT: Update enemy AABB if it moves
 			 // enemy->updateAABB(); // Need to add AABB members and update method to Enemy/Entity class
+			 
+			 // Slowly move enemy towards player
+			glm::vec3 enemyPos = enemy->getPosition();
+			glm::vec3 playerPos = player->getPosition();
+			glm::vec3 direction = glm::normalize(playerPos - enemyPos);
+			float speed = 1.0f; // Adjust speed as needed
+			enemy->setPosition(enemyPos + direction * speed * deltaTime);
+
+				// Check for collision with player
+				glm::vec3 enemyMin = enemy->getAABBMin();
+				glm::vec3 enemyMax = enemy->getAABBMax();
+				glm::vec3 playerMin = player->getAABBMin();
+				glm::vec3 playerMax = player->getAABBMax();
+
+				if (checkAABBCollision(enemyMin, enemyMax, playerMin, playerMax)) {
+					// Handle collision with player
+					cout << "Enemy collided with player!" << endl;
+					player->takeDamage(10);
+				}
 		}
 	}
 
