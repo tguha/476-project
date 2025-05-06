@@ -6,6 +6,9 @@
 #include <glad/glad.h>
 #include <chrono>
 #include <thread>
+#include <windows.h>
+#include <mmsystem.h>
+#pragma comment(lib, "winmm.lib")
 #include "GLSL.h"
 #include "Program.h"
 #include "MatrixStack.h"
@@ -23,6 +26,10 @@
 #include "BossRoomGen.h"
 #include "FrustumCulling.h"
 #include "../particles/particleGen.h"
+#ifdef WIN32
+#include <windows.h>
+#include <mmsystem.h>
+#endif
 
 // value_ptr for glm
 #include <glm/gtc/type_ptr.hpp>
@@ -2902,6 +2909,8 @@ int main(int argc, char *argv[])
 	windowManager->init(640, 480);
 	windowManager->setEventCallbacks(application);
 	application->windowManager = windowManager;
+
+	PlaySound(TEXT("C:/Users/trigu/OneDrive/Desktop/476-project/resources/Breaking_Ground.wav"), NULL, SND_FILENAME|SND_ASYNC|SND_LOOP);
 
 	glfwSetInputMode(windowManager->getHandle(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 	glfwSetWindowUserPointer(windowManager->getHandle(), application);
