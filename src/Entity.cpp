@@ -97,12 +97,13 @@ void Entity::takeDamage(float damage) {
     }
 }
 
-void Entity::move(const glm::vec3& direction) {
+void Entity::move(const glm::vec3& direction, float deltaTime) {
     // Basic movement - doesn't include collision checks here
     // Collision should ideally be handled before calling setPosition
-    glm::vec3 nextPos = position + direction * moveSpeed; // Calculate potential next position
+    glm::vec3 nextPos = position + direction * moveSpeed * deltaTime; // Calculate potential next position
     // TODO: Add collision detection logic here or in the game loop *before* calling setPosition
-    setPosition(nextPos); // Update position and AABB
+    setPosition(nextPos); // Update position
+    updateAABB(); // Update AABB after moving
 }
 
 // --- Collision Update Implementation ---

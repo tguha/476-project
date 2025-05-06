@@ -14,68 +14,67 @@
 // a simple priority queue implementation for the pathfinding algorithm
 template<typename T>
 class SimplePriorityQueue {
-    public:
-        void enqueue(T* item, float priority) {
-            priorities[item] = priority;
-            queue.push(PriorityItem{*item, priority});
-        }
+public:
+    void enqueue(T* item, float priority) {
+        priorities[item] = priority;
+        queue.push(PriorityItem{item, priority});
+    }
 
-        T dequeue() {
-            while (!queue.empty()) {
-                PriorityItem item = queue.top();
-                queue.pop();
+    T* dequeue() {
+        while (!queue.empty()) {
+            PriorityItem item = queue.top();
+            queue.pop();
 
-                auto it = priorities.find(&item.item);
-                if (it != priorities.end() && std::abs(it->second - item.priority) < 0.001f) {
-                    priorities.erase(it); // Remove the item from the map
-                    return item.item; // Return the item
-                }
+            auto it = priorities.find(item.item);
+            if (it != priorities.end() && std::abs(it->second - item.priority) < 0.001f) {
+                priorities.erase(it);
+                return item.item;
             }
-            return T(); // Return a default node if the queue is empty
         }
+        return nullptr;
+    }
 
-        bool tryGetPriority(T* item, float& outPriority) {
-            auto it = priorities.find(item);
-            if (it != priorities.end()) {
-                outPriority = it->second;
-                return true;
-            }
-            return false;
+    bool tryGetPriority(T* item, float& outPriority) {
+        auto it = priorities.find(item);
+        if (it != priorities.end()) {
+            outPriority = it->second;
+            return true;
         }
+        return false;
+    }
 
-        void updatePriority(T* item, float newPriority) {
-            // Since we can't update the priority of an item in the queue, we need to remove it and reinsert it
-            priorities[item] = newPriority;
-            queue.push(PriorityItem{*item, newPriority});
+    void updatePriority(T* item, float newPriority) {
+        priorities[item] = newPriority;
+        queue.push(PriorityItem{item, newPriority});
+    }
+
+    void clear() {
+        while (!queue.empty()) queue.pop();
+        priorities.clear();
+    }
+
+    size_t count() const {
+        return priorities.size();
+    }
+
+    bool isEmpty() const {
+        return priorities.empty();
+    }
+
+private:
+    struct PriorityItem {
+        T* item;
+        float priority;
+
+        bool operator<(const PriorityItem& other) const {
+            return priority > other.priority; // min-heap
         }
-
-        void clear() {
-            while (!queue.empty()) {
-                queue.pop();
-            }
-            priorities.clear();
-        }
-
-        size_t count() const {
-            return priorities.size();
-        }
-
-        bool isEmpty() const {
-            return priorities.empty();
-        }
-    private:
-        struct PriorityItem {
-            T item;
-            float priority;
-
-            bool operator<(const PriorityItem& other) const {
-                return priority > other.priority; // reverse for min-heap
-            }
-        };
-
-        std::priority_queue<PriorityItem> queue;
-        std::unordered_map<T*, float> priorities;
     };
+
+    std::priority_queue<PriorityItem> queue;
+    std::unordered_map<T*, float> priorities;
+};
+
 
 class Pathfinder {
     public:

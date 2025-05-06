@@ -44,11 +44,11 @@ void Player::setSprintFlag(bool flag) {
     sprintFlag = flag;
 }
 
-void Player::move(const glm::vec3& direction) {
+void Player::move(const glm::vec3& direction, float deltaTime) {
     if (sprintFlag) {
-        Entity::move(direction * 2.0f);     // arbitrary sprint speed
+        Entity::move(direction * 2.0f, deltaTime);     // arbitrary sprint speed
     } else {
-        Entity::move(direction);
+        Entity::move(direction, deltaTime);
     }
 }
 

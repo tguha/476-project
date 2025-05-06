@@ -45,9 +45,8 @@ using namespace glm;
 #define NUM_LIGHTS 4
 #define MAX_BONES 200
 
-
-
 #define SHOW_HEALTHBAR 1 // 1 = show health bar, 0 = hide health bar
+#define ENEMY_MOVEMENT 1 // 1 = enable enemy movement, 0 = disable enemy movement
 
 
 float randFloat(float l, float h) {
@@ -402,6 +401,8 @@ public:
 	AssimpModel *stickfigure_running, *stickfigure_standing;
 	Animation *stickfigure_anim, *stickfigure_idle;
 	Animator *stickfigure_animator;
+
+	AssimpModel *CatWizard;
 
 	float AnimDeltaTime = 0.0f;
 	float AnimLastFrame = 0.0f;
@@ -859,9 +860,13 @@ public:
  		string errStr;
 
 		// load the walking character model
-		stickfigure_running = new AssimpModel(resourceDirectory + "/Vanguard/Vanguard.fbx");
-		stickfigure_anim = new Animation(resourceDirectory + "/Vanguard/Vanguard.fbx", stickfigure_running, 0);
-		stickfigure_idle = new Animation(resourceDirectory + "/Vanguard/Vanguard.fbx", stickfigure_running, 1);
+		stickfigure_running = new AssimpModel(resourceDirectory + "/CatWizard/CatWizardOrange.fbx");
+		//stickfigure_anim = new Animation(resourceDirectory + "/CatWizard/untitled.fbx", stickfigure_running, 0);
+		//stickfigure_idle = new Animation(resourceDirectory + "/Vanguard/Vanguard.fbx", stickfigure_running, 1);
+
+		//TEST Load the cat
+		CatWizard = new AssimpModel(resourceDirectory + "/CatWizard/CatWizardOrange.fbx");
+
 
 		// --- Calculate Player Collision Box NOW that model is loaded ---
 		calculatePlayerLocalAABB();
@@ -955,9 +960,9 @@ public:
 
 		// Check if sphere model is loaded before creating enemies that use it
 		if (sphere) {
-			enemies.push_back(new Enemy(bossSpawnPos, 200.0f, 0.0f, sphere, enemyCollisionScale, vec3(0.0f))); // <<-- Pass sphere and scale
-			cout << " Enemy placed at boss area: (" << bossSpawnPos.x << ", " << bossSpawnPos.y << ", " << bossSpawnPos.z << ")" << endl;
-			enemies.push_back(new Enemy(libraryCenter + vec3(-5.0f, 0.8f, 8.0f), 50.0f, 0.0f, sphere, enemyCollisionScale, vec3(0.0f))); // <<-- Pass sphere and scale
+			// enemies.push_back(new Enemy(bossSpawnPos, 200.0f, 0.0f, sphere, enemyCollisionScale, vec3(0.0f))); // <<-- Pass sphere and scale
+			// cout << " Enemy placed at boss area: (" << bossSpawnPos.x << ", " << bossSpawnPos.y << ", " << bossSpawnPos.z << ")" << endl;
+			enemies.push_back(new Enemy(libraryCenter + vec3(-5.0f, 0.8f, 8.0f), 50.0f, 2.0f, sphere, enemyCollisionScale, vec3(0.0f))); // <<-- Pass sphere and scale
 		}
 		else {
 			cerr << "ERROR: Sphere model not loaded, cannot create enemies." << endl;
@@ -1385,21 +1390,21 @@ public:
 	}
 
 	void drawPlayer(shared_ptr<Program> curS, shared_ptr<MatrixStack> Model, float animTime) {
-		if (!curS || !Model || !stickfigure_running || !stickfigure_animator || !stickfigure_anim || !stickfigure_idle) {
+		if (!curS || !Model || !stickfigure_running || !stickfigure_animator /* || !stickfigure_anim /*|| !stickfigure_idle*/) {
 			cerr << "Error: Null pointer in drawPlayer." << endl;
 			return;
 		}
 		curS->bind();
 
 		// Animation update
+		/*
 		stickfigure_animator->UpdateAnimation(1.5f * animTime);
 		if (manState == WALKING) {
-			stickfigure_animator->SetCurrentAnimation(stickfigure_anim);
+		//stickfigure_animator->SetCurrentAnimation(stickfigure_anim);
 		}
 		else {
-			stickfigure_animator->SetCurrentAnimation(stickfigure_idle);
+			//stickfigure_animator->SetCurrentAnimation(stickfigure_idle);
 		}
-
 		// Update bone matrices
 		vector<glm::mat4> transforms = stickfigure_animator->GetFinalBoneMatrices();
 		int numBones = std::min((int)transforms.size(), MAX_BONES);
@@ -1407,16 +1412,16 @@ public:
 			string uniformName = "finalBonesMatrices[" + std::to_string(i) + "]";
 			glUniformMatrix4fv(curS->getUniform(uniformName), 1, GL_FALSE, value_ptr(transforms[i]));
 		}
-
+		*/
 		// Model matrix setup
 		Model->pushMatrix();
 		Model->loadIdentity();
 		// Model->translate(characterMovement); // Use final player position
 		Model->translate(player->getPosition());
 		// *** USE CAMERA ROTATION FOR MODEL ***
-		// Model->rotate(manRot.y, vec3(0, 1, 0)); // <<-- FIXED ROTATION
-		Model->rotate(player->getRotY(), vec3(0, 1, 0)); // <<-- FIXED ROTATION
-		Model->scale(manScale);
+		Model->rotate(glm::radians(-90.0f), vec3(1.0f, 0.0f, 0.0f));
+		Model->rotate(player->getRotY() + 3.14f, vec3(0, 0, 1)); // <<-- FIXED ROTATION
+		Model->scale(1.0f);
 
 		// Update VISUAL bounding box (can be different from collision box if needed)
 		// Using the same AABB calculation logic as before for consistency
@@ -1614,6 +1619,24 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		simpleShader->unbind();
 	}
 
+	void drawCat(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
+		if (!CatWizard) return; //Need Cat Model
+		shader->bind(); //Texture 
+		if (shader == assimptexProg) {
+			glUniform1i(shader->getUniform("hasTexture"), 1);
+		}
+
+		Model->pushMatrix();
+			Model->loadIdentity();
+			Model->translate(vec3(0.0f, 0.0f, 0.0f)); // Position at origin
+			//Model->scale(vec3(0.25f));
+			Model->rotate(glm::radians(-90.0f), vec3(1.0f, 0.0f, 0.0f));
+			setModel(shader, Model);
+			CatWizard->Draw(shader);
+		Model->popMatrix();
+		shader->unbind();
+
+	}
 
 	void drawEnemies(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		if (!sphere) return; // Need the sphere model
@@ -1834,7 +1857,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 								Model->pushMatrix();
 								Model->loadIdentity();
 								Model->translate(vec3(i, libraryCenter.y, j)); // Position shelf at cell center on ground
-								Model->scale(vec3(2.0f)); // Scale set in class members
+								Model->scale(vec3(2.0f)); // Scale set in grid members
 								setModel(shader, Model);
 								book_shelf1->Draw(shader);
 								Model->popMatrix();
@@ -2150,6 +2173,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 	}
 
 	void updateEnemies(float deltaTime) {
+		static Pathfinder pathfinder(gridSize);
 		// TODO: Add enemy movement, AI, attack logic later
 		for (auto* enemy : enemies) {
 			if (!enemy->isAlive()) enemy->setPosition(enemy->getPosition() - vec3(0.0f, 3.0f, 0.0f));
@@ -2160,6 +2184,39 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			// enemy->setPosition(glm::vec3(currentPos.x, 0.8f + sin(glfwGetTime() * bobSpeed) * bobHeight, currentPos.z));
 			 // IMPORTANT: Update enemy AABB if it moves
 			 // enemy->updateAABB(); // Need to add AABB members and update method to Enemy/Entity class
+			 
+			 // Slowly move enemy towards player
+			// glm::vec3 enemyPos = enemy->getPosition();
+			// glm::vec3 playerPos = player->getPosition();
+			// glm::vec3 direction = glm::normalize(playerPos - enemyPos);
+			// float speed = 1.0f; // Adjust speed as needed
+			// enemy->setPosition(enemyPos + direction * speed * deltaTime);
+
+				// // Check for collision with player
+				// glm::vec3 enemyMin = enemy->getAABBMin();
+				// glm::vec3 enemyMax = enemy->getAABBMax();
+				// glm::vec3 playerMin = player->getAABBMin();
+				// glm::vec3 playerMax = player->getAABBMax();
+			
+			#if ENEMY_MOVEMENT
+			enemy->moveTowardsPlayer(grid, pathfinder, player->getPosition(), deltaTime);
+			#endif
+
+			static float lastDamageTime = 0.0f; // Track the last time damage was applied
+			if (distance(enemy->getPosition(), player->getPosition()) < 1.0f) {
+				float currentTime = glfwGetTime();
+				if (currentTime - lastDamageTime >= 1.0f) { // Check if 1 second has passed
+					player->takeDamage(10); // Apply damage to the player
+					lastDamageTime = currentTime; // Update the last damage time
+					std::cout << "Player took damage! Current HP: " << player->getHitpoints() << std::endl;
+				}
+			}
+
+				// if (checkAABBCollision(enemyMin, enemyMax, playerMin, playerMax)) {
+				// 	// Handle collision with player
+				// 	cout << "Enemy collided with player!" << endl;
+				// 	player->takeDamage(10);
+				// }
 		}
 	}
 
@@ -2534,6 +2591,11 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 				if (checkAABBCollision(proj.aabbMin, proj.aabbMax, enemy->getAABBMin(), enemy->getAABBMax())) {
 					cout << "[DEBUG] Spell HIT enemy!" << endl;
+					
+					if (!enemy->isHit()) {
+						enemy->setHit(true); // Mark enemy as hit
+					}
+
 					enemy->takeDamage(damageAmount);
 					proj.active = false; // Deactivate projectile
 					break; // Hit one enemy
@@ -2680,8 +2742,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 			// Disable depth writing but keep depth testing
 			//glDepthMask(GL_FALSE);
-
-			glUniformMatrix4fv(shader->getUniform("M"), 1, GL_FALSE, value_ptr(Model->topMatrix()));
+      glUniformMatrix4fv(shader->getUniform("M"), 1, GL_FALSE, value_ptr(Model->topMatrix()));
 			gen->drawMe(shader);
 
 			// Restore state
@@ -2692,6 +2753,54 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			particleAlphaTex->unbind();
 			
 		Model->popMatrix();
+	}
+
+	void drawEnemyHealthBars(glm::mat4 viewMatrix, glm::mat4 projMatrix) {
+		float healthBarWidth = 100.0f;
+		float healthBarHeight = 10.0f;
+		float healthBarOffsetY = 15.0f;  // Offset above enemy head
+		
+		int screenWidth, screenHeight;
+		glfwGetFramebufferSize(windowManager->getHandle(), &screenWidth, &screenHeight);
+	
+		glm::mat4 hudProjection = glm::ortho(0.0f, (float)screenWidth, 0.0f, (float)screenHeight, -1.0f, 1.0f);
+	
+		for (auto* enemy : enemies) {
+			if (!enemy || !enemy->isAlive() || (!enemy->isHit())) continue;
+	
+			glm::vec3 enemyWorldPos = enemy->getAABBMax(); // Top position in world coordinates
+	
+			// Transform enemy position to clip space
+			glm::vec4 clipSpacePos = projMatrix * viewMatrix * glm::vec4(enemyWorldPos, 1.0f);
+	
+			// If enemy is behind camera, skip
+			if (clipSpacePos.w <= 0) continue;
+	
+			// Perspective divide (NDC)
+			glm::vec3 ndcPos = glm::vec3(clipSpacePos) / clipSpacePos.w;
+	
+			// Convert NDC (-1 to 1) to screen coordinates
+			glm::vec2 screenPos;
+			screenPos.x = (ndcPos.x * 0.5f + 0.5f) * screenWidth;
+			screenPos.y = (ndcPos.y * 0.5f + 0.5f) * screenHeight;
+	
+			// Offset above enemy's head
+			screenPos.y += healthBarOffsetY;
+	
+			// Set HUD Model matrix
+			glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(screenPos.x - (healthBarWidth / 2.0f), screenPos.y, 0.0f));
+			model = glm::scale(model, glm::vec3(healthBarWidth, healthBarHeight, 1.0f));
+	
+			hudProg->bind();
+			glUniformMatrix4fv(hudProg->getUniform("projection"), 1, GL_FALSE, glm::value_ptr(hudProjection));
+			glUniformMatrix4fv(hudProg->getUniform("model"), 1, GL_FALSE, glm::value_ptr(model));
+			glUniform1f(hudProg->getUniform("healthPercent"), enemy->getHitpoints() / ENEMY_HP_MAX);
+			glUniform1f(hudProg->getUniform("BarStartX"), screenPos.x - (healthBarWidth / 2.0f));
+			glUniform1f(hudProg->getUniform("BarWidth"), healthBarWidth);
+	
+			healthBar->Draw(hudProg);
+			hudProg->unbind();
+		}
 	}
 
 	void render(float frametime, float animTime) {
@@ -2828,6 +2937,13 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 		drawProjectiles(prog2, Model);
 
+		// 7. Draw Player (often drawn last or near last)
+		drawPlayer(assimptexProg, Model, animTime);
+		
+		/*
+		//Test drawing cat model
+		drawCat(assimptexProg, Model);
+		*/
 
 		// drawSkybox(assimptexProg, Model); // Draw the skybox last
 
@@ -2842,6 +2958,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 		#if SHOW_HEALTHBAR
 		drawHealthBar();
+		drawEnemyHealthBars(View->topMatrix(), Projection->topMatrix());
 		#endif
 
 		/*MINI MAP*/
