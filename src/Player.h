@@ -3,11 +3,7 @@
 
 #include "Entity.h"
 #include "Spell.h"
-
-#define INVENTORY_SIZE 8
-#define PLAYER_HP_MAX 100.0f
-#define PLAYER_HP_MIN 0.0f
-#define PLAYER_MOVE_SPEED 0.045f
+#include "Config.h"
 
 typedef enum {
     SLOT_LEFT,
@@ -25,7 +21,7 @@ class Player : public Entity {
         Spell *currentSpell;
 
         // Init spell inventory with empty slots
-        Spell spellInventory[INVENTORY_SIZE] = {
+        Spell spellInventory[Config::INVENTORY_SIZE] = {
             Spell("Empty", SpellType::NO_SPELL, 0, 0, 0, 0, SpellType::NO_SPELL),
             Spell("Empty", SpellType::NO_SPELL, 0, 0, 0, 0, SpellType::NO_SPELL),
             Spell("Empty", SpellType::NO_SPELL, 0, 0, 0, 0, SpellType::NO_SPELL),

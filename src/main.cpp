@@ -22,6 +22,7 @@
 #include "Player.h"
 #include "BossRoomGen.h"
 #include "FrustumCulling.h"
+#include "Config.h"
 
 // value_ptr for glm
 #include <glm/gtc/type_ptr.hpp>
@@ -30,22 +31,6 @@
 #include <glm/gtx/vector_angle.hpp> // Also sometimes needed for glm::rotation
 #include <algorithm>              // For std::remove_if
 #include <limits>                 // For std::numeric_limits (used in updateBoundingBox)
-
-using namespace std;
-using namespace glm;
-
-#define NUM_LIGHTS 4
-#define MAX_BONES 200
-
-
-
-#define SHOW_HEALTHBAR 1 // 1 = show health bar, 0 = hide health bar
-
-
-float randFloat(float l, float h) {
-	float r = rand() / (float)RAND_MAX;
-	return (1.0f - r) * l + r * h;
-}
 
 // Enum for book states
 enum class BookState {
@@ -151,8 +136,8 @@ public:
 		float randomSpread = 0.75f; // <-- Randomness around the target landing spot
 
 		// Calculate landing X and Z based on direction and distance + randomness
-		endPosition.x = initialPosition.x + dirToBook.x * landingDistance + randFloat(-randomSpread, randomSpread);
-		endPosition.z = initialPosition.z + dirToBook.z * landingDistance + randFloat(-randomSpread, randomSpread);
+		endPosition.x = initialPosition.x + dirToBook.x * landingDistance + Config::randFloat(-randomSpread, randomSpread);
+		endPosition.z = initialPosition.z + dirToBook.z * landingDistance + Config::randFloat(-randomSpread, randomSpread);
 
 
 		// --- Calculate Control Point for the Arc ---
@@ -160,7 +145,7 @@ public:
 		// Make the arc higher relative to the start position
 		controlPoint.y = initialPosition.y + 3.0f; // <-- ADJUST arc height (relative to start)
 		// Add some sideways deviation to the arc's peak
-		controlPoint.x += randFloat(-1.5f, 1.5f); // More horizontal arc randomness
+		controlPoint.x += Config::randFloat(-1.5f, 1.5f); // More horizontal arc randomness
 
 		// --- Create the Spline ---
 		float fallDuration = 0.4f; // <-- ADJUST fall duration if needed
@@ -301,8 +286,8 @@ public:
 	WindowManager * windowManager = nullptr;
 
 	bool windowMaximized = false;
-	int window_width = 640;
-	int window_height = 480;
+	int window_width = Config::DEFAULT_WINDOW_WIDTH;
+	int window_height = Config::DEFAULT_WINDOW_HEIGHT;
 
 	// Our shader programs
 	std::shared_ptr<Program> texProg, hudProg, prog2, assimptexProg;
@@ -312,7 +297,7 @@ public:
 	int g_GiboLen = 0;
 	GLuint GroundVertexArrayID = 0; // Initialize to 0
 	float groundSize = 20.0f; // Half-size of the main library ground square
-	float groundY = 0.0f;     // Y level for all ground planes
+	float groundY = Config::GROUND_Y_LEVEL;     // Y level for all ground planes
 
 	struct WallObject {
 		float length;
@@ -398,28 +383,23 @@ public:
 	int change_mat = 0;
 
 	// vec3 characterMovement = vec3(0, 0, 0);
-	vec3 manScale = vec3(0.01, 0.01, 0.01);
-	vec3 manMoveDir = vec3(sin(radians(0.0f)), 0, cos(radians(0.0f)));
+	glm::vec3 manScale = glm::vec3(0.01, 0.01, 0.01);
+	glm::vec3 manMoveDir = glm::vec3(sin(radians(0.0f)), 0, cos(radians(0.0f)));
 
 	// initial position of light cycles
-	vec3 start_lightcycle1_pos = vec3(-384, -11, 31);
-	vec3 start_lightcycle2_pos = vec3(-365, -11, 9.1);
+	glm::vec3 start_lightcycle1_pos = glm::vec3(-384, -11, 31);
+	glm::vec3 start_lightcycle2_pos = glm::vec3(-365, -11, 9.1);
 
 
-	float theta = 0.0f; // controls yaw
-	// float theta = radians(90.0f); // controls yaw
-	// float phi = 0.0f; // controls pitch
-	float phi = radians(-30.0f); // controls pitch
-
-	float radius = 5.0f;
+	float theta = glm::radians(Config::CAMERA_DEFAULT_THETA_DEGREES); // controls yaw
+	float phi = glm::radians(Config::CAMERA_DEFAULT_PHI_DEGREES); // controls pitch
+	float radius = Config::CAMERA_DEFAULT_RADIUS;
 
 	float wasd_sens = 0.5f;
 
-	vec3 eye = vec3(-6, 1.03, 0); /*MINI MAP*/
-	// vec3 lookAt = vec3(-1.58614, -0.9738, 0.0436656);
-	vec3 lookAt = vec3(0, 0, 0); /*MINI MAP*/
-  //not sure which to keep, main had lookAt = vec3(0, 0, 0)
-	vec3 up = vec3(0, 1, 0);
+	glm::vec3 eye = glm::vec3(-6, 1.03, 0); /*MINI MAP*/
+	glm::vec3 lookAt = glm::vec3(0, 0, 0); /*MINI MAP*/
+	glm::vec3 up = glm::vec3(0, 1, 0);
 	bool CULL = false;
 
 	vec3 right = normalize(cross(manMoveDir, up));
@@ -565,24 +545,14 @@ public:
 
 	void scrollCallback(GLFWwindow *window, double deltaX, double deltaY)
 	{
+			theta = theta + deltaX * glm::radians(Config::CAMERA_SCROLL_SENSITIVITY_DEGREES);
+			phi = phi - deltaY * glm::radians(Config::CAMERA_SCROLL_SENSITIVITY_DEGREES);
 
-			float sensitivity = 0.7f;
-
-			theta = theta + deltaX * sensitivity;
-
-			phi = phi - deltaY * sensitivity;
-
-			if (phi > radians(-10.0f))
-			{
-				phi = radians(-10.0f);
+			if (phi > glm::radians(Config::CAMERA_PHI_MAX_DEGREES)) {
+				phi = glm::radians(Config::CAMERA_PHI_MAX_DEGREES);
 			}
-			// if (phi > radians(80.0f))
-			// {
-			// 	phi = radians(80.0f);
-			// }
-			if (phi < radians(-80.0f))
-			{
-				phi = radians(-80.0f);
+			if (phi < glm::radians(Config::CAMERA_PHI_MIN_DEGREES)) {
+				phi = glm::radians(Config::CAMERA_PHI_MIN_DEGREES);
 			}
 
 			updateCameraVectors();
@@ -601,13 +571,11 @@ public:
 		lastX = xpos;
 		lastY = ypos;
 
-		float mouseSensitivity = 0.005f;
+		theta = theta + deltaX * Config::CAMERA_MOUSE_SENSITIVITY;
+		phi = phi + deltaY * Config::CAMERA_MOUSE_SENSITIVITY;
 
-		theta = theta + deltaX * mouseSensitivity;
-		phi = phi + deltaY * mouseSensitivity;
-		if (phi > radians(-10.0f))
-		{
-			phi = radians(-10.0f);
+		if (phi > glm::radians(Config::CAMERA_PHI_MAX_DEGREES)) {
+			phi = glm::radians(Config::CAMERA_PHI_MAX_DEGREES);
 		}
 		if (phi < radians(-80.0f))
 		{
@@ -679,7 +647,7 @@ public:
 		texProg->addUniform("MatSpec");
 		texProg->addUniform("MatShine");
 		texProg->addUniform("numLights");
-		for (int i = 0; i < NUM_LIGHTS; i++) {
+		for (int i = 0; i < Config::NUM_LIGHTS; i++) {
 			texProg->addUniform("lightPos[" + to_string(i) + "]");
 			texProg->addUniform("lightColor[" + to_string(i) + "]");
 			texProg->addUniform("lightIntensity[" + to_string(i) + "]");
@@ -702,7 +670,7 @@ public:
 		prog2->addUniform("MatDif");
 		prog2->addUniform("MatSpec");
 		prog2->addUniform("MatShine");
-		for (int i = 0; i < NUM_LIGHTS; i++) {
+		for (int i = 0; i < Config::NUM_LIGHTS; i++) {
 			prog2->addUniform("lightPos[" + to_string(i) + "]");
 			prog2->addUniform("lightColor[" + to_string(i) + "]");
 			prog2->addUniform("lightIntensity[" + to_string(i) + "]");
@@ -736,14 +704,14 @@ public:
 		assimptexProg->addAttribute("vertTex");
 		assimptexProg->addAttribute("boneIds");
 		assimptexProg->addAttribute("weights");
-		for (int i = 0; i < MAX_BONES; i++) {
+		for (int i = 0; i < Config::MAX_BONES; i++) {
 			assimptexProg->addUniform("finalBonesMatrices[" + to_string(i) + "]");
 		}
 		assimptexProg->addUniform("MatAmb");
 		assimptexProg->addUniform("MatDif");
 		assimptexProg->addUniform("MatSpec");
 		assimptexProg->addUniform("MatShine");
-		for (int i = 0; i < NUM_LIGHTS; i++) {
+		for (int i = 0; i < Config::NUM_LIGHTS; i++) {
 			assimptexProg->addUniform("lightPos[" + to_string(i) + "]");
 			assimptexProg->addUniform("lightColor[" + to_string(i) + "]");
 			assimptexProg->addUniform("lightIntensity[" + to_string(i) + "]");
@@ -1368,7 +1336,7 @@ public:
 
 		// Update bone matrices
 		vector<glm::mat4> transforms = stickfigure_animator->GetFinalBoneMatrices();
-		int numBones = std::min((int)transforms.size(), MAX_BONES);
+		int numBones = std::min((int)transforms.size(), Config::MAX_BONES);
 		for (int i = 0; i < numBones; ++i) {
 			string uniformName = "finalBonesMatrices[" + std::to_string(i) + "]";
 			glUniformMatrix4fv(curS->getUniform(uniformName), 1, GL_FALSE, value_ptr(transforms[i]));
@@ -2074,13 +2042,13 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 						// --- ADJUST Spawn Height ---
 						float minSpawnHeight = 1.8f; // Minimum height above groundY
 						float maxSpawnHeight = 2.8f; // Maximum height above groundY
-						float spawnHeight = groundY + randFloat(minSpawnHeight, maxSpawnHeight); // <-- ADJUSTED height range
+						float spawnHeight = groundY + Config::randFloat(minSpawnHeight, maxSpawnHeight); // <-- ADJUSTED height range
 
 						glm::vec3 spawnPos = glm::vec3(shelfWorldX, spawnHeight, shelfWorldZ);
 
 						glm::vec3 bookScale = glm::vec3(0.7f, 0.9f, 0.2f);
-						glm::quat bookOrientation = glm::angleAxis(glm::radians(randFloat(-10.f, 10.f)), glm::vec3(0, 1, 0));
-						glm::vec3 orbColor = glm::vec3(randFloat(0.2f, 1.0f), randFloat(0.2f, 1.0f), randFloat(0.2f, 1.0f));
+						glm::quat bookOrientation = glm::angleAxis(glm::radians(Config::randFloat(-10.f, 10.f)), glm::vec3(0, 1, 0));
+						glm::vec3 orbColor = glm::vec3(Config::randFloat(0.2f, 1.0f), Config::randFloat(0.2f, 1.0f), Config::randFloat(0.2f, 1.0f));
 
 						books.emplace_back(cube, sphere, spawnPos, bookScale, bookOrientation, orbColor);
 
@@ -2624,7 +2592,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		hudProg->bind();
 		glUniformMatrix4fv(hudProg->getUniform("projection"), 1, GL_FALSE, value_ptr(projection));
 		glUniformMatrix4fv(hudProg->getUniform("model"), 1, GL_FALSE, value_ptr(model));
-		glUniform1f(hudProg->getUniform("healthPercent"), player->getHitpoints() / PLAYER_HP_MAX); // Pass health value
+		glUniform1f(hudProg->getUniform("healthPercent"), player->getHitpoints() / Config::PLAYER_HP_MAX); // Pass health value
 		glUniform1f(hudProg->getUniform("BarStartX"), healthBarStartX); // Pass max health value
 		glUniform1f(hudProg->getUniform("BarWidth"), heatlhBarWidth); // Pass max health value
 
@@ -2676,20 +2644,20 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		// 	vec3(0, 0, 0)                        // Unused or ambient fill
 		// };
 
-		vec3 lightPositions[NUM_LIGHTS] = {
+		vec3 lightPositions[Config::NUM_LIGHTS] = {
 			libraryCenter + vec3(0, 15, 0),      // Library light overhead
 			bossAreaCenter + vec3(0, 10, 0),     // Boss area light overhead
 			player->getPosition() + vec3(0, 1, 0.5), // Small light near player (optional)
 			vec3(0, 0, 0)                        // Unused or ambient fill
 		};
 
-		vec3 lightColors[NUM_LIGHTS] = {
+		vec3 lightColors[Config::NUM_LIGHTS] = {
 			vec3(1.0f, 1.0f, 0.9f), // Slightly warm white
 			vec3(0.8f, 0.6f, 1.0f), // Dim purple/blue
 			vec3(0.3f, 0.3f, 0.3f),
 			vec3(0.1f, 0.1f, 0.1f)
 		};
-		float lightIntensities[NUM_LIGHTS] = {
+		float lightIntensities[Config::NUM_LIGHTS] = {
 			1.5f, // Bright library
 			0.8f, // Dimmer boss area
 			0.5f, // Player light
@@ -2827,8 +2795,8 @@ int main(int argc, char *argv[])
 
 	std::shared_ptr<Player> playerPtr = std::make_shared<Player>(
 		vec3(0, 0, 0),
-		PLAYER_HP_MAX,
-		PLAYER_MOVE_SPEED,
+		Config::PLAYER_HP_MAX,
+		Config::PLAYER_MOVE_SPEED,
 		application->sphere,
 		vec3(1.0f, 1.0f, 1.0f),
 		vec3(0.0f, 0.0f, 0.0f)
