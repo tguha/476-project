@@ -831,7 +831,7 @@ public:
 		//stickfigure_idle = new Animation(resourceDirectory + "/Vanguard/Vanguard.fbx", stickfigure_running, 1);
 
 		//TEST Load the cat
-		//CatWizard = new AssimpModel(resourceDirectory + "/CatWizard/CatWizardStill.fbx");
+		CatWizard = new AssimpModel(resourceDirectory + "/CatWizard/CatWizardOrange.fbx");
 
 
 		// --- Calculate Player Collision Box NOW that model is loaded ---
@@ -2872,8 +2872,11 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		// 7. Draw Player (often drawn last or near last)
 		drawPlayer(assimptexProg, Model, animTime);
 		
-
+		/*
+		//Test drawing cat model
 		drawCat(assimptexProg, Model);
+		*/
+
 		// drawSkybox(assimptexProg, Model); // Draw the skybox last
 
 		drawBorderWalls(assimptexProg, Model); // Draw the borders
