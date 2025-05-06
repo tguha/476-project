@@ -10,6 +10,7 @@ class Entity {
         glm::vec3 scale;
         glm::vec3 rotation;
         float hitpoints;
+        float currentHitpoints;
         float moveSpeed;
         bool alive;
 
@@ -47,7 +48,7 @@ class Entity {
 
         // --- Actions ---
         virtual void takeDamage(float damage);
-        virtual void move(const glm::vec3& direction); // Keep move virtual if needed
+        virtual void move(const glm::vec3& direction, float deltaTime); // Keep move virtual if needed
 
         // --- Collision Update ---
         virtual void updateAABB(); // Make it virtual for potential overrides
