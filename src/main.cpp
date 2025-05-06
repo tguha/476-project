@@ -25,11 +25,16 @@
 #include "Player.h"
 #include "BossRoomGen.h"
 #include "FrustumCulling.h"
+
+#include "Config.h"
+#include "GameObjectTypes.h"
+
 #include "../particles/particleGen.h"
 #ifdef WIN32
 #include <windows.h>
 #include <mmsystem.h>
 #endif
+
 
 // value_ptr for glm
 #include <glm/gtc/type_ptr.hpp>
@@ -42,274 +47,17 @@
 using namespace std;
 using namespace glm;
 
-#define NUM_LIGHTS 4
-#define MAX_BONES 200
-
 #define SHOW_HEALTHBAR 1 // 1 = show health bar, 0 = hide health bar
 #define ENEMY_MOVEMENT 1 // 1 = enable enemy movement, 0 = disable enemy movement
 
-
-float randFloat(float l, float h) {
-	float r = rand() / (float)RAND_MAX;
-	return (1.0f - r) * l + r * h;
-}
-
-// Enum for book states
-enum class BookState {
-	ON_SHELF,
-	FALLING,
-	LANDED,
-	OPENING,
-	OPENED
-};
-
-enum class OrbState {
-	SPAWNING,  // Initial state right after creation
-	LEVITATING,// Moving upwards
-	IDLE,      // Stationary, ready for collection
-	COLLECTED // Visually attached to player (handled by drawing logic)
-};
-
-// --- SpellProjectile Struct ---
-struct SpellProjectile {
-	glm::vec3 position;
-	glm::vec3 direction;
-	glm::vec3 scale = glm::vec3(0.05f, 0.05f, 0.6f);
-	float speed = 20.0f;
-	float lifetime = 2.0f;
-	float spawnTime = 0.0f;
-	bool active = true;
-	AssimpModel* model = nullptr;
-
-	glm::vec3 aabbMin;
-	glm::vec3 aabbMax;
-	glm::mat4 transform; // Still useful for drawing
-
-	SpellProjectile(glm::vec3 startPos, glm::vec3 dir, float time, AssimpModel* mdl)
-		: position(startPos), direction(normalize(dir)), spawnTime(time), model(mdl), transform(1.0f) // Initialize transform
-	{
-	}
-};
-
-class Book {
-public:
-	vec3 initialPosition; // Where the book starts
-	vec3 position;        // Current position (updated by spline or stays initial)
-	vec3 scale;           // Base scale for the book
-	quat orientation;     // Initial orientation (using quaternion is often easier for complex rotations)
-	// Alternatively, use glm::vec3 for Euler angles if you prefer
-
-	BookState state = BookState::ON_SHELF;
-	Spline* fallSpline = nullptr; // Pointer to the spline for falling animation
-	float fallStartTime = 0.0f;   // Time the fall started
-
-	float openAngle = 0.0f;       // Current angle for opening animation (radians)
-	float maxOpenAngle = glm::radians(80.0f); // How far the book opens
-	float openSpeed = glm::radians(120.0f); // Speed of opening in radians per second
-
-	AssimpModel* bookModel; // Pointer to the cube model
-	AssimpModel* orbModel;  // Pointer to the sphere model
-
-	vec3 orbColor;
-	float orbScale = 0.1f; // Scale of the spell orb
-	bool orbSpawned = false;
-
-	// Constructor
-	Book(AssimpModel* bookMdl, AssimpModel* orbMdl, const glm::vec3& pos, const glm::vec3& scl, const glm::quat& orient, const glm::vec3& orbClr)
-		: initialPosition(pos), position(pos), scale(scl), orientation(orient),
-		bookModel(bookMdl), orbModel(orbMdl), orbColor(orbClr) {
-	}
-
-	// Destructor to clean up spline if needed
-	~Book() {
-		delete fallSpline;
-	}
-
-	// Method to start the fall
-	void startFalling(float groundY, const glm::vec3& playerPos) {
-		// Check state BEFORE accessing initialPosition etc.
-		if (state != BookState::ON_SHELF) {
-			return; // Already falling or in another state
-		}
-
-		state = BookState::FALLING;
-		fallStartTime = (float)glfwGetTime(); // Cast to float
-
-		// --- Calculate Landing Position (End Point) ---
-		glm::vec3 endPosition;
-		endPosition.y = groundY + (scale.y * 0.5f); // Land flat based on book scale
-
-		// Calculate direction away from player towards the book's spawn point
-		// Flatten the direction to the XZ plane to avoid influencing landing Y
-		glm::vec3 dirToBook = playerPos - initialPosition;
-		dirToBook.y = 0.0f; // Ignore vertical difference for landing direction
-
-		// Handle case where player is exactly at the spawn point (or very close)
-		float distSq = dot(dirToBook, dirToBook); // Use dot product for squared length
-		if (distSq < 0.01f) { // If too close, pick a default direction (e.g., positive Z)
-			dirToBook = glm::vec3(0.0f, 0.0f, 1.0f);
-		}
-		else {
-			dirToBook = normalize(dirToBook); // Normalize the direction vector
-		}
-
-		// Define how far the book should land
-		float landingDistance = 3.0f; // <-- ADJUST this value to throw further
-		float randomSpread = 0.75f; // <-- Randomness around the target landing spot
-
-		// Calculate landing X and Z based on direction and distance + randomness
-		endPosition.x = initialPosition.x + dirToBook.x * landingDistance + randFloat(-randomSpread, randomSpread);
-		endPosition.z = initialPosition.z + dirToBook.z * landingDistance + randFloat(-randomSpread, randomSpread);
-
-
-		// --- Calculate Control Point for the Arc ---
-		glm::vec3 controlPoint = (initialPosition + endPosition) * 0.5f; // Midpoint between start and end
-		// Make the arc higher relative to the start position
-		controlPoint.y = initialPosition.y + 3.0f; // <-- ADJUST arc height (relative to start)
-		// Add some sideways deviation to the arc's peak
-		controlPoint.x += randFloat(-1.5f, 1.5f); // More horizontal arc randomness
-
-		// --- Create the Spline ---
-		float fallDuration = 0.4f; // <-- ADJUST fall duration if needed
-		delete fallSpline;
-		fallSpline = new Spline(initialPosition, controlPoint, endPosition, fallDuration);
-
-		// Debug output (optional)
-		// cout << "Book Falling: Start=" << initialPosition.x << "," << initialPosition.y << "," << initialPosition.z
-		//      << " End=" << endPosition.x << "," << endPosition.y << "," << endPosition.z
-		//      << " Dir=" << dirToBook.x << "," << dirToBook.z << endl;
-	}
-
-	// Method to update the book's state and position
-	void update(float deltaTime, float groundY) {
-		switch (state) {
-		case BookState::FALLING:
-			if (fallSpline) {
-				fallSpline->update(deltaTime);
-				position = fallSpline->getPosition();
-				// Optional: Add rotation during fall here
-
-				if (fallSpline->isDone()) {
-					state = BookState::LANDED; // Transition to landed state
-					position.y = groundY + (scale.y * 0.5f); // Ensure it's exactly on the ground
-					delete fallSpline;
-					fallSpline = nullptr;
-					// Set orientation flat on the ground if needed
-					orientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f); // Reset orientation or calculate landing angle
-				}
-			}
-			break;
-
-		case BookState::LANDED:
-			// Optional delay before opening?
-			state = BookState::OPENING; // Immediately start opening after landing
-			break;
-
-		case BookState::OPENING:
-			openAngle += openSpeed * deltaTime;
-			if (openAngle >= maxOpenAngle) {
-				openAngle = maxOpenAngle;
-				state = BookState::OPENED;
-			}
-			break;
-
-		case BookState::OPENED:
-			// Book remains open, orb is visible
-			break;
-
-		case BookState::ON_SHELF:
-		default:
-			// Do nothing
-			break;
-		}
-	}
-};
-
-class Collectible {
-public:
-	AssimpModel* model; // Will always be the sphere model
-	glm::vec3 position; // CURRENT position (animated during levitation)
-	float scale;
-	glm::vec3 AABBmin;
-	glm::vec3 AABBmax;
-	bool collected;
-	glm::vec3 color;
-
-	// --- Levitation Members ---
-	OrbState state = OrbState::SPAWNING; // Start in SPAWNING state
-	glm::vec3 spawnPosition;             // Where the orb initially appears
-	glm::vec3 idlePosition;              // Target position after levitating
-	float levitationHeight = 0.6f;       // How far up it moves
-	float levitationStartTime = 0.0f;
-	float levitationDuration = 0.75f;     // Duration of the levitation animation (seconds)
-
-
-	// Updated constructor for Orbs
-	Collectible(AssimpModel* model, const glm::vec3& spawnPos, const float scale, const glm::vec3& clr)
-		: model(model),
-		position(spawnPos), // Initial position is spawn position
-		scale(scale),
-		collected(false),
-		color(clr),
-		state(OrbState::LEVITATING), // Immediately start levitating after spawn
-		spawnPosition(spawnPos)
-	{
-		// Calculate target idle position
-		idlePosition = spawnPosition + glm::vec3(0.0f, levitationHeight, 0.0f);
-
-		// Record start time for animation
-		levitationStartTime = glfwGetTime();
-
-		// Initial AABB calculation (based on spawn position initially)
-		updateAABB(); // Use a helper function for AABB updates
-	}
-
-	// Helper function to update AABB based on current position
-	void updateAABB() {
-		glm::vec3 localMin = model->getBoundingBoxMin();
-		glm::vec3 localMax = model->getBoundingBoxMax();
-		localMin *= scale;
-		localMax *= scale;
-		AABBmin = localMin + position; // Use current position
-		AABBmax = localMax + position; // Use current position
-	}
-
-	// Function to update levitation animation
-	void updateLevitation(float currentTime) {
-		if (state == OrbState::LEVITATING) {
-			float elapsedTime = currentTime - levitationStartTime;
-			float t = glm::clamp(elapsedTime / levitationDuration, 0.0f, 1.0f);
-
-			// Apply an easing function for smoother start/end (optional)
-			// t = glm::sineEaseInOut(t); // Example using easing functions (requires #include <glm/gtx/easing.hpp>)
-			t = t * t * (3.0f - 2.0f * t); // Manual smoothstep calculation
-
-			// Interpolate position
-			position = glm::mix(spawnPosition, idlePosition, t);
-
-			// Update AABB as the orb moves
-			updateAABB();
-
-			// Check if animation finished
-			if (t >= 1.0f) {
-				state = OrbState::IDLE;
-				position = idlePosition; // Ensure it's exactly at the target
-				updateAABB();           // Final AABB update
-				// std::cout << "Orb reached IDLE state." << std::endl; // Debug output
-			}
-		}
-	}
-};
-
 class Application : public EventCallbacks {
-
 public:
 	std::shared_ptr<Player> player;
 	WindowManager * windowManager = nullptr;
 
 	bool windowMaximized = false;
-	int window_width = 640;
-	int window_height = 480;
+	int window_width = Config::DEFAULT_WINDOW_WIDTH;
+	int window_height = Config::DEFAULT_WINDOW_HEIGHT;
 
 	// Our shader programs
 	std::shared_ptr<Program> texProg, hudProg, prog2, assimptexProg;
@@ -320,7 +68,7 @@ public:
 	int g_GiboLen = 0;
 	GLuint GroundVertexArrayID = 0; // Initialize to 0
 	float groundSize = 20.0f; // Half-size of the main library ground square
-	float groundY = 0.0f;     // Y level for all ground planes
+	float groundY = Config::GROUND_Y_LEVEL;     // Y level for all ground planes
 
 	struct WallObject {
 		float length;
@@ -410,28 +158,23 @@ public:
 	int change_mat = 0;
 
 	// vec3 characterMovement = vec3(0, 0, 0);
-	vec3 manScale = vec3(0.01, 0.01, 0.01);
-	vec3 manMoveDir = vec3(sin(radians(0.0f)), 0, cos(radians(0.0f)));
+	glm::vec3 manScale = glm::vec3(0.01, 0.01, 0.01);
+	glm::vec3 manMoveDir = glm::vec3(sin(radians(0.0f)), 0, cos(radians(0.0f)));
 
 	// initial position of light cycles
-	vec3 start_lightcycle1_pos = vec3(-384, -11, 31);
-	vec3 start_lightcycle2_pos = vec3(-365, -11, 9.1);
+	glm::vec3 start_lightcycle1_pos = glm::vec3(-384, -11, 31);
+	glm::vec3 start_lightcycle2_pos = glm::vec3(-365, -11, 9.1);
 
 
-	float theta = 0.0f; // controls yaw
-	// float theta = radians(90.0f); // controls yaw
-	// float phi = 0.0f; // controls pitch
-	float phi = radians(-30.0f); // controls pitch
-
-	float radius = 5.0f;
+	float theta = glm::radians(Config::CAMERA_DEFAULT_THETA_DEGREES); // controls yaw
+	float phi = glm::radians(Config::CAMERA_DEFAULT_PHI_DEGREES); // controls pitch
+	float radius = Config::CAMERA_DEFAULT_RADIUS;
 
 	float wasd_sens = 0.5f;
 
-	vec3 eye = vec3(-6, 1.03, 0); /*MINI MAP*/
-	// vec3 lookAt = vec3(-1.58614, -0.9738, 0.0436656);
-	vec3 lookAt = vec3(0, 0, 0); /*MINI MAP*/
-  //not sure which to keep, main had lookAt = vec3(0, 0, 0)
-	vec3 up = vec3(0, 1, 0);
+	glm::vec3 eye = glm::vec3(-6, 1.03, 0); /*MINI MAP*/
+	glm::vec3 lookAt = glm::vec3(0, 0, 0); /*MINI MAP*/
+	glm::vec3 up = glm::vec3(0, 1, 0);
 	bool CULL = false;
 
 	vec3 right = normalize(cross(manMoveDir, up));
@@ -447,11 +190,6 @@ public:
 
 	bool cursor_visable = true;
 
-	enum Man_State {
-		WALKING,
-		STANDING,
-	};
-
 	//Movement Variables (Maybe move?)
 	bool movingForward = false;
 	bool movingBackward = false;
@@ -460,7 +198,7 @@ public:
 
 	float characterRotation = 0.0f;
 
-	Man_State manState = STANDING;
+	Man_State manState = Man_State::STANDING;
 
 	LibraryGen *library = new LibraryGen();
 	Grid<LibraryGen::Cell> grid;
@@ -495,7 +233,7 @@ public:
 		}
 
 		if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_W) != GLFW_RELEASE) {
-			manState = WALKING;
+			manState = Man_State::WALKING;
 
 			//Movement Variable
 			movingForward = true;
@@ -504,12 +242,12 @@ public:
 				cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
 			}
 		} else if (key == GLFW_KEY_W && action == GLFW_RELEASE) {
-			manState = STANDING;
+			manState = Man_State::STANDING;
 			//Movement Variable
 			movingForward = false;
 		}
 		if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_S) != GLFW_RELEASE) {
-			manState = WALKING;
+			manState = Man_State::WALKING;
 
 			//Movement Variable
 			movingBackward = true;
@@ -520,12 +258,12 @@ public:
 			}
 
 		} else if (key == GLFW_KEY_S && action == GLFW_RELEASE) {
-			manState = STANDING;
+			manState = Man_State::STANDING;
 			//Movement Variable
 			movingBackward = false;
 		}
 		if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_A) != GLFW_RELEASE) {
-			manState = WALKING;
+			manState = Man_State::WALKING;
 
 			//Movement Variable
 			movingLeft = true;
@@ -536,12 +274,12 @@ public:
 			}
 
 		} else if (key == GLFW_KEY_A && action == GLFW_RELEASE) {
-			manState = STANDING;
+			manState = Man_State::STANDING;
 			//Movement Variable
 			movingLeft = false;
 		}
 		if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_D) != GLFW_RELEASE) {
-			manState = WALKING;
+			manState = Man_State::WALKING;
 
 			//Movement Variable
 			movingRight = true;
@@ -551,7 +289,7 @@ public:
 				cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
 			}
 		} else if (key == GLFW_KEY_D && action == GLFW_RELEASE) {
-			manState = STANDING;
+			manState = Man_State::STANDING;
 			//Movement Variable
 			movingRight = false;
 		}
@@ -577,24 +315,14 @@ public:
 
 	void scrollCallback(GLFWwindow *window, double deltaX, double deltaY)
 	{
+			theta = theta + deltaX * glm::radians(Config::CAMERA_SCROLL_SENSITIVITY_DEGREES);
+			phi = phi - deltaY * glm::radians(Config::CAMERA_SCROLL_SENSITIVITY_DEGREES);
 
-			float sensitivity = 0.7f;
-
-			theta = theta + deltaX * sensitivity;
-
-			phi = phi - deltaY * sensitivity;
-
-			if (phi > radians(-10.0f))
-			{
-				phi = radians(-10.0f);
+			if (phi > glm::radians(Config::CAMERA_PHI_MAX_DEGREES)) {
+				phi = glm::radians(Config::CAMERA_PHI_MAX_DEGREES);
 			}
-			// if (phi > radians(80.0f))
-			// {
-			// 	phi = radians(80.0f);
-			// }
-			if (phi < radians(-80.0f))
-			{
-				phi = radians(-80.0f);
+			if (phi < glm::radians(Config::CAMERA_PHI_MIN_DEGREES)) {
+				phi = glm::radians(Config::CAMERA_PHI_MIN_DEGREES);
 			}
 
 			updateCameraVectors();
@@ -613,13 +341,11 @@ public:
 		lastX = xpos;
 		lastY = ypos;
 
-		float mouseSensitivity = 0.005f;
+		theta = theta + deltaX * Config::CAMERA_MOUSE_SENSITIVITY;
+		phi = phi + deltaY * Config::CAMERA_MOUSE_SENSITIVITY;
 
-		theta = theta + deltaX * mouseSensitivity;
-		phi = phi + deltaY * mouseSensitivity;
-		if (phi > radians(-10.0f))
-		{
-			phi = radians(-10.0f);
+		if (phi > glm::radians(Config::CAMERA_PHI_MAX_DEGREES)) {
+			phi = glm::radians(Config::CAMERA_PHI_MAX_DEGREES);
 		}
 		if (phi < radians(-80.0f))
 		{
@@ -691,7 +417,7 @@ public:
 		texProg->addUniform("MatSpec");
 		texProg->addUniform("MatShine");
 		texProg->addUniform("numLights");
-		for (int i = 0; i < NUM_LIGHTS; i++) {
+		for (int i = 0; i < Config::NUM_LIGHTS; i++) {
 			texProg->addUniform("lightPos[" + to_string(i) + "]");
 			texProg->addUniform("lightColor[" + to_string(i) + "]");
 			texProg->addUniform("lightIntensity[" + to_string(i) + "]");
@@ -714,7 +440,7 @@ public:
 		prog2->addUniform("MatDif");
 		prog2->addUniform("MatSpec");
 		prog2->addUniform("MatShine");
-		for (int i = 0; i < NUM_LIGHTS; i++) {
+		for (int i = 0; i < Config::NUM_LIGHTS; i++) {
 			prog2->addUniform("lightPos[" + to_string(i) + "]");
 			prog2->addUniform("lightColor[" + to_string(i) + "]");
 			prog2->addUniform("lightIntensity[" + to_string(i) + "]");
@@ -748,14 +474,14 @@ public:
 		assimptexProg->addAttribute("vertTex");
 		assimptexProg->addAttribute("boneIds");
 		assimptexProg->addAttribute("weights");
-		for (int i = 0; i < MAX_BONES; i++) {
+		for (int i = 0; i < Config::MAX_BONES; i++) {
 			assimptexProg->addUniform("finalBonesMatrices[" + to_string(i) + "]");
 		}
 		assimptexProg->addUniform("MatAmb");
 		assimptexProg->addUniform("MatDif");
 		assimptexProg->addUniform("MatSpec");
 		assimptexProg->addUniform("MatShine");
-		for (int i = 0; i < NUM_LIGHTS; i++) {
+		for (int i = 0; i < Config::NUM_LIGHTS; i++) {
 			assimptexProg->addUniform("lightPos[" + to_string(i) + "]");
 			assimptexProg->addUniform("lightColor[" + to_string(i) + "]");
 			assimptexProg->addUniform("lightIntensity[" + to_string(i) + "]");
@@ -1399,6 +1125,8 @@ public:
 		// Animation update
 		/*
 		stickfigure_animator->UpdateAnimation(1.5f * animTime);
+		if (manState == Man_State::WALKING) {
+			stickfigure_animator->SetCurrentAnimation(stickfigure_anim);
 		if (manState == WALKING) {
 		//stickfigure_animator->SetCurrentAnimation(stickfigure_anim);
 		}
@@ -1407,7 +1135,7 @@ public:
 		}
 		// Update bone matrices
 		vector<glm::mat4> transforms = stickfigure_animator->GetFinalBoneMatrices();
-		int numBones = std::min((int)transforms.size(), MAX_BONES);
+		int numBones = std::min((int)transforms.size(), Config::MAX_BONES);
 		for (int i = 0; i < numBones; ++i) {
 			string uniformName = "finalBonesMatrices[" + std::to_string(i) + "]";
 			glUniformMatrix4fv(curS->getUniform(uniformName), 1, GL_FALSE, value_ptr(transforms[i]));
@@ -2132,13 +1860,13 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 						// --- ADJUST Spawn Height ---
 						float minSpawnHeight = 1.8f; // Minimum height above groundY
 						float maxSpawnHeight = 2.8f; // Maximum height above groundY
-						float spawnHeight = groundY + randFloat(minSpawnHeight, maxSpawnHeight); // <-- ADJUSTED height range
+						float spawnHeight = groundY + Config::randFloat(minSpawnHeight, maxSpawnHeight); // <-- ADJUSTED height range
 
 						glm::vec3 spawnPos = glm::vec3(shelfWorldX, spawnHeight, shelfWorldZ);
 
 						glm::vec3 bookScale = glm::vec3(0.7f, 0.9f, 0.2f);
-						glm::quat bookOrientation = glm::angleAxis(glm::radians(randFloat(-10.f, 10.f)), glm::vec3(0, 1, 0));
-						glm::vec3 orbColor = glm::vec3(randFloat(0.2f, 1.0f), randFloat(0.2f, 1.0f), randFloat(0.2f, 1.0f));
+						glm::quat bookOrientation = glm::angleAxis(glm::radians(Config::randFloat(-10.f, 10.f)), glm::vec3(0, 1, 0));
+						glm::vec3 orbColor = glm::vec3(Config::randFloat(0.2f, 1.0f), Config::randFloat(0.2f, 1.0f), Config::randFloat(0.2f, 1.0f));
 
 						books.emplace_back(cube, sphere, spawnPos, bookScale, bookOrientation, orbColor);
 
@@ -2721,7 +2449,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		hudProg->bind();
 		glUniformMatrix4fv(hudProg->getUniform("projection"), 1, GL_FALSE, value_ptr(projection));
 		glUniformMatrix4fv(hudProg->getUniform("model"), 1, GL_FALSE, value_ptr(model));
-		glUniform1f(hudProg->getUniform("healthPercent"), player->getHitpoints() / PLAYER_HP_MAX); // Pass health value
+		glUniform1f(hudProg->getUniform("healthPercent"), player->getHitpoints() / Config::PLAYER_HP_MAX); // Pass health value
 		glUniform1f(hudProg->getUniform("BarStartX"), healthBarStartX); // Pass max health value
 		glUniform1f(hudProg->getUniform("BarWidth"), heatlhBarWidth); // Pass max health value
 
@@ -2843,20 +2571,20 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		// 	vec3(0, 0, 0)                        // Unused or ambient fill
 		// };
 
-		vec3 lightPositions[NUM_LIGHTS] = {
+		vec3 lightPositions[Config::NUM_LIGHTS] = {
 			libraryCenter + vec3(0, 15, 0),      // Library light overhead
 			bossAreaCenter + vec3(0, 10, 0),     // Boss area light overhead
 			player->getPosition() + vec3(0, 1, 0.5), // Small light near player (optional)
 			vec3(0, 0, 0)                        // Unused or ambient fill
 		};
 
-		vec3 lightColors[NUM_LIGHTS] = {
+		vec3 lightColors[Config::NUM_LIGHTS] = {
 			vec3(1.0f, 1.0f, 0.9f), // Slightly warm white
 			vec3(0.8f, 0.6f, 1.0f), // Dim purple/blue
 			vec3(0.3f, 0.3f, 0.3f),
 			vec3(0.1f, 0.1f, 0.1f)
 		};
-		float lightIntensities[NUM_LIGHTS] = {
+		float lightIntensities[Config::NUM_LIGHTS] = {
 			1.5f, // Bright library
 			0.8f, // Dimmer boss area
 			0.5f, // Player light
@@ -3009,8 +2737,8 @@ int main(int argc, char *argv[])
 
 	std::shared_ptr<Player> playerPtr = std::make_shared<Player>(
 		vec3(0, 0, 0),
-		PLAYER_HP_MAX,
-		PLAYER_MOVE_SPEED,
+		Config::PLAYER_HP_MAX,
+		Config::PLAYER_MOVE_SPEED,
 		application->sphere,
 		vec3(1.0f, 1.0f, 1.0f),
 		vec3(0.0f, 0.0f, 0.0f)
