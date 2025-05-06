@@ -30,58 +30,85 @@ void Pathfinder::resetNodes() {
 }
 
 std::vector<glm::ivec2> Pathfinder::findPath(const glm::ivec2& start, const glm::ivec2& end, std::function<PathCost(Node*, Node*)> costFunc) {
+    std::cout << "[Pathfinder] Starting pathfinding from (" << start.x << ", " << start.y 
+              << ") to (" << end.x << ", " << end.y << ")" << std::endl;
 
-    resetNodes(); // Reset the nodes before finding a new path
-    queue.clear(); // Clear the priority queue
-    closed.clear(); // Clear the closed set
+    resetNodes(); 
+    queue.clear(); 
+    closed.clear(); 
 
     if (!grid.inBounds(start) || !grid.inBounds(end)) {
-        std::cerr << "Start or end position out of bounds!" << std::endl;
+        std::cerr << "[Pathfinder] Error: Start or end position out of bounds!" << std::endl;
         return {};
     }
 
     Node& startNode = grid[start];
     startNode.cost = 0;
-    queue.enqueue(&startNode, 0); // Add the start node to the queue
+    queue.enqueue(&startNode, 0); 
+    std::cout << "[Pathfinder] Enqueued start node at (" << start.x << ", " << start.y << ")" << std::endl;
 
-    // Loop until we find the path or exhaust the open set
     while (queue.count() > 0) {
-        Node node = queue.dequeue(); // Get the node with the lowest cost
-        Node* nodePtr = &grid[node.position];
-        closed.insert(nodePtr); // Mark the node as closed
+        Node* nodePtr = queue.dequeue();
+        if (!nodePtr) {
+            std::cerr << "[Pathfinder] Queue returned nullptr! Aborting." << std::endl;
+            break;
+        }
 
-        if (node.position == end) {
-            return reconstructPath(nodePtr); // Reconstruct the path if we reached the end
+        closed.insert(nodePtr); 
+
+        std::cout << "[Pathfinder] Dequeued node (" << nodePtr->position.x << ", " << nodePtr->position.y 
+                  << "), cost = " << nodePtr->cost << std::endl;
+
+        if (nodePtr->position == end) {
+            std::cout << "[Pathfinder] Goal reached at (" << nodePtr->position.x << ", " << nodePtr->position.y << ")" << std::endl;
+            return reconstructPath(nodePtr);
         }
 
         for (const auto& offset : neighbors) {
-            glm::ivec2 neighborPos = node.position + offset;
-            if (!grid.inBounds(neighborPos)) continue; // Skip out-of-bounds neighbors
+            glm::ivec2 neighborPos = nodePtr->position + offset;
+            if (!grid.inBounds(neighborPos)) {
+                std::cout << "[Pathfinder] Neighbor (" << neighborPos.x << ", " << neighborPos.y << ") out of bounds, skipping." << std::endl;
+                continue;
+            }
 
             Node* neighbor = &grid[neighborPos];
-            if (closed.find(neighbor) != closed.end()) continue; // Skip closed nodes
+            if (closed.find(neighbor) != closed.end()) {
+                std::cout << "[Pathfinder] Neighbor (" << neighborPos.x << ", " << neighborPos.y << ") already closed, skipping." << std::endl;
+                continue;
+            }
 
             PathCost pathCost = costFunc(nodePtr, neighbor);
-            if (!pathCost.traversable) continue; // Skip non-traversable nodes
+            if (!pathCost.traversable) {
+                std::cout << "[Pathfinder] Neighbor (" << neighborPos.x << ", " << neighborPos.y << ") not traversable, skipping." << std::endl;
+                continue;
+            }
 
-            float newCost = node.cost + pathCost.cost;
+            float newCost = nodePtr->cost + pathCost.cost;
             if (newCost < neighbor->cost) {
-                neighbor->previous = nodePtr; // Set the parent to the current node
-                neighbor->cost = newCost; // Update the cost
+                std::cout << "[Pathfinder] Updating neighbor (" << neighborPos.x << ", " << neighborPos.y 
+                          << ") with new cost " << newCost << std::endl;
+
+                neighbor->previous = nodePtr;
+                neighbor->cost = newCost;
 
                 float existingPriority;
-                if (queue.tryGetPriority(nodePtr, existingPriority)) {
-                    queue.updatePriority(nodePtr, newCost);
+                if (queue.tryGetPriority(neighbor, existingPriority)) {
+                    std::cout << "[Pathfinder] Updating priority of neighbor in queue." << std::endl;
+                    queue.updatePriority(neighbor, newCost);
                 } else {
+                    std::cout << "[Pathfinder] Enqueuing new neighbor (" << neighborPos.x << ", " << neighborPos.y 
+                              << ") with cost " << newCost << std::endl;
                     queue.enqueue(neighbor, neighbor->cost);
                 }
             }
         }
     }
 
-    return {}; // No path found, return an empty vector
-
+    std::cout << "[Pathfinder] No path found." << std::endl;
+    return {};
 }
+
+
 
 std::vector<glm::ivec2> Pathfinder::reconstructPath(Node* node) {
     std::vector<glm::ivec2> result;

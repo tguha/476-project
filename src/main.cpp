@@ -921,9 +921,9 @@ public:
 
 		// Check if sphere model is loaded before creating enemies that use it
 		if (sphere) {
-			enemies.push_back(new Enemy(bossSpawnPos, 200.0f, 0.0f, sphere, enemyCollisionScale, vec3(0.0f))); // <<-- Pass sphere and scale
-			cout << " Enemy placed at boss area: (" << bossSpawnPos.x << ", " << bossSpawnPos.y << ", " << bossSpawnPos.z << ")" << endl;
-			enemies.push_back(new Enemy(libraryCenter + vec3(-5.0f, 0.8f, 8.0f), 50.0f, 0.0f, sphere, enemyCollisionScale, vec3(0.0f))); // <<-- Pass sphere and scale
+			// enemies.push_back(new Enemy(bossSpawnPos, 200.0f, 0.0f, sphere, enemyCollisionScale, vec3(0.0f))); // <<-- Pass sphere and scale
+			// cout << " Enemy placed at boss area: (" << bossSpawnPos.x << ", " << bossSpawnPos.y << ", " << bossSpawnPos.z << ")" << endl;
+			enemies.push_back(new Enemy(libraryCenter + vec3(-5.0f, 0.8f, 8.0f), 50.0f, 2.0f, sphere, enemyCollisionScale, vec3(0.0f))); // <<-- Pass sphere and scale
 		}
 		else {
 			cerr << "ERROR: Sphere model not loaded, cannot create enemies." << endl;
@@ -1799,7 +1799,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 								Model->pushMatrix();
 								Model->loadIdentity();
 								Model->translate(vec3(i, libraryCenter.y, j)); // Position shelf at cell center on ground
-								Model->scale(vec3(2.0f)); // Scale set in class members
+								Model->scale(vec3(2.0f)); // Scale set in grid members
 								setModel(shader, Model);
 								book_shelf1->Draw(shader);
 								Model->popMatrix();
@@ -2115,6 +2115,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 	}
 
 	void updateEnemies(float deltaTime) {
+		static Pathfinder pathfinder(gridSize);
 		// TODO: Add enemy movement, AI, attack logic later
 		for (auto* enemy : enemies) {
 			if (!enemy->isAlive()) enemy->setPosition(enemy->getPosition() - vec3(0.0f, 3.0f, 0.0f));
@@ -2127,23 +2128,25 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			 // enemy->updateAABB(); // Need to add AABB members and update method to Enemy/Entity class
 			 
 			 // Slowly move enemy towards player
-			glm::vec3 enemyPos = enemy->getPosition();
-			glm::vec3 playerPos = player->getPosition();
-			glm::vec3 direction = glm::normalize(playerPos - enemyPos);
-			float speed = 1.0f; // Adjust speed as needed
-			enemy->setPosition(enemyPos + direction * speed * deltaTime);
+			// glm::vec3 enemyPos = enemy->getPosition();
+			// glm::vec3 playerPos = player->getPosition();
+			// glm::vec3 direction = glm::normalize(playerPos - enemyPos);
+			// float speed = 1.0f; // Adjust speed as needed
+			// enemy->setPosition(enemyPos + direction * speed * deltaTime);
 
-				// Check for collision with player
-				glm::vec3 enemyMin = enemy->getAABBMin();
-				glm::vec3 enemyMax = enemy->getAABBMax();
-				glm::vec3 playerMin = player->getAABBMin();
-				glm::vec3 playerMax = player->getAABBMax();
+			// 	// Check for collision with player
+			// 	glm::vec3 enemyMin = enemy->getAABBMin();
+			// 	glm::vec3 enemyMax = enemy->getAABBMax();
+			// 	glm::vec3 playerMin = player->getAABBMin();
+			// 	glm::vec3 playerMax = player->getAABBMax();
 
-				if (checkAABBCollision(enemyMin, enemyMax, playerMin, playerMax)) {
-					// Handle collision with player
-					cout << "Enemy collided with player!" << endl;
-					player->takeDamage(10);
-				}
+			enemy->moveTowardsPlayer(grid, pathfinder, player->getPosition(), deltaTime);
+
+				// if (checkAABBCollision(enemyMin, enemyMax, playerMin, playerMax)) {
+				// 	// Handle collision with player
+				// 	cout << "Enemy collided with player!" << endl;
+				// 	player->takeDamage(10);
+				// }
 		}
 	}
 

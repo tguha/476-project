@@ -43,7 +43,7 @@ class Player : public Entity {
     public:
         Player(const glm::vec3& position, float hitpoints, float moveSpeed, AssimpModel* model, const glm::vec3& scale, const glm::vec3& rotation);
 
-        void move(const glm::vec3& direction);
+        void move(const glm::vec3& direction, float deltaTime) override;
         SpellSlot getActiveSpellSlot();
         void setCurrentSpellSlot(SpellSlot slot);
         Spell getSpellFromSpellSlot(SpellSlot slot);
