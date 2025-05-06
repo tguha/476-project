@@ -38,73 +38,55 @@ std::vector<glm::ivec2> Pathfinder::findPath(const glm::ivec2& start, const glm:
     closed.clear(); 
 
     if (!grid.inBounds(start) || !grid.inBounds(end)) {
-        std::cerr << "[Pathfinder] Error: Start or end position out of bounds!" << std::endl;
         return {};
     }
 
     Node& startNode = grid[start];
     startNode.cost = 0;
     queue.enqueue(&startNode, 0); 
-    std::cout << "[Pathfinder] Enqueued start node at (" << start.x << ", " << start.y << ")" << std::endl;
 
     while (queue.count() > 0) {
         Node* nodePtr = queue.dequeue();
         if (!nodePtr) {
-            std::cerr << "[Pathfinder] Queue returned nullptr! Aborting." << std::endl;
             break;
         }
 
         closed.insert(nodePtr); 
 
-        std::cout << "[Pathfinder] Dequeued node (" << nodePtr->position.x << ", " << nodePtr->position.y 
-                  << "), cost = " << nodePtr->cost << std::endl;
-
         if (nodePtr->position == end) {
-            std::cout << "[Pathfinder] Goal reached at (" << nodePtr->position.x << ", " << nodePtr->position.y << ")" << std::endl;
             return reconstructPath(nodePtr);
         }
 
         for (const auto& offset : neighbors) {
             glm::ivec2 neighborPos = nodePtr->position + offset;
             if (!grid.inBounds(neighborPos)) {
-                std::cout << "[Pathfinder] Neighbor (" << neighborPos.x << ", " << neighborPos.y << ") out of bounds, skipping." << std::endl;
                 continue;
             }
 
             Node* neighbor = &grid[neighborPos];
             if (closed.find(neighbor) != closed.end()) {
-                std::cout << "[Pathfinder] Neighbor (" << neighborPos.x << ", " << neighborPos.y << ") already closed, skipping." << std::endl;
                 continue;
             }
 
             PathCost pathCost = costFunc(nodePtr, neighbor);
             if (!pathCost.traversable) {
-                std::cout << "[Pathfinder] Neighbor (" << neighborPos.x << ", " << neighborPos.y << ") not traversable, skipping." << std::endl;
                 continue;
             }
 
             float newCost = nodePtr->cost + pathCost.cost;
             if (newCost < neighbor->cost) {
-                std::cout << "[Pathfinder] Updating neighbor (" << neighborPos.x << ", " << neighborPos.y 
-                          << ") with new cost " << newCost << std::endl;
-
                 neighbor->previous = nodePtr;
                 neighbor->cost = newCost;
 
                 float existingPriority;
                 if (queue.tryGetPriority(neighbor, existingPriority)) {
-                    std::cout << "[Pathfinder] Updating priority of neighbor in queue." << std::endl;
                     queue.updatePriority(neighbor, newCost);
                 } else {
-                    std::cout << "[Pathfinder] Enqueuing new neighbor (" << neighborPos.x << ", " << neighborPos.y 
-                              << ") with cost " << newCost << std::endl;
                     queue.enqueue(neighbor, neighbor->cost);
                 }
             }
         }
     }
-
-    std::cout << "[Pathfinder] No path found." << std::endl;
     return {};
 }
 

@@ -17,6 +17,7 @@ class Enemy : public Entity {
         bool isHit() const;
         void setHit(bool hit);
         void moveTowardsPlayer(Grid<LibraryGen::Cell>& grid, Pathfinder& pathfinder, const glm::vec3& playerPosition, float deltaTime);
+        void attack(float damage, float deltaTime);
 
     // --- Override virtual functions if needed ---
     // virtual void move(const glm::vec3& direction) override; // Example override

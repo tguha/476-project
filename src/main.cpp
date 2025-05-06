@@ -2134,13 +2134,23 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			// float speed = 1.0f; // Adjust speed as needed
 			// enemy->setPosition(enemyPos + direction * speed * deltaTime);
 
-			// 	// Check for collision with player
-			// 	glm::vec3 enemyMin = enemy->getAABBMin();
-			// 	glm::vec3 enemyMax = enemy->getAABBMax();
-			// 	glm::vec3 playerMin = player->getAABBMin();
-			// 	glm::vec3 playerMax = player->getAABBMax();
+				// // Check for collision with player
+				// glm::vec3 enemyMin = enemy->getAABBMin();
+				// glm::vec3 enemyMax = enemy->getAABBMax();
+				// glm::vec3 playerMin = player->getAABBMin();
+				// glm::vec3 playerMax = player->getAABBMax();
 
 			enemy->moveTowardsPlayer(grid, pathfinder, player->getPosition(), deltaTime);
+
+			static float lastDamageTime = 0.0f; // Track the last time damage was applied
+			if (distance(enemy->getPosition(), player->getPosition()) < 1.0f) {
+				float currentTime = glfwGetTime();
+				if (currentTime - lastDamageTime >= 1.0f) { // Check if 1 second has passed
+					player->takeDamage(10); // Apply damage to the player
+					lastDamageTime = currentTime; // Update the last damage time
+					std::cout << "Player took damage! Current HP: " << player->getHitpoints() << std::endl;
+				}
+			}
 
 				// if (checkAABBCollision(enemyMin, enemyMax, playerMin, playerMax)) {
 				// 	// Handle collision with player

@@ -10,6 +10,7 @@ class Entity {
         glm::vec3 scale;
         glm::vec3 rotation;
         float hitpoints;
+        float currentHitpoints;
         float moveSpeed;
         bool alive;
 
