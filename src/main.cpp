@@ -799,7 +799,7 @@ public:
 
 		// Initialize particle alpha texture
 		particleAlphaTex = make_shared<Texture>();
-		particleAlphaTex->setFilename(resourceDirectory + "/alpha.bmp");
+		particleAlphaTex->setFilename(resourceDirectory + "/alpha.png");
 		particleAlphaTex->init();
 		particleAlphaTex->setUnit(1);
 		particleAlphaTex->setWrapModes(GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE);
@@ -1424,9 +1424,10 @@ public:
 		glUniform1i(curS->getUniform("hasTexture"), 1);
 		setModel(curS, Model);
 		stickfigure_running->Draw(curS);
-
-		Model->popMatrix();
 		curS->unbind();
+
+		drawParticles(particleSystem, particleProg, Model);
+		Model->popMatrix();
 	}
 
 
@@ -2659,7 +2660,29 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		hudProg->unbind();
 	}
 
+	// Draw particles
+	void drawParticles(shared_ptr<particleGen> gen, shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
+		Model->pushMatrix();
+			shader->bind();
 
+			// Enable blending for transparency
+			glEnable(GL_BLEND);
+			glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+
+			// Disable depth writing but keep depth testing
+			//glDepthMask(GL_FALSE);
+
+			glUniformMatrix4fv(shader->getUniform("M"), 1, GL_FALSE, value_ptr(Model->topMatrix()));
+			gen->drawMe(shader);
+
+			// Restore state
+			//glDepthMask(GL_TRUE);
+			glDisable(GL_BLEND);
+
+			shader->unbind();
+			
+		Model->popMatrix();
+	}
 
 	void render(float frametime, float animTime) {
 		// Get current frame buffer size.
@@ -2760,6 +2783,15 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			assimptexProg->unbind();
 		}
 
+		if (particleProg) {
+			particleProg->bind();
+			glPointSize(10.0f);
+			glUniformMatrix4fv(particleProg->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
+			glUniformMatrix4fv(particleProg->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
+			particleAlphaTex->bind(particleProg->getUniform("alphaTexture"));
+			particleProg->unbind();
+		}
+
 		// --- Draw Scene Elements ---
 		// ORDER MATTERS for transparency, but with opaque objects and depth testing, it's less critical.
 		// Drawing grounds first is logical.
@@ -2785,15 +2817,6 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		drawOrbs(prog2, Model);
 
 		drawProjectiles(prog2, Model);
-
-		// Draw particles
-		particleProg->bind();
-		glUniformMatrix4fv(particleProg->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
-		glUniformMatrix4fv(particleProg->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
-		glUniformMatrix4fv(particleProg->getUniform("M"), 1, GL_FALSE, value_ptr(Model->topMatrix()));
-		particleAlphaTex->bind(particleProg->getUniform("alphaTexture"));
-		particleSystem->drawMe(particleProg);
-		particleProg->unbind();
 
 		// 7. Draw Player (often drawn last or near last)
 		drawPlayer(assimptexProg, Model, animTime);

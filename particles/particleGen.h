@@ -11,7 +11,7 @@
 
 using namespace glm;
 using namespace std;
-const int MAX_PARTICLES = 8100;
+const int MAX_PARTICLES = 100;
 
 class ParticleSorter {
 public:
