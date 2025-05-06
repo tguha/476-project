@@ -10,7 +10,7 @@
 #include "../src/Program.h"
 #include "../src/Texture.h"
 #include "../src/Entity.h"
-
+#include "../src/Config.h"
 
 /**float randFloat(float l, float h)
 {
@@ -49,21 +49,21 @@ void Particle::load(vec3 start, float r_low, float r_high, float g_low, float g_
 void Particle::rebirth(float t, vec3 start, float r_low, float r_high, float g_low, 
 	float g_high, float b_low, float b_high, float scale_low, float scale_high)
 {
-	charge = randFloat(0.0f, 1.0f) < 0.5 ? -1.0f : 1.0f;	
+	charge = Config::randFloat(0.0f, 1.0f) < 0.5 ? -1.0f : 1.0f;
 	m = 1.0f;
-  	d = randFloat(0.0f, 0.02f);
+  	d = Config::randFloat(0.0f, 0.02f);
 	x = startPos;
-	v.x = randFloat(-0.1f, 0.1f);
-	v.y = randFloat(-0.1f, 0.1f);
-	v.z = randFloat(-0.1f, 0.1f);
-	lifespan = randFloat(1.0f, 2.7f); 
+	v.x = Config::randFloat(-0.1f, 0.1f);
+	v.y = Config::randFloat(-0.1f, 0.1f);
+	v.z = Config::randFloat(-0.1f, 0.1f);
+	lifespan = Config::randFloat(1.0f, 2.7f);
 	tEnd = t + lifespan;
-	scale = randFloat(scale_low, scale_high);
+	scale = Config::randFloat(scale_low, scale_high);
 
 	// Set color on rebirth
-	color.r = randFloat(r_low, r_high);
-	color.g = randFloat(g_low, g_high);
-	color.b = randFloat(b_low, b_high);
+	color.r = Config::randFloat(r_low, r_high);
+	color.g = Config::randFloat(g_low, g_high);
+	color.b = Config::randFloat(b_low, b_high);
 	color.a = 1.0f;
 }
 
