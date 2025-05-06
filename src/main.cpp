@@ -37,9 +37,8 @@ using namespace glm;
 #define NUM_LIGHTS 4
 #define MAX_BONES 200
 
-
-
 #define SHOW_HEALTHBAR 1 // 1 = show health bar, 0 = hide health bar
+#define ENEMY_MOVEMENT 1 // 1 = enable enemy movement, 0 = disable enemy movement
 
 
 float randFloat(float l, float h) {
@@ -2139,8 +2138,10 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 				// glm::vec3 enemyMax = enemy->getAABBMax();
 				// glm::vec3 playerMin = player->getAABBMin();
 				// glm::vec3 playerMax = player->getAABBMax();
-
+			
+			#if ENEMY_MOVEMENT
 			enemy->moveTowardsPlayer(grid, pathfinder, player->getPosition(), deltaTime);
+			#endif
 
 			static float lastDamageTime = 0.0f; // Track the last time damage was applied
 			if (distance(enemy->getPosition(), player->getPosition()) < 1.0f) {
