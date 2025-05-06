@@ -392,6 +392,8 @@ public:
 	Animation *stickfigure_anim, *stickfigure_idle;
 	Animator *stickfigure_animator;
 
+	AssimpModel *CatWizard;
+
 	float AnimDeltaTime = 0.0f;
 	float AnimLastFrame = 0.0f;
 
@@ -825,9 +827,13 @@ public:
  		string errStr;
 
 		// load the walking character model
-		stickfigure_running = new AssimpModel(resourceDirectory + "/Vanguard/Vanguard.fbx");
-		stickfigure_anim = new Animation(resourceDirectory + "/Vanguard/Vanguard.fbx", stickfigure_running, 0);
-		stickfigure_idle = new Animation(resourceDirectory + "/Vanguard/Vanguard.fbx", stickfigure_running, 1);
+		stickfigure_running = new AssimpModel(resourceDirectory + "/CatWizard/CatWizardOrange.fbx");
+		//stickfigure_anim = new Animation(resourceDirectory + "/CatWizard/untitled.fbx", stickfigure_running, 0);
+		//stickfigure_idle = new Animation(resourceDirectory + "/Vanguard/Vanguard.fbx", stickfigure_running, 1);
+
+		//TEST Load the cat
+		//CatWizard = new AssimpModel(resourceDirectory + "/CatWizard/CatWizardStill.fbx");
+
 
 		// --- Calculate Player Collision Box NOW that model is loaded ---
 		calculatePlayerLocalAABB();
@@ -1351,21 +1357,21 @@ public:
 	}
 
 	void drawPlayer(shared_ptr<Program> curS, shared_ptr<MatrixStack> Model, float animTime) {
-		if (!curS || !Model || !stickfigure_running || !stickfigure_animator || !stickfigure_anim || !stickfigure_idle) {
+		if (!curS || !Model || !stickfigure_running || !stickfigure_animator /* || !stickfigure_anim /*|| !stickfigure_idle*/) {
 			cerr << "Error: Null pointer in drawPlayer." << endl;
 			return;
 		}
 		curS->bind();
 
 		// Animation update
+		/*
 		stickfigure_animator->UpdateAnimation(1.5f * animTime);
 		if (manState == WALKING) {
-			stickfigure_animator->SetCurrentAnimation(stickfigure_anim);
+		//stickfigure_animator->SetCurrentAnimation(stickfigure_anim);
 		}
 		else {
-			stickfigure_animator->SetCurrentAnimation(stickfigure_idle);
+			//stickfigure_animator->SetCurrentAnimation(stickfigure_idle);
 		}
-
 		// Update bone matrices
 		vector<glm::mat4> transforms = stickfigure_animator->GetFinalBoneMatrices();
 		int numBones = std::min((int)transforms.size(), MAX_BONES);
@@ -1373,16 +1379,16 @@ public:
 			string uniformName = "finalBonesMatrices[" + std::to_string(i) + "]";
 			glUniformMatrix4fv(curS->getUniform(uniformName), 1, GL_FALSE, value_ptr(transforms[i]));
 		}
-
+		*/
 		// Model matrix setup
 		Model->pushMatrix();
 		Model->loadIdentity();
 		// Model->translate(characterMovement); // Use final player position
 		Model->translate(player->getPosition());
 		// *** USE CAMERA ROTATION FOR MODEL ***
-		// Model->rotate(manRot.y, vec3(0, 1, 0)); // <<-- FIXED ROTATION
-		Model->rotate(player->getRotY(), vec3(0, 1, 0)); // <<-- FIXED ROTATION
-		Model->scale(manScale);
+		Model->rotate(glm::radians(-90.0f), vec3(1.0f, 0.0f, 0.0f));
+		Model->rotate(player->getRotY() + 3.14f, vec3(0, 0, 1)); // <<-- FIXED ROTATION
+		Model->scale(1.0f);
 
 		// Update VISUAL bounding box (can be different from collision box if needed)
 		// Using the same AABB calculation logic as before for consistency
@@ -1579,6 +1585,24 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		simpleShader->unbind();
 	}
 
+	void drawCat(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
+		if (!CatWizard) return; //Need Cat Model
+		shader->bind(); //Texture 
+		if (shader == assimptexProg) {
+			glUniform1i(shader->getUniform("hasTexture"), 1);
+		}
+
+		Model->pushMatrix();
+			Model->loadIdentity();
+			Model->translate(vec3(0.0f, 0.0f, 0.0f)); // Position at origin
+			//Model->scale(vec3(0.25f));
+			Model->rotate(glm::radians(-90.0f), vec3(1.0f, 0.0f, 0.0f));
+			setModel(shader, Model);
+			CatWizard->Draw(shader);
+		Model->popMatrix();
+		shader->unbind();
+
+	}
 
 	void drawEnemies(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		if (!sphere) return; // Need the sphere model
@@ -2760,7 +2784,9 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 		// 7. Draw Player (often drawn last or near last)
 		drawPlayer(assimptexProg, Model, animTime);
+		
 
+		drawCat(assimptexProg, Model);
 		// drawSkybox(assimptexProg, Model); // Draw the skybox last
 
 		drawBorderWalls(assimptexProg, Model); // Draw the borders
