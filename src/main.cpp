@@ -23,6 +23,7 @@
 #include "BossRoomGen.h"
 #include "FrustumCulling.h"
 #include "Config.h"
+#include "GameObjectTypes.h"
 
 // value_ptr for glm
 #include <glm/gtc/type_ptr.hpp>
@@ -32,255 +33,7 @@
 #include <algorithm>              // For std::remove_if
 #include <limits>                 // For std::numeric_limits (used in updateBoundingBox)
 
-// Enum for book states
-enum class BookState {
-	ON_SHELF,
-	FALLING,
-	LANDED,
-	OPENING,
-	OPENED
-};
-
-enum class OrbState {
-	SPAWNING,  // Initial state right after creation
-	LEVITATING,// Moving upwards
-	IDLE,      // Stationary, ready for collection
-	COLLECTED // Visually attached to player (handled by drawing logic)
-};
-
-// --- SpellProjectile Struct ---
-struct SpellProjectile {
-	glm::vec3 position;
-	glm::vec3 direction;
-	glm::vec3 scale = glm::vec3(0.05f, 0.05f, 0.6f);
-	float speed = 20.0f;
-	float lifetime = 2.0f;
-	float spawnTime = 0.0f;
-	bool active = true;
-	AssimpModel* model = nullptr;
-
-	glm::vec3 aabbMin;
-	glm::vec3 aabbMax;
-	glm::mat4 transform; // Still useful for drawing
-
-	SpellProjectile(glm::vec3 startPos, glm::vec3 dir, float time, AssimpModel* mdl)
-		: position(startPos), direction(normalize(dir)), spawnTime(time), model(mdl), transform(1.0f) // Initialize transform
-	{
-	}
-};
-
-class Book {
-public:
-	vec3 initialPosition; // Where the book starts
-	vec3 position;        // Current position (updated by spline or stays initial)
-	vec3 scale;           // Base scale for the book
-	quat orientation;     // Initial orientation (using quaternion is often easier for complex rotations)
-	// Alternatively, use glm::vec3 for Euler angles if you prefer
-
-	BookState state = BookState::ON_SHELF;
-	Spline* fallSpline = nullptr; // Pointer to the spline for falling animation
-	float fallStartTime = 0.0f;   // Time the fall started
-
-	float openAngle = 0.0f;       // Current angle for opening animation (radians)
-	float maxOpenAngle = glm::radians(80.0f); // How far the book opens
-	float openSpeed = glm::radians(120.0f); // Speed of opening in radians per second
-
-	AssimpModel* bookModel; // Pointer to the cube model
-	AssimpModel* orbModel;  // Pointer to the sphere model
-
-	vec3 orbColor;
-	float orbScale = 0.1f; // Scale of the spell orb
-	bool orbSpawned = false;
-
-	// Constructor
-	Book(AssimpModel* bookMdl, AssimpModel* orbMdl, const glm::vec3& pos, const glm::vec3& scl, const glm::quat& orient, const glm::vec3& orbClr)
-		: initialPosition(pos), position(pos), scale(scl), orientation(orient),
-		bookModel(bookMdl), orbModel(orbMdl), orbColor(orbClr) {
-	}
-
-	// Destructor to clean up spline if needed
-	~Book() {
-		delete fallSpline;
-	}
-
-	// Method to start the fall
-	void startFalling(float groundY, const glm::vec3& playerPos) {
-		// Check state BEFORE accessing initialPosition etc.
-		if (state != BookState::ON_SHELF) {
-			return; // Already falling or in another state
-		}
-
-		state = BookState::FALLING;
-		fallStartTime = (float)glfwGetTime(); // Cast to float
-
-		// --- Calculate Landing Position (End Point) ---
-		glm::vec3 endPosition;
-		endPosition.y = groundY + (scale.y * 0.5f); // Land flat based on book scale
-
-		// Calculate direction away from player towards the book's spawn point
-		// Flatten the direction to the XZ plane to avoid influencing landing Y
-		glm::vec3 dirToBook = playerPos - initialPosition;
-		dirToBook.y = 0.0f; // Ignore vertical difference for landing direction
-
-		// Handle case where player is exactly at the spawn point (or very close)
-		float distSq = dot(dirToBook, dirToBook); // Use dot product for squared length
-		if (distSq < 0.01f) { // If too close, pick a default direction (e.g., positive Z)
-			dirToBook = glm::vec3(0.0f, 0.0f, 1.0f);
-		}
-		else {
-			dirToBook = normalize(dirToBook); // Normalize the direction vector
-		}
-
-		// Define how far the book should land
-		float landingDistance = 3.0f; // <-- ADJUST this value to throw further
-		float randomSpread = 0.75f; // <-- Randomness around the target landing spot
-
-		// Calculate landing X and Z based on direction and distance + randomness
-		endPosition.x = initialPosition.x + dirToBook.x * landingDistance + Config::randFloat(-randomSpread, randomSpread);
-		endPosition.z = initialPosition.z + dirToBook.z * landingDistance + Config::randFloat(-randomSpread, randomSpread);
-
-
-		// --- Calculate Control Point for the Arc ---
-		glm::vec3 controlPoint = (initialPosition + endPosition) * 0.5f; // Midpoint between start and end
-		// Make the arc higher relative to the start position
-		controlPoint.y = initialPosition.y + 3.0f; // <-- ADJUST arc height (relative to start)
-		// Add some sideways deviation to the arc's peak
-		controlPoint.x += Config::randFloat(-1.5f, 1.5f); // More horizontal arc randomness
-
-		// --- Create the Spline ---
-		float fallDuration = 0.4f; // <-- ADJUST fall duration if needed
-		delete fallSpline;
-		fallSpline = new Spline(initialPosition, controlPoint, endPosition, fallDuration);
-
-		// Debug output (optional)
-		// cout << "Book Falling: Start=" << initialPosition.x << "," << initialPosition.y << "," << initialPosition.z
-		//      << " End=" << endPosition.x << "," << endPosition.y << "," << endPosition.z
-		//      << " Dir=" << dirToBook.x << "," << dirToBook.z << endl;
-	}
-
-	// Method to update the book's state and position
-	void update(float deltaTime, float groundY) {
-		switch (state) {
-		case BookState::FALLING:
-			if (fallSpline) {
-				fallSpline->update(deltaTime);
-				position = fallSpline->getPosition();
-				// Optional: Add rotation during fall here
-
-				if (fallSpline->isDone()) {
-					state = BookState::LANDED; // Transition to landed state
-					position.y = groundY + (scale.y * 0.5f); // Ensure it's exactly on the ground
-					delete fallSpline;
-					fallSpline = nullptr;
-					// Set orientation flat on the ground if needed
-					orientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f); // Reset orientation or calculate landing angle
-				}
-			}
-			break;
-
-		case BookState::LANDED:
-			// Optional delay before opening?
-			state = BookState::OPENING; // Immediately start opening after landing
-			break;
-
-		case BookState::OPENING:
-			openAngle += openSpeed * deltaTime;
-			if (openAngle >= maxOpenAngle) {
-				openAngle = maxOpenAngle;
-				state = BookState::OPENED;
-			}
-			break;
-
-		case BookState::OPENED:
-			// Book remains open, orb is visible
-			break;
-
-		case BookState::ON_SHELF:
-		default:
-			// Do nothing
-			break;
-		}
-	}
-};
-
-class Collectible {
-public:
-	AssimpModel* model; // Will always be the sphere model
-	glm::vec3 position; // CURRENT position (animated during levitation)
-	float scale;
-	glm::vec3 AABBmin;
-	glm::vec3 AABBmax;
-	bool collected;
-	glm::vec3 color;
-
-	// --- Levitation Members ---
-	OrbState state = OrbState::SPAWNING; // Start in SPAWNING state
-	glm::vec3 spawnPosition;             // Where the orb initially appears
-	glm::vec3 idlePosition;              // Target position after levitating
-	float levitationHeight = 0.6f;       // How far up it moves
-	float levitationStartTime = 0.0f;
-	float levitationDuration = 0.75f;     // Duration of the levitation animation (seconds)
-
-
-	// Updated constructor for Orbs
-	Collectible(AssimpModel* model, const glm::vec3& spawnPos, const float scale, const glm::vec3& clr)
-		: model(model),
-		position(spawnPos), // Initial position is spawn position
-		scale(scale),
-		collected(false),
-		color(clr),
-		state(OrbState::LEVITATING), // Immediately start levitating after spawn
-		spawnPosition(spawnPos)
-	{
-		// Calculate target idle position
-		idlePosition = spawnPosition + glm::vec3(0.0f, levitationHeight, 0.0f);
-
-		// Record start time for animation
-		levitationStartTime = glfwGetTime();
-
-		// Initial AABB calculation (based on spawn position initially)
-		updateAABB(); // Use a helper function for AABB updates
-	}
-
-	// Helper function to update AABB based on current position
-	void updateAABB() {
-		glm::vec3 localMin = model->getBoundingBoxMin();
-		glm::vec3 localMax = model->getBoundingBoxMax();
-		localMin *= scale;
-		localMax *= scale;
-		AABBmin = localMin + position; // Use current position
-		AABBmax = localMax + position; // Use current position
-	}
-
-	// Function to update levitation animation
-	void updateLevitation(float currentTime) {
-		if (state == OrbState::LEVITATING) {
-			float elapsedTime = currentTime - levitationStartTime;
-			float t = glm::clamp(elapsedTime / levitationDuration, 0.0f, 1.0f);
-
-			// Apply an easing function for smoother start/end (optional)
-			// t = glm::sineEaseInOut(t); // Example using easing functions (requires #include <glm/gtx/easing.hpp>)
-			t = t * t * (3.0f - 2.0f * t); // Manual smoothstep calculation
-
-			// Interpolate position
-			position = glm::mix(spawnPosition, idlePosition, t);
-
-			// Update AABB as the orb moves
-			updateAABB();
-
-			// Check if animation finished
-			if (t >= 1.0f) {
-				state = OrbState::IDLE;
-				position = idlePosition; // Ensure it's exactly at the target
-				updateAABB();           // Final AABB update
-				// std::cout << "Orb reached IDLE state." << std::endl; // Debug output
-			}
-		}
-	}
-};
-
 class Application : public EventCallbacks {
-
 public:
 	std::shared_ptr<Player> player;
 	WindowManager * windowManager = nullptr;
@@ -415,11 +168,6 @@ public:
 
 	bool cursor_visable = true;
 
-	enum Man_State {
-		WALKING,
-		STANDING,
-	};
-
 	//Movement Variables (Maybe move?)
 	bool movingForward = false;
 	bool movingBackward = false;
@@ -428,7 +176,7 @@ public:
 
 	float characterRotation = 0.0f;
 
-	Man_State manState = STANDING;
+	Man_State manState = Man_State::STANDING;
 
 	LibraryGen *library = new LibraryGen();
 	Grid<LibraryGen::Cell> grid;
@@ -463,7 +211,7 @@ public:
 		}
 
 		if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_W) != GLFW_RELEASE) {
-			manState = WALKING;
+			manState = Man_State::WALKING;
 
 			//Movement Variable
 			movingForward = true;
@@ -472,12 +220,12 @@ public:
 				cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
 			}
 		} else if (key == GLFW_KEY_W && action == GLFW_RELEASE) {
-			manState = STANDING;
+			manState = Man_State::STANDING;
 			//Movement Variable
 			movingForward = false;
 		}
 		if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_S) != GLFW_RELEASE) {
-			manState = WALKING;
+			manState = Man_State::WALKING;
 
 			//Movement Variable
 			movingBackward = true;
@@ -488,12 +236,12 @@ public:
 			}
 
 		} else if (key == GLFW_KEY_S && action == GLFW_RELEASE) {
-			manState = STANDING;
+			manState = Man_State::STANDING;
 			//Movement Variable
 			movingBackward = false;
 		}
 		if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_A) != GLFW_RELEASE) {
-			manState = WALKING;
+			manState = Man_State::WALKING;
 
 			//Movement Variable
 			movingLeft = true;
@@ -504,12 +252,12 @@ public:
 			}
 
 		} else if (key == GLFW_KEY_A && action == GLFW_RELEASE) {
-			manState = STANDING;
+			manState = Man_State::STANDING;
 			//Movement Variable
 			movingLeft = false;
 		}
 		if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_D) != GLFW_RELEASE) {
-			manState = WALKING;
+			manState = Man_State::WALKING;
 
 			//Movement Variable
 			movingRight = true;
@@ -519,7 +267,7 @@ public:
 				cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
 			}
 		} else if (key == GLFW_KEY_D && action == GLFW_RELEASE) {
-			manState = STANDING;
+			manState = Man_State::STANDING;
 			//Movement Variable
 			movingRight = false;
 		}
@@ -1327,7 +1075,7 @@ public:
 
 		// Animation update
 		stickfigure_animator->UpdateAnimation(1.5f * animTime);
-		if (manState == WALKING) {
+		if (manState == Man_State::WALKING) {
 			stickfigure_animator->SetCurrentAnimation(stickfigure_anim);
 		}
 		else {
