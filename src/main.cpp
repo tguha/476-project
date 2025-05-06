@@ -6,6 +6,9 @@
 #include <glad/glad.h>
 #include <chrono>
 #include <thread>
+#include <windows.h>
+#include <mmsystem.h>
+#pragma comment(lib, "winmm.lib")
 #include "GLSL.h"
 #include "Program.h"
 #include "MatrixStack.h"
@@ -22,6 +25,11 @@
 #include "Player.h"
 #include "BossRoomGen.h"
 #include "FrustumCulling.h"
+#include "../particles/particleGen.h"
+#ifdef WIN32
+#include <windows.h>
+#include <mmsystem.h>
+#endif
 
 // value_ptr for glm
 #include <glm/gtc/type_ptr.hpp>
@@ -305,6 +313,7 @@ public:
 
 	// Our shader programs
 	std::shared_ptr<Program> texProg, hudProg, prog2, assimptexProg;
+	std::shared_ptr<Program> particleProg; // Add particle program
 
 	// ground data - Reused for all flat ground planes
 	GLuint GrndBuffObj = 0, GrndNorBuffObj = 0, GIndxBuffObj = 0; // Initialize to 0
@@ -351,6 +360,7 @@ public:
 	std::unordered_set<int> libraryGroundIDs; // Set to track unique IDs
 
 	shared_ptr<Texture> carpetTex;
+	shared_ptr<Texture> particleAlphaTex; // Add particle alpha texture
 
 	// Scene layout parameters
 	vec3 libraryCenter = vec3(0.0f, groundY, 0.0f);
@@ -366,6 +376,7 @@ public:
 
 	// --- Spell Projectiles ---
 	std::vector<SpellProjectile> activeSpells;
+	std::shared_ptr<particleGen> particleSystem; // Add particle system
 	glm::vec3 baseSphereLocalAABBMin; // Store base sphere AABB once
 	glm::vec3 baseSphereLocalAABBMax;
 	bool sphereAABBCalculated = false;
@@ -762,6 +773,18 @@ public:
 		hudProg->addUniform("BarStartX");
 		hudProg->addUniform("BarWidth");
 
+		// Initialize the particle program
+		particleProg = make_shared<Program>();
+		particleProg->setVerbose(true);
+		particleProg->setShaderNames(resourceDirectory + "/particle_vert.glsl", resourceDirectory + "/particle_frag.glsl");
+		particleProg->init();
+		particleProg->addUniform("P");
+		particleProg->addUniform("V");
+		particleProg->addUniform("M");
+		particleProg->addUniform("alphaTexture");
+		particleProg->addAttribute("vertPos");
+		particleProg->addAttribute("vertColor");
+
 		updateCameraVectors();
 
 		borderWallTex = make_shared<Texture>();
@@ -781,6 +804,17 @@ public:
 		carpetTex->init();
 		carpetTex->setUnit(0);
 		carpetTex->setWrapModes(GL_REPEAT, GL_REPEAT);
+
+		// Initialize particle alpha texture
+		particleAlphaTex = make_shared<Texture>();
+		particleAlphaTex->setFilename(resourceDirectory + "/alpha.png");
+		particleAlphaTex->init();
+		particleAlphaTex->setUnit(1);
+		particleAlphaTex->setWrapModes(GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE);
+
+		// Initialize particle system
+		particleSystem = make_shared<particleGen>(vec3(0.0f), 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.1f, 0.2f);
+		particleSystem->gpuSetup();
 	}
 
 	void initMapGen()
@@ -1402,9 +1436,10 @@ public:
 		glUniform1i(curS->getUniform("hasTexture"), 1);
 		setModel(curS, Model);
 		stickfigure_running->Draw(curS);
-
-		Model->popMatrix();
 		curS->unbind();
+
+		drawParticles(particleSystem, particleProg, Model);
+		Model->popMatrix();
 	}
 
 
@@ -2694,6 +2729,29 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		hudProg->unbind();
 	}
 
+	// Draw particles
+	void drawParticles(shared_ptr<particleGen> gen, shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
+		Model->pushMatrix();
+			shader->bind();
+
+			// Enable blending for transparency
+			glEnable(GL_BLEND);
+			glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+
+			// Disable depth writing but keep depth testing
+			//glDepthMask(GL_FALSE);
+      glUniformMatrix4fv(shader->getUniform("M"), 1, GL_FALSE, value_ptr(Model->topMatrix()));
+			gen->drawMe(shader);
+
+			// Restore state
+			//glDepthMask(GL_TRUE);
+			glDisable(GL_BLEND);
+
+			shader->unbind();
+			
+		Model->popMatrix();
+	}
+
 	void drawEnemyHealthBars(glm::mat4 viewMatrix, glm::mat4 projMatrix) {
 		float healthBarWidth = 100.0f;
 		float healthBarHeight = 10.0f;
@@ -2741,9 +2799,6 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			hudProg->unbind();
 		}
 	}
-	
-
-
 
 	void render(float frametime, float animTime) {
 		// Get current frame buffer size.
@@ -2768,6 +2823,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		updateOrbs((float)glfwGetTime());
 		updateEnemies(frametime);
 		updateProjectiles(frametime);
+		particleSystem->update(frametime); // Update particles
 
 		// --- Setup Camera ---
 		Projection->pushMatrix();
@@ -2841,6 +2897,15 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 				glUniform1f(assimptexProg->getUniform(prefix), lightIntensities[i]);
 			}
 			assimptexProg->unbind();
+		}
+
+		if (particleProg) {
+			particleProg->bind();
+			glPointSize(10.0f);
+			glUniformMatrix4fv(particleProg->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
+			glUniformMatrix4fv(particleProg->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
+			particleAlphaTex->bind(particleProg->getUniform("alphaTexture"));
+			particleProg->unbind();
 		}
 
 		// --- Draw Scene Elements ---
@@ -2959,6 +3024,8 @@ int main(int argc, char *argv[])
 	windowManager->init(640, 480);
 	windowManager->setEventCallbacks(application);
 	application->windowManager = windowManager;
+
+	PlaySound(TEXT("C:/Users/trigu/OneDrive/Desktop/476-project/resources/Breaking_Ground.wav"), NULL, SND_FILENAME|SND_ASYNC|SND_LOOP);
 
 	glfwSetInputMode(windowManager->getHandle(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 	glfwSetWindowUserPointer(windowManager->getHandle(), application);
