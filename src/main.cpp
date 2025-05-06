@@ -806,9 +806,9 @@ public:
 
 		// Initialize particle alpha texture
 		particleAlphaTex = make_shared<Texture>();
-		particleAlphaTex->setFilename(resourceDirectory + "/alpha.png");
+		particleAlphaTex->setFilename(resourceDirectory + "/alpha.bmp");
 		particleAlphaTex->init();
-		particleAlphaTex->setUnit(1);
+		particleAlphaTex->setUnit(0);
 		particleAlphaTex->setWrapModes(GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE);
 
 		// Initialize particle system
@@ -2671,6 +2671,8 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 	void drawParticles(shared_ptr<particleGen> gen, shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		Model->pushMatrix();
 			shader->bind();
+			particleAlphaTex->bind(particleProg->getUniform("alphaTexture"));
+
 
 			// Enable blending for transparency
 			glEnable(GL_BLEND);
@@ -2687,6 +2689,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			glDisable(GL_BLEND);
 
 			shader->unbind();
+			particleAlphaTex->unbind();
 			
 		Model->popMatrix();
 	}
@@ -2789,13 +2792,13 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			}
 			assimptexProg->unbind();
 		}
-
+		//TODO: sort them by z value
 		if (particleProg) {
 			particleProg->bind();
 			glPointSize(10.0f);
 			glUniformMatrix4fv(particleProg->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
 			glUniformMatrix4fv(particleProg->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
-			particleAlphaTex->bind(particleProg->getUniform("alphaTexture"));
+			//particleAlphaTex->bind(particleProg->getUniform("alphaTexture"));
 			particleProg->unbind();
 		}
 
@@ -2825,8 +2828,6 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 		drawProjectiles(prog2, Model);
 
-		// 7. Draw Player (often drawn last or near last)
-		drawPlayer(assimptexProg, Model, animTime);
 
 		// drawSkybox(assimptexProg, Model); // Draw the skybox last
 
@@ -2835,6 +2836,9 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		drawLibGrnd(assimptexProg, Model); // Draw the library ground
 
 		drawBossRoom(assimptexProg, Model, true); // Draw the boss room
+
+		// 7. Draw Player (drawing last)
+		drawPlayer(assimptexProg, Model, animTime);
 
 		#if SHOW_HEALTHBAR
 		drawHealthBar();

@@ -1,7 +1,8 @@
 //
 // sueda - geometry edits Z. Wood
 // 3/16
-//
+//TODO: Add death effect to enemy
+//TODO: Add effects to orbs
 
 #include <iostream>
 #include "Particle.h"
