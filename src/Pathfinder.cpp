@@ -30,12 +30,12 @@ void Pathfinder::resetNodes() {
 }
 
 std::vector<glm::ivec2> Pathfinder::findPath(const glm::ivec2& start, const glm::ivec2& end, std::function<PathCost(Node*, Node*)> costFunc) {
-    std::cout << "[Pathfinder] Starting pathfinding from (" << start.x << ", " << start.y 
-              << ") to (" << end.x << ", " << end.y << ")" << std::endl;
+    // std::cout << "[Pathfinder] Starting pathfinding from (" << start.x << ", " << start.y
+    //           << ") to (" << end.x << ", " << end.y << ")" << std::endl;
 
-    resetNodes(); 
-    queue.clear(); 
-    closed.clear(); 
+    resetNodes();
+    queue.clear();
+    closed.clear();
 
     if (!grid.inBounds(start) || !grid.inBounds(end)) {
         return {};
@@ -43,7 +43,7 @@ std::vector<glm::ivec2> Pathfinder::findPath(const glm::ivec2& start, const glm:
 
     Node& startNode = grid[start];
     startNode.cost = 0;
-    queue.enqueue(&startNode, 0); 
+    queue.enqueue(&startNode, 0);
 
     while (queue.count() > 0) {
         Node* nodePtr = queue.dequeue();
@@ -51,7 +51,7 @@ std::vector<glm::ivec2> Pathfinder::findPath(const glm::ivec2& start, const glm:
             break;
         }
 
-        closed.insert(nodePtr); 
+        closed.insert(nodePtr);
 
         if (nodePtr->position == end) {
             return reconstructPath(nodePtr);

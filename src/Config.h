@@ -34,7 +34,7 @@ namespace Config {
     constexpr float CAMERA_DEFAULT_THETA_DEGREES = 0.0f;
     constexpr float CAMERA_DEFAULT_PHI_DEGREES = -30.0f;
     constexpr float CAMERA_MOUSE_SENSITIVITY = 0.005f;
-    constexpr float CAMERA_SCROLL_SENSITIVITY_DEGREES = 0.7f;
+    constexpr float CAMERA_SCROLL_SENSITIVITY_DEGREES = 1.3f;
     constexpr float CAMERA_PHI_MIN_DEGREES = -80.0f;
     constexpr float CAMERA_PHI_MAX_DEGREES = -10.0f;
 
