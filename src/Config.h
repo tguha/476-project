@@ -11,6 +11,12 @@
 namespace Config {
     // --- Global Game Settings ---
 
+	// Debugging
+	constexpr bool DEBUG_MOVEMENT = true; // Set to false for release builds
+	constexpr bool DEBUG_ROOM_PLACEMENT = false; // Set to true for debugging room placement
+    bool DEBUG_LIGHTING = false;
+    bool DEBUG_GEOM = false;
+
     // Rendering & Shaders
     constexpr int NUM_LIGHTS = 4;
     constexpr int MAX_BONES = 200;
@@ -39,12 +45,18 @@ namespace Config {
     constexpr float CAMERA_PHI_MAX_DEGREES = -10.0f;
 
     // Gameplay
-    constexpr float GROUND_Y_LEVEL = 0.0f;
     constexpr float INTERACTION_RADIUS = 5.0f;
     constexpr float SPELL_PROJECTILE_SPEED = 20.0f;
     constexpr float SPELL_PROJECTILE_LIFETIME = 2.0f;
     constexpr glm::vec3 SPELL_PROJECTILE_SCALE = glm::vec3(0.05f, 0.05f, 0.6f);
     constexpr float SPELL_DAMAGE_AMOUNT = 25.0f;
+
+    // Scene
+    constexpr float GROUND_SIZE = 20.0f;
+    constexpr float GROUND_HEIGHT = 0.0f;
+
+    // Shadows
+    bool SHADOW = true;
 
     // --- Utility Functions ---
 

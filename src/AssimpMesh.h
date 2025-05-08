@@ -1,16 +1,13 @@
-#ifndef ASSIMPMESH_H
-#define ASSIMPMESH_H
+#pragma once
 
 #include <string>
 #include <vector>
 #include <memory>
 #include <glad/glad.h>
 #include <glm/gtc/type_ptr.hpp>
-
 #include "Program.h"
 
 #define MAX_BONE_INFLUENCE 4
-
 
 struct Vertex {
     glm::vec3 Position;
@@ -44,5 +41,3 @@ class AssimpMesh {
 
         void setupMesh();
 };
-
-#endif // ASSIMPMESH_H

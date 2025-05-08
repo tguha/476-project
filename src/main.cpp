@@ -1,6 +1,6 @@
-/*
- * The start of our wizarding adventure
- */
+//======================================
+// The start of our wizarding adventure
+//======================================
 
 #include <iostream>
 #include <glad/glad.h>
@@ -25,15 +25,14 @@
 #include "Player.h"
 #include "BossRoomGen.h"
 #include "FrustumCulling.h"
-
 #include "Config.h"
 #include "GameObjectTypes.h"
 
 #include "../particles/particleGen.h"
-#ifdef WIN32
-#include <windows.h>
-#include <mmsystem.h>
-#endif
+//#ifdef WIN32
+//#include <windows.h>
+//#include <mmsystem.h>
+//#endif
 
 
 // value_ptr for glm
@@ -41,20 +40,20 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/quaternion.hpp> // For glm::quat and glm::rotation
 #include <glm/gtx/vector_angle.hpp> // Also sometimes needed for glm::rotation
-#include <algorithm>              // For std::remove_if
-#include <limits>                 // For std::numeric_limits (used in updateBoundingBox)
+#include <algorithm>  // For std::remove_if
+#include <limits>  // For std::numeric_limits (used in updateBoundingBox)
 
 using namespace std;
 using namespace glm;
 
-#define SHOW_HEALTHBAR 1 // 1 = show health bar, 0 = hide health bar
+void initQuad();
+
 #define ENEMY_MOVEMENT 1 // 1 = enable enemy movement, 0 = disable enemy movement
 
 class Application : public EventCallbacks {
 public:
-	std::shared_ptr<Player> player;
+	// Setup window and context
 	WindowManager * windowManager = nullptr;
-
 	bool windowMaximized = false;
 	int window_width = Config::DEFAULT_WINDOW_WIDTH;
 	int window_height = Config::DEFAULT_WINDOW_HEIGHT;
@@ -62,58 +61,49 @@ public:
 	// Our shader programs
 	std::shared_ptr<Program> texProg, hudProg, prog2, assimptexProg;
 	std::shared_ptr<Program> particleProg; // Add particle program
+	shared_ptr<Program> DepthProg;
+	shared_ptr<Program> DepthProgDebug;
+	shared_ptr<Program> ShadowProg;
+	shared_ptr<Program> DebugProg;
+
+	// Shadows
+	GLuint depthMapFBO;
+	const GLuint S_WIDTH = 1024, S_HEIGHT = 1024;
+	GLuint depthMap;
+
+	// Light
+	vec3 g_light = vec3(3, 5, 5);
+
+	// PLayer
+	std::shared_ptr<Player> player;
 
 	// ground data - Reused for all flat ground planes
-	GLuint GrndBuffObj = 0, GrndNorBuffObj = 0, GIndxBuffObj = 0; // Initialize to 0
-	int g_GiboLen = 0;
-	GLuint GroundVertexArrayID = 0; // Initialize to 0
-	float groundSize = 20.0f; // Half-size of the main library ground square
-	float groundY = Config::GROUND_Y_LEVEL;     // Y level for all ground planes
+	GLuint GrndBuffObj, GrndNorBuffObj, GrndTexBuffObj, GIndxBuffObj;
+	int g_GiboLen;
+	// Geometry for texture render
+	GLuint quad_VertexArrayID;
+	GLuint quad_vertexbuffer;
 
-	struct WallObject {
-		float length;
-		vec3 position;
-		vec3 direction;
-		float height;
-		float width;
-		GLuint WallVAID;
-		GLuint BuffObj, NorBuffObj, IndxBuffObj;
-		GLuint TexBuffObj;
-		int GiboLen;
-
-		shared_ptr<Texture> texture; // Texture for the wall
-		int id; // ID for the wall object
-	};
-
-	struct LibGrndObject {
-		float length;
-		float width;
-		float height;
-		vec3 center_pos;
-		GLuint VAO;
-		GLuint BuffObj, NorBuffObj, IndxBuffObj;
-		GLuint TexBuffObj;
-		int GiboLen;
-
-		shared_ptr<Texture> texture; // Texture for the library
-		int id; // ID for the library ground object
-	};
+	// Textures
+	shared_ptr<Texture> borderWallTex;
+	shared_ptr<Texture> libraryGroundTex;
+	shared_ptr<Texture> carpetTex;
+	shared_ptr<Texture> particleAlphaTex;
 
 	vector<WallObject> borderWalls;
-	shared_ptr<Texture> borderWallTex;
+	
 	std::unordered_set<int> borderWallIDs; // Set to track unique IDs
 
 	vector<LibGrndObject> libraryGrounds;
-	shared_ptr<Texture> libraryGroundTex;
+	
 	std::unordered_set<int> libraryGroundIDs; // Set to track unique IDs
 
-	shared_ptr<Texture> carpetTex;
-	shared_ptr<Texture> particleAlphaTex; // Add particle alpha texture
+	 // Add particle alpha texture
 
 	// Scene layout parameters
-	vec3 libraryCenter = vec3(0.0f, groundY, 0.0f);
-	vec3 bossAreaCenter = vec3(0.0f, groundY, 60.0f); // Further away
-	vec3 doorPosition = vec3(0.0f, 1.5f, groundSize); // Center of door at library edge
+	vec3 libraryCenter = vec3(0.0f, Config::GROUND_HEIGHT, 0.0f);
+	vec3 bossAreaCenter = vec3(0.0f, Config::GROUND_HEIGHT, 60.0f); // Further away
+	vec3 doorPosition = vec3(0.0f, 1.5f, Config::GROUND_SIZE); // Center of door at library edge
 	vec3 doorScale = vec3(1.5f, 3.0f, 0.2f); // Width, Height, Thickness
 	float pathWidth = 4.0f; // Width of the path connecting areas
 
@@ -182,7 +172,6 @@ public:
 	bool mouseIntialized = false;
 	double lastX, lastY;
 
-
 	int debug = 0;
 	int debug_pos = 0;
 
@@ -212,147 +201,23 @@ public:
 
 	glm::vec4 planes[6]; // Frustum planes
 
-	void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods)
-	{
-		if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
-		{
-			glfwSetWindowShouldClose(window, GL_TRUE);
-		}
+	// Set up the FBO for storing the light's depth map
+	void initShadow() {
+		glGenFramebuffers(1, &depthMapFBO); // Generate FBO for shadow depth
+		glGenTextures(1, &depthMap); // Generate texture for shadow depth
+		glBindTexture(GL_TEXTURE_2D, depthMap);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, S_WIDTH, S_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
 
-		if (key == GLFW_KEY_F11 && action == GLFW_PRESS)
-		{
-			//Fullscreen Mode
-			if (!windowMaximized) {
-				glfwMaximizeWindow(window);
-				windowMaximized = !windowMaximized;
-			}
-			else {
-				glfwRestoreWindow(window);
-				windowMaximized = !windowMaximized;
-			}
-		}
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 
-		if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_W) != GLFW_RELEASE) {
-			manState = Man_State::WALKING;
-
-			//Movement Variable
-			movingForward = true;
-			if (debug_pos) {
-				cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
-				cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
-			}
-		} else if (key == GLFW_KEY_W && action == GLFW_RELEASE) {
-			manState = Man_State::STANDING;
-			//Movement Variable
-			movingForward = false;
-		}
-		if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_S) != GLFW_RELEASE) {
-			manState = Man_State::WALKING;
-
-			//Movement Variable
-			movingBackward = true;
-
-			if (debug_pos) {
-				cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
-				cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
-			}
-
-		} else if (key == GLFW_KEY_S && action == GLFW_RELEASE) {
-			manState = Man_State::STANDING;
-			//Movement Variable
-			movingBackward = false;
-		}
-		if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_A) != GLFW_RELEASE) {
-			manState = Man_State::WALKING;
-
-			//Movement Variable
-			movingLeft = true;
-
-			if (debug_pos) {
-				cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
-				cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
-			}
-
-		} else if (key == GLFW_KEY_A && action == GLFW_RELEASE) {
-			manState = Man_State::STANDING;
-			//Movement Variable
-			movingLeft = false;
-		}
-		if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_D) != GLFW_RELEASE) {
-			manState = Man_State::WALKING;
-
-			//Movement Variable
-			movingRight = true;
-
-			if (debug_pos) {
-				cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
-				cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
-			}
-		} else if (key == GLFW_KEY_D && action == GLFW_RELEASE) {
-			manState = Man_State::STANDING;
-			//Movement Variable
-			movingRight = false;
-		}
-		if (key == GLFW_KEY_Z && action == GLFW_PRESS) {
-			glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
-		}
-		if (key == GLFW_KEY_Z && action == GLFW_RELEASE) {
-			glPolygonMode( GL_FRONT_AND_BACK, GL_FILL );
-		}
-		if (key == GLFW_KEY_F && action == GLFW_PRESS) { // Interaction Key
-			interactWithBooks();
-    }
-		if (key == GLFW_KEY_L && action == GLFW_PRESS){
-			cursor_visable = !cursor_visable;
-			if (cursor_visable) {
-				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-			}
-			else {
-				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-			}
-		}
-	}
-
-	void scrollCallback(GLFWwindow *window, double deltaX, double deltaY)
-	{
-			theta = theta + deltaX * glm::radians(Config::CAMERA_SCROLL_SENSITIVITY_DEGREES);
-			phi = phi - deltaY * glm::radians(Config::CAMERA_SCROLL_SENSITIVITY_DEGREES);
-
-			if (phi > glm::radians(Config::CAMERA_PHI_MAX_DEGREES)) {
-				phi = glm::radians(Config::CAMERA_PHI_MAX_DEGREES);
-			}
-			if (phi < glm::radians(Config::CAMERA_PHI_MIN_DEGREES)) {
-				phi = glm::radians(Config::CAMERA_PHI_MIN_DEGREES);
-			}
-
-			updateCameraVectors();
-	}
-
-	void mouseMoveCallback(GLFWwindow* window, double xpos, double ypos) {
-		if (!mouseIntialized) {
-			lastX = xpos;
-			lastY = ypos;
-			mouseIntialized = true;
-			return;
-		}
-
-		float deltaX = xpos - lastX;
-		float deltaY = lastY - ypos;
-		lastX = xpos;
-		lastY = ypos;
-
-		theta = theta + deltaX * Config::CAMERA_MOUSE_SENSITIVITY;
-		phi = phi + deltaY * Config::CAMERA_MOUSE_SENSITIVITY;
-
-		if (phi > glm::radians(Config::CAMERA_PHI_MAX_DEGREES)) {
-			phi = glm::radians(Config::CAMERA_PHI_MAX_DEGREES);
-		}
-		if (phi < radians(-80.0f))
-		{
-			phi = radians(-80.0f);
-		}
-
-		updateCameraVectors();
+		glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO); // bind with framebuffer's depth buffer
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthMap, 0); // attach the texture to the framebuffer
+		glDrawBuffer(GL_NONE);
+		glReadBuffer(GL_NONE);
+		glBindFramebuffer(GL_FRAMEBUFFER, 0); // Unbind the framebuffer
 	}
 
 	void updateCameraVectors() {
@@ -380,29 +245,77 @@ public:
 
 	}
 
-	void mouseCallback(GLFWwindow *window, int button, int action, int mods)
-	{
+	void mouseCallback(GLFWwindow *window, int button, int action, int mods) {
 		double posX, posY;
 
-		if (action == GLFW_PRESS)
-		{
+		if (action == GLFW_PRESS) {
 			shootSpell();
 		}
 	}
 
-	void resizeCallback(GLFWwindow *window, int width, int height)
-	{
+	void resizeCallback(GLFWwindow *window, int width, int height) {
 		glViewport(0, 0, width, height);
 	}
 
 
-	void init(const std::string& resourceDirectory)
-	{
+	void init(const std::string& resourceDirectory) {
 		GLSL::checkVersion();
 
 		// Set background color and enable z-buffer test
 		glClearColor(.12f, .34f, .56f, 1.0f);
 		glEnable(GL_DEPTH_TEST);
+
+		// Initialize GLSL programs for shadow mapping
+		DepthProg = make_shared<Program>();
+		DepthProg->setVerbose(true);
+		DepthProg->setShaderNames(resourceDirectory + "/depth_vert.glsl", resourceDirectory + "/depth_frag.glsl");
+		DepthProg->init();
+
+		DepthProgDebug = make_shared<Program>();
+		DepthProgDebug->setVerbose(true);
+		DepthProgDebug->setShaderNames(resourceDirectory + "/depth_vertDebug.glsl", resourceDirectory + "/depth_fragDebug.glsl");
+		DepthProgDebug->init();
+
+		ShadowProg = make_shared<Program>();
+		ShadowProg->setVerbose(true);
+		ShadowProg->setShaderNames(resourceDirectory + "/shadow_vert.glsl", resourceDirectory + "/shadow_frag.glsl");
+		ShadowProg->init();
+
+		DebugProg = make_shared<Program>();
+		DebugProg->setVerbose(true);
+		DebugProg->setShaderNames(resourceDirectory + "/pass_vert.glsl", resourceDirectory + "/pass_texfrag.glsl");
+		DebugProg->init();
+
+		// Add unfigorm and attrubutes to each of the programs
+		DepthProg->addUniform("LP");
+		DepthProg->addUniform("LV");
+		DepthProg->addUniform("M");
+		DepthProg->addUniform("vertPos");
+		DepthProg->addUniform("vertNor");
+		DepthProg->addUniform("vertTex");
+
+		DepthProgDebug->addUniform("LP");
+		DepthProgDebug->addUniform("LV");
+		DepthProgDebug->addUniform("M");
+		DepthProgDebug->addUniform("vertPos");
+		DepthProgDebug->addUniform("vertNor");
+		DepthProgDebug->addUniform("vertTex");
+
+		ShadowProg->addUniform("P");
+		ShadowProg->addUniform("V");
+		ShadowProg->addUniform("M");
+		ShadowProg->addUniform("LV");
+		ShadowProg->addUniform("LightDir");
+		ShadowProg->addUniform("vertPos");
+		ShadowProg->addUniform("vertNor");
+		ShadowProg->addUniform("vertTex");
+		ShadowProg->addUniform("Texture0");
+		ShadowProg->addUniform("shadowDepth");
+
+		DebugProg->addUniform("texBuf");
+		DebugProg->addUniform("vertPos");
+
+		initShadow();
 
 		// Initialize the GLSL program that we will use for texture mapping
 		texProg = make_shared<Program>();
@@ -581,8 +494,7 @@ public:
 		addLibGrnd(bossGridSize.x * 2, bossGridSize.y * 2, 0.0f, bossRoom->getWorldOrigin(), libraryGroundTex, 1);
 	}
 
-	void initGeom(const std::string& resourceDirectory)
-	{
+	void initGeom(const std::string& resourceDirectory) {
  		string errStr;
 
 		// load the walking character model
@@ -777,16 +689,16 @@ public:
 
 	void initGround() {
 		// Check if already initialized
-		if (GroundVertexArrayID != 0) {
+		if (quad_VertexArrayID != 0) {
 			cout << "Warning: initGround() called more than once." << endl;
 			return;
 		}
-		// Ground plane from -groundSize to +groundSize in X and Z at groundY
+		// Ground plane from -Config::GROUND_SIZE to +Config::GROUND_SIZE in X and Z at Config::GROUND_HEIGHT
 		float GrndPos[] = {
-			-groundSize, groundY, -groundSize, // top-left
-			-groundSize, groundY,  groundSize, // bottom-left
-			 groundSize, groundY,  groundSize, // bottom-right
-			 groundSize, groundY, -groundSize  // top-right
+			-Config::GROUND_SIZE, Config::GROUND_HEIGHT, -Config::GROUND_SIZE, // top-left
+			-Config::GROUND_SIZE, Config::GROUND_HEIGHT,  Config::GROUND_SIZE, // bottom-left
+			 Config::GROUND_SIZE, Config::GROUND_HEIGHT,  Config::GROUND_SIZE, // bottom-right
+			 Config::GROUND_SIZE, Config::GROUND_HEIGHT, -Config::GROUND_SIZE  // top-right
 		};
 		// Normals point straight up
 		float GrndNorm[] = {
@@ -797,8 +709,8 @@ public:
 		g_GiboLen = 6; // Number of indices
 
 		// Generate VAO
-		glGenVertexArrays(1, &GroundVertexArrayID);
-		glBindVertexArray(GroundVertexArrayID);
+		glGenVertexArrays(1, &quad_VertexArrayID);
+		glBindVertexArray(quad_VertexArrayID);
 
 		// Position buffer (Attribute 0)
 		glGenBuffers(1, &GrndBuffObj);
@@ -824,25 +736,25 @@ public:
 		glBindBuffer(GL_ARRAY_BUFFER, 0);
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 
-		cout << "Ground Initialized: VAO ID " << GroundVertexArrayID << endl;
+		cout << "Ground Initialized: VAO ID " << quad_VertexArrayID << endl;
 	}
 
 	// Draw the ground sections (library, boss area, path)
 	void drawGroundSections(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
-		if (!shader || !Model || GroundVertexArrayID == 0) { // Check if ground is initialized
+		if (!shader || !Model || quad_VertexArrayID == 0) { // Check if ground is initialized
 			// cerr << "Error: Cannot draw ground sections - shader, model, or ground VAO invalid." << endl;
 			return;
 		}
 
 		shader->bind(); // Bind the simple shader
 
-		glBindVertexArray(GroundVertexArrayID); // Bind ground VAO
+		glBindVertexArray(quad_VertexArrayID); // Bind ground VAO
 
 		// 1. Draw Library Ground
 		// Model->pushMatrix();
 		// Model->loadIdentity();
 		// Model->translate(libraryCenter); // Center the ground plane
-		// // No scaling needed if initGround used groundSize correctly relative to its vertices
+		// // No scaling needed if initGround used Config::GROUND_SIZE correctly relative to its vertices
 		// setModel(shader, Model);
 		// SetMaterialMan(shader, 1); // Silver material
 		// glDrawElements(GL_TRIANGLES, g_GiboLen, GL_UNSIGNED_SHORT, 0);
@@ -861,14 +773,14 @@ public:
 		// Model->pushMatrix();
 		// Model->loadIdentity();
 		// // Calculate path dimensions and position
-		// float pathLength = bossAreaCenter.z - libraryCenter.z - 2 * groundSize;
+		// float pathLength = bossAreaCenter.z - libraryCenter.z - 2 * Config::GROUND_SIZE;
 		// if (pathLength < 0) pathLength = 0; // Avoid negative length if areas overlap
-		// float pathCenterZ = libraryCenter.z + groundSize + pathLength * 0.5f;
-		// // Calculate scaling factors based on the original ground quad size (groundSize * 2)
-		// float scaleX = pathWidth / (groundSize * 2.0f);
-		// float scaleZ = pathLength / (groundSize * 2.0f);
+		// float pathCenterZ = libraryCenter.z + Config::GROUND_SIZE + pathLength * 0.5f;
+		// // Calculate scaling factors based on the original ground quad size (Config::GROUND_SIZE * 2)
+		// float scaleX = pathWidth / (Config::GROUND_SIZE * 2.0f);
+		// float scaleZ = pathLength / (Config::GROUND_SIZE * 2.0f);
 
-		// Model->translate(vec3(libraryCenter.x, groundY, pathCenterZ)); // Center the path segment
+		// Model->translate(vec3(libraryCenter.x, Config::GROUND_HEIGHT, pathCenterZ)); // Center the path segment
 		// Model->scale(vec3(scaleX, 1.0f, scaleZ)); // Scale ground quad to path dimensions
 		// setModel(shader, Model);
 		// SetMaterialMan(shader, 4); // Dark white material
@@ -1347,12 +1259,10 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		simpleShader->unbind();
 	}
 
-	void drawCat(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
+	void drawCat(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model, GLint texID, int texOn) {
 		if (!CatWizard) return; //Need Cat Model
 		shader->bind(); //Texture
-		if (shader == assimptexProg) {
-			glUniform1i(shader->getUniform("hasTexture"), 1);
-		}
+		if (texOn) glUniform1i(shader->getUniform("hasTexture"), 1);
 
 		Model->pushMatrix();
 			Model->loadIdentity();
@@ -1505,8 +1415,8 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			glUniform1i(shader->getUniform("hasTexture"), 1); // Bookshelves should use texture
 		}
 
-		float gridWorldWidth = groundSize * 2.0f; // The world space the grid should occupy (library floor width)
-		float gridWorldDepth = groundSize * 2.0f; // The world space the grid should occupy (library floor depth)
+		float gridWorldWidth = Config::GROUND_SIZE * 2.0f; // The world space the grid should occupy (library floor width)
+		float gridWorldDepth = Config::GROUND_SIZE * 2.0f; // The world space the grid should occupy (library floor depth)
 		float cellWidth = gridWorldWidth / (float)grid.getSize().x;
 		float cellDepth = gridWorldDepth / (float)grid.getSize().y;
 		float shelfScaleFactor = 1.8f; // Adjust scale of the bookshelf model itself
@@ -1833,8 +1743,8 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		float interactionRadius = 5.0f;
 		float interactionRadiusSq = interactionRadius * interactionRadius;
 
-		float gridWorldWidth = groundSize * 2.0f;
-		float gridWorldDepth = groundSize * 2.0f;
+		float gridWorldWidth = Config::GROUND_SIZE * 2.0f;
+		float gridWorldDepth = Config::GROUND_SIZE * 2.0f;
 		float cellWidth = gridWorldWidth / (float)grid.getSize().x;
 		float cellDepth = gridWorldDepth / (float)grid.getSize().y;
 
@@ -1848,7 +1758,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 					// float shelfWorldZ = libraryCenter.z - gridWorldDepth * 0.5f + (z + 0.5f) * cellDepth;
 					float shelfWorldX = library->mapGridXtoWorldX(x); // Center the shelf in the cell
 					float shelfWorldZ = library->mapGridYtoWorldZ(z); // Center the shelf in the cell
-					glm::vec3 shelfCenterPos = glm::vec3(shelfWorldX, groundY + 1.0f, shelfWorldZ);
+					glm::vec3 shelfCenterPos = glm::vec3(shelfWorldX, Config::GROUND_HEIGHT + 1.0f, shelfWorldZ);
 
 					// glm::vec3 diff = shelfCenterPos - characterMovement;
 					glm::vec3 diff = shelfCenterPos - player->getPosition();
@@ -1858,9 +1768,9 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 					if (distSq <= interactionRadiusSq) {
 
 						// --- ADJUST Spawn Height ---
-						float minSpawnHeight = 1.8f; // Minimum height above groundY
-						float maxSpawnHeight = 2.8f; // Maximum height above groundY
-						float spawnHeight = groundY + Config::randFloat(minSpawnHeight, maxSpawnHeight); // <-- ADJUSTED height range
+						float minSpawnHeight = 1.8f; // Minimum height above Config::GROUND_HEIGHT
+						float maxSpawnHeight = 2.8f; // Maximum height above Config::GROUND_HEIGHT
+						float spawnHeight = Config::GROUND_HEIGHT + Config::randFloat(minSpawnHeight, maxSpawnHeight); // <-- ADJUSTED height range
 
 						glm::vec3 spawnPos = glm::vec3(shelfWorldX, spawnHeight, shelfWorldZ);
 
@@ -1873,8 +1783,8 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 						Book& newBook = books.back();
 
 						// --- PASS Player Position to startFalling ---
-						// newBook.startFalling(groundY, characterMovement); // <<-- MODIFIED call
-						newBook.startFalling(groundY, player->getPosition());
+						// newBook.startFalling(Config::GROUND_HEIGHT, characterMovement); // <<-- MODIFIED call
+						newBook.startFalling(Config::GROUND_HEIGHT, player->getPosition());
 
 						interacted = true;
 						break;
@@ -1988,8 +1898,8 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		updateBoundingBox(playerLocalAABBMin, playerLocalAABBMax, playerTransform, playerWorldMin, playerWorldMax);
 
 		// 2. Iterate through grid for shelves
-		float gridWorldWidth = groundSize * 2.0f;
-		float gridWorldDepth = groundSize * 2.0f;
+		float gridWorldWidth = Config::GROUND_SIZE * 2.0f;
+		float gridWorldDepth = Config::GROUND_SIZE * 2.0f;
 		float cellWidth = gridWorldWidth / (float)grid.getSize().x;
 		float cellDepth = gridWorldDepth / (float)grid.getSize().y;
 		// Use the same scale factor as drawLibrary
@@ -2175,11 +2085,11 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		// --- Collision Detection and Resolution ---
 		// vec3 currentPos = characterMovement;
 		// vec3 nextPos = currentPos + desiredMoveDelta;
-		// nextPos.y = groundY; // Keep player on the ground plane
+		// nextPos.y = Config::GROUND_HEIGHT; // Keep player on the ground plane
 
 		vec3 currentPos = player->getPosition();
 		vec3 nextPos = currentPos + desiredMoveDelta;
-		nextPos.y = groundY; // Keep player on the ground plane
+		nextPos.y = Config::GROUND_HEIGHT; // Keep player on the ground plane
 
 		// Player orientation for AABB calculation
 		// glm::quat playerOrientation = glm::angleAxis(manRot.y, glm::vec3(0, 1, 0));
@@ -2222,9 +2132,9 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 		// Final position is the allowed position after checking both axes
 		// characterMovement = allowedPos;
-		// characterMovement.y = groundY; // Ensure Y stays correct
+		// characterMovement.y = Config::GROUND_HEIGHT; // Ensure Y stays correct
 
-		player->setPosition(vec3(allowedPos.x, groundY, allowedPos.z)); // Update player position
+		player->setPosition(vec3(allowedPos.x, Config::GROUND_HEIGHT, allowedPos.z)); // Update player position
 
 
 		// Update camera based on final position (done in render)
@@ -2261,7 +2171,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 		// Spawn Position Calculation (relative to character's position and orientation)
 		float forwardOffset = 0.5f; // How far in front of player center
-		float upOffset = 0.8f;      // Height relative to player base (groundY)
+		float upOffset = 0.8f;      // Height relative to player base (Config::GROUND_HEIGHT)
 		float rightOffset = 0.2f;   // Offset to the side (e.g., right hand)
 
 		// vec3 spawnPos = characterMovement
@@ -2379,8 +2289,6 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		shader->unbind();
 	}
 
-
-
 	/* top down camera view  */
 	mat4 SetTopView(shared_ptr<Program> curShade) { /*MINI MAP*/
 		mat4 Cam = glm:: lookAt(eye + vec3(0, 9, 0), eye, lookAt - eye);
@@ -2388,12 +2296,12 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		return Cam;
 	}
 
-	mat4 SetOrthoMatrix(shared_ptr<Program> curShade) {/*MINI MAP*/
+	mat4 SetOrthoMatrixMiniMap(shared_ptr<Program> curShade) {/*MINI MAP*/
 		float wS = 1.5;
 		mat4 ortho = glm::ortho(-15.0f*wS, 15.0f*wS, -15.0f*wS, 15.0f*wS, 2.1f, 100.f);
 		glUniformMatrix4fv(curShade->getUniform("P"), 1, GL_FALSE, value_ptr(ortho));
 		return ortho;
-  }
+	}
 
   void drawMiniPlayer(shared_ptr<Program> curS, shared_ptr<MatrixStack> Model) { /*MINI MAP*/
 
@@ -2531,39 +2439,144 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		}
 	}
 
+	// helper function to set light view and projection matrix for shadow mapping
+	void setProjectionMatrix(shared_ptr<Program> curShade) {
+		int width, height;
+		glfwGetFramebufferSize(windowManager->getHandle(), &width, &height);
+		float aspect = width / (float)height;
+		mat4 Projection = perspective(radians(45.0f), aspect, 0.1f, 100.0f); // Adjusted near/far
+		glUniformMatrix4fv(curShade->getUniform("P"), 1, GL_FALSE, value_ptr(Projection));
+	}
+	mat4 SetLightView(shared_ptr<Program> curShade, vec3 pos, vec3 LA, vec3 up) { /*MINI MAP*/
+		mat4 Cam = glm::lookAt(pos, LA, up);
+		glUniformMatrix4fv(curShade->getUniform("LV"), 1, GL_FALSE, value_ptr(Cam));
+		return Cam;
+	}
+	mat4 SetOrthoMatrix(shared_ptr<Program> curShade) {
+		mat4 ortho = glm::ortho(-15.0f, 15.0f, -15.0f, 15.0f, 2.1f, 100.f);
+		glUniformMatrix4fv(curShade->getUniform("LP"), 1, GL_FALSE, value_ptr(ortho));
+		return ortho;
+	}
+	void setView(shared_ptr<Program> curShade) {
+		mat4 Cam = glm::lookAt(eye, lookAt, vec3(0, 1, 0));
+		glUniformMatrix4fv(curShade->getUniform("V"), 1, GL_FALSE, value_ptr(Cam));
+	}
+	void setCameraProjectionFromStack(shared_ptr<Program> curShade, shared_ptr<MatrixStack> projStack) {
+		curShade->bind();
+		glUniformMatrix4fv(curShade->getUniform("P"), 1, GL_FALSE, value_ptr(projStack->topMatrix()));
+	}
+	void setCameraViewFromStack(shared_ptr<Program> curShade, shared_ptr<MatrixStack> viewStack) {
+		curShade->bind();
+		glUniformMatrix4fv(curShade->getUniform("V"), 1, GL_FALSE, value_ptr(viewStack->topMatrix()));
+	}
+
 	void render(float frametime, float animTime) {
 		// Get current frame buffer size.
 		int width, height;
 		glfwGetFramebufferSize(windowManager->getHandle(), &width, &height);
-		glViewport(0, 0, width, height);
+		float aspect = width / (float)height;
 
-		// Clear framebuffer.
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-		float aspect = width/(float)height;
+		// --- Update Game Logic ---
+		charMove();
+		updateCameraVectors();
+		updateBooks(frametime);
+		updateOrbs(frametime);
+		updateEnemies(frametime);
+		updateProjectiles(frametime);
+		particleSystem->update(frametime);
 
 		// Create the matrix stacks
 		auto Projection = make_shared<MatrixStack>();
 		auto View = make_shared<MatrixStack>();
 		auto Model = make_shared<MatrixStack>();
 
-		// --- Update Game Logic ---
-		charMove();
-		updateCameraVectors();
-		updateBooks(frametime);
-		updateOrbs((float)glfwGetTime());
-		updateEnemies(frametime);
-		updateProjectiles(frametime);
-		particleSystem->update(frametime); // Update particles
+		// Shadow mapping parameters
+		vec3 lightLA = vec3(0.0);
+		vec3 lightUp = vec3(0, 1, 0);
+		mat4 LO, LV, LSpace;
+		
+		// ========================================================================
+		// First Pass: Render scene from light's perspective to generate depth map
+		// ========================================================================
+		if (Config::SHADOW) {
+			glViewport(0, 0, S_WIDTH, S_HEIGHT); // Set viewport for shadow map
+			glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO); // Bind shadow framebuffer
+			glClear(GL_DEPTH_BUFFER_BIT); // Clear depth buffer
+			glCullFace(GL_FRONT); // Cull front faces for shadow map
+			DepthProg->bind(); // Setup shadow shader and draw the scene
+			LO = SetOrthoMatrix(DepthProg);
+			LV = SetLightView(DepthProg, g_light, lightLA, lightUp);
 
-		// --- Setup Camera ---
-		Projection->pushMatrix();
+
+			// draw light casting objects
+			drawScene(DepthProg, 0, 0); // Draw the scene for shadow map
+
+
+			DepthProg->unbind();
+			glCullFace(GL_BACK); // Reset culling to default
+			glBindFramebuffer(GL_FRAMEBUFFER, 0); // Unbind shadow framebuffer (hard coded 0 is the screen)
+		}
+
+		// ===================================================
+		// Prepare for Second Pass (Main Rendering to Screen)
+		// ===================================================
+		glViewport(0, 0, width, height); // Return viewport to screen size
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // Clear framebuffer
+		Projection->pushMatrix(); // Setup Camera
 		Projection->perspective(radians(45.0f), aspect, 0.1f, 1000.0f); // Adjusted near/far
 		View->pushMatrix();
 		View->loadIdentity();
 		View->lookAt(eye, lookAt, up); // Use updated eye/lookAt
-
 		ExtractVFPlanes(Projection->topMatrix(), View->topMatrix(), planes); // Update frustum planes
+		LSpace = LO * LV; // Light space matrix for shadow mapping
+
+		// ==============================
+		// Second Pass: Render to Screen
+		// ==============================
+		if (Config::DEBUG_LIGHTING) { // Debugging light view from lights perspective
+			if (Config::DEBUG_GEOM) {
+				DepthProgDebug->bind();
+				SetOrthoMatrix(DepthProgDebug);
+				SetLightView(DepthProgDebug, g_light, lightLA, lightUp);
+
+
+				// draw light casting objects
+				drawScene(DepthProgDebug, ShadowProg->getUniform("Texture0"), 0);
+
+				
+				DepthProgDebug->unbind();
+			}
+			else { // Draw the depth map texture to a quad
+				DebugProg->bind();
+				glActiveTexture(GL_TEXTURE0);
+				glBindTexture(GL_TEXTURE_2D, depthMap);
+				glUniform1i(DebugProg->getUniform("texBuf"), 0);
+				glEnableVertexAttribArray(0); // Now we actually draw the quad
+				glBindBuffer(GL_ARRAY_BUFFER, quad_vertexbuffer);
+				glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
+				glDrawArrays(GL_TRIANGLES, 0, 6);
+				glDisableVertexAttribArray(0);
+				DebugProg->unbind();
+			}
+		}
+		else { // Rendr the scene like normal
+			ShadowProg->bind();
+			glActiveTexture(GL_TEXTURE1);
+			glBindTexture(GL_TEXTURE_2D, depthMap); // Bind shadow map texture
+			glUniform1i(ShadowProg->getUniform("shadowDepth"), 1); // Set uniform for shadow map
+			glUniform3f(ShadowProg->getUniform("lightDir"), g_light.x, g_light.y, g_light.z); // Set light direction
+			setCameraProjectionFromStack(ShadowProg, Projection);
+			setCameraViewFromStack(ShadowProg, View);
+			glUniformMatrix4fv(ShadowProg->getUniform("LSpace"), 1, GL_FALSE, value_ptr(LSpace)); // Set light space matrix
+
+			// setup point lights for shader to handle internally?
+
+			// draw light recieving objects (entire scene?)
+			drawScene(ShadowProg, ShadowProg->getUniform("Texture0"), 1);
+
+
+			ShadowProg->unbind();
+		}
 
 		// --- Setup Lights ---
 		// Example: One bright light in the library, one dimmer in boss area
@@ -2574,26 +2587,26 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		// 	vec3(0, 0, 0)                        // Unused or ambient fill
 		// };
 
-		vec3 lightPositions[Config::NUM_LIGHTS] = {
-			libraryCenter + vec3(0, 15, 0),      // Library light overhead
-			bossAreaCenter + vec3(0, 10, 0),     // Boss area light overhead
-			player->getPosition() + vec3(0, 1, 0.5), // Small light near player (optional)
-			vec3(0, 0, 0)                        // Unused or ambient fill
-		};
+		//vec3 lightPositions[Config::NUM_LIGHTS] = {
+		//	libraryCenter + vec3(0, 15, 0),      // Library light overhead
+		//	bossAreaCenter + vec3(0, 10, 0),     // Boss area light overhead
+		//	player->getPosition() + vec3(0, 1, 0.5), // Small light near player (optional)
+		//	vec3(0, 0, 0)                        // Unused or ambient fill
+		//};
 
-		vec3 lightColors[Config::NUM_LIGHTS] = {
-			vec3(1.0f, 1.0f, 0.9f), // Slightly warm white
-			vec3(0.8f, 0.6f, 1.0f), // Dim purple/blue
-			vec3(0.3f, 0.3f, 0.3f),
-			vec3(0.1f, 0.1f, 0.1f)
-		};
-		float lightIntensities[Config::NUM_LIGHTS] = {
-			1.5f, // Bright library
-			0.8f, // Dimmer boss area
-			0.5f, // Player light
-			0.0f
-		};
-		int numActiveLights = 3; // How many lights we're actually using
+		//vec3 lightColors[Config::NUM_LIGHTS] = {
+		//	vec3(1.0f, 1.0f, 0.9f), // Slightly warm white
+		//	vec3(0.8f, 0.6f, 1.0f), // Dim purple/blue
+		//	vec3(0.3f, 0.3f, 0.3f),
+		//	vec3(0.1f, 0.1f, 0.1f)
+		//};
+		//float lightIntensities[Config::NUM_LIGHTS] = {
+		//	1.5f, // Bright library
+		//	0.8f, // Dimmer boss area
+		//	0.5f, // Player light
+		//	0.0f
+		//};
+		//int numActiveLights = 3; // How many lights we're actually using
 
 		// --- Update Shader Uniforms (Lights, P, V) ---
 		// Update prog2 (Simple Lighting)
@@ -2681,16 +2694,16 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 		drawBossRoom(assimptexProg, Model, true); // Draw the boss room
 
-		#if SHOW_HEALTHBAR
-		drawHealthBar();
-		drawEnemyHealthBars(View->topMatrix(), Projection->topMatrix());
-		#endif
+		if (Config::SHOW_HEALTHBAR) {
+			drawHealthBar();
+			drawEnemyHealthBars(View->topMatrix(), Projection->topMatrix());
+		}
 
 		/*MINI MAP*/
 		prog2->bind();
 			glClear( GL_DEPTH_BUFFER_BIT);
 			glViewport(0, height-300, 300, 300);
-			SetOrthoMatrix(prog2);
+			SetOrthoMatrixMiniMap(prog2);
 			SetTopView(prog2); /*MINI MAP*/
 			//drawScene(prog2, CULL);
 			/* draws */
@@ -2719,7 +2732,155 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		glBindVertexArray(0);
 		glUseProgram(0);
 	}
+
+	void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
+		if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
+		{
+			glfwSetWindowShouldClose(window, GL_TRUE);
+		}
+
+		if (key == GLFW_KEY_F11 && action == GLFW_PRESS)
+		{
+			//Fullscreen Mode
+			if (!windowMaximized) {
+				glfwMaximizeWindow(window);
+				windowMaximized = !windowMaximized;
+			}
+			else {
+				glfwRestoreWindow(window);
+				windowMaximized = !windowMaximized;
+			}
+		}
+
+		if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_W) != GLFW_RELEASE) {
+			manState = Man_State::WALKING;
+
+			//Movement Variable
+			movingForward = true;
+			if (debug_pos) {
+				cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
+				cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
+			}
+		}
+		else if (key == GLFW_KEY_W && action == GLFW_RELEASE) {
+			manState = Man_State::STANDING;
+			//Movement Variable
+			movingForward = false;
+		}
+		if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_S) != GLFW_RELEASE) {
+			manState = Man_State::WALKING;
+
+			//Movement Variable
+			movingBackward = true;
+
+			if (debug_pos) {
+				cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
+				cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
+			}
+
+		}
+		else if (key == GLFW_KEY_S && action == GLFW_RELEASE) {
+			manState = Man_State::STANDING;
+			//Movement Variable
+			movingBackward = false;
+		}
+		if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_A) != GLFW_RELEASE) {
+			manState = Man_State::WALKING;
+
+			//Movement Variable
+			movingLeft = true;
+
+			if (debug_pos) {
+				cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
+				cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
+			}
+
+		}
+		else if (key == GLFW_KEY_A && action == GLFW_RELEASE) {
+			manState = Man_State::STANDING;
+			//Movement Variable
+			movingLeft = false;
+		}
+		if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_D) != GLFW_RELEASE) {
+			manState = Man_State::WALKING;
+
+			//Movement Variable
+			movingRight = true;
+
+			if (debug_pos) {
+				cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
+				cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
+			}
+		}
+		else if (key == GLFW_KEY_D && action == GLFW_RELEASE) {
+			manState = Man_State::STANDING;
+			//Movement Variable
+			movingRight = false;
+		}
+		if (key == GLFW_KEY_Z && action == GLFW_PRESS) {
+			glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+		}
+		if (key == GLFW_KEY_Z && action == GLFW_RELEASE) {
+			glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+		}
+		if (key == GLFW_KEY_F && action == GLFW_PRESS) { // Interaction Key
+			interactWithBooks();
+		}
+		if (key == GLFW_KEY_L && action == GLFW_PRESS) {
+			cursor_visable = !cursor_visable;
+			if (cursor_visable) {
+				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+			}
+			else {
+				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+			}
+		}
+	}
+
+	void scrollCallback(GLFWwindow* window, double deltaX, double deltaY)
+	{
+		theta = theta + deltaX * glm::radians(Config::CAMERA_SCROLL_SENSITIVITY_DEGREES);
+		phi = phi - deltaY * glm::radians(Config::CAMERA_SCROLL_SENSITIVITY_DEGREES);
+
+		if (phi > glm::radians(Config::CAMERA_PHI_MAX_DEGREES)) {
+			phi = glm::radians(Config::CAMERA_PHI_MAX_DEGREES);
+		}
+		if (phi < glm::radians(Config::CAMERA_PHI_MIN_DEGREES)) {
+			phi = glm::radians(Config::CAMERA_PHI_MIN_DEGREES);
+		}
+
+		updateCameraVectors();
+	}
+
+	void mouseMoveCallback(GLFWwindow* window, double xpos, double ypos) {
+		if (!mouseIntialized) {
+			lastX = xpos;
+			lastY = ypos;
+			mouseIntialized = true;
+			return;
+		}
+
+		float deltaX = xpos - lastX;
+		float deltaY = lastY - ypos;
+		lastX = xpos;
+		lastY = ypos;
+
+		theta = theta + deltaX * Config::CAMERA_MOUSE_SENSITIVITY;
+		phi = phi + deltaY * Config::CAMERA_MOUSE_SENSITIVITY;
+
+		if (phi > glm::radians(Config::CAMERA_PHI_MAX_DEGREES)) {
+			phi = glm::radians(Config::CAMERA_PHI_MAX_DEGREES);
+		}
+		if (phi < radians(-80.0f))
+		{
+			phi = radians(-80.0f);
+		}
+
+		updateCameraVectors();
+	}
 };
+
+
 
 void mouseMoveCallbackWrapper(GLFWwindow* window, double xpos, double ypos) {
 	Application* app = (Application*)glfwGetWindowUserPointer(window);

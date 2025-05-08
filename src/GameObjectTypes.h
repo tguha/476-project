@@ -28,7 +28,6 @@ enum class Man_State {
     STANDING
 };
 
-
 // --- Structs ---
 struct SpellProjectile {
     glm::vec3 position;
@@ -40,13 +39,41 @@ struct SpellProjectile {
     bool active = true;
     AssimpModel* model = nullptr;
 
-    glm::vec3 aabbMin;
-    glm::vec3 aabbMax;
-    glm::mat4 transform;
+    glm::vec3 aabbMin = glm::vec3(0);
+    glm::vec3 aabbMax = glm::vec3(0);
+    glm::mat4 transform = glm::mat4(1);
 
     SpellProjectile(glm::vec3 startPos, glm::vec3 dir, float time, AssimpModel* mdl)
-        : position(startPos), direction(normalize(dir)), spawnTime(time), model(mdl), transform(1.0f) {
-    }
+        : position(startPos), direction(normalize(dir)), spawnTime(time), model(mdl), transform(1.0f) {}
+};
+
+struct WallObject {
+    float length;
+    vec3 position;
+    vec3 direction;
+    float height;
+    float width;
+    GLuint WallVAID;
+    GLuint BuffObj, NorBuffObj, IndxBuffObj;
+    GLuint TexBuffObj;
+    int GiboLen;
+
+    shared_ptr<Texture> texture; // Texture for the wall
+    int id; // ID for the wall object
+};
+
+struct LibGrndObject {
+    float length;
+    float width;
+    float height;
+    vec3 center_pos;
+    GLuint VAO;
+    GLuint BuffObj, NorBuffObj, IndxBuffObj;
+    GLuint TexBuffObj;
+    int GiboLen;
+
+    shared_ptr<Texture> texture; // Texture for the library
+    int id; // ID for the library ground object
 };
 
 // --- Classes ---
