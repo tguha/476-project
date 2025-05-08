@@ -14,7 +14,7 @@ void Player::pickupSpell(Spell *spell, SpellSlot activeSpellSlot) {
     
     // Put spell in inventory
     if (isInventoryFull()) {
-        for (int i = 0; i < INVENTORY_SIZE; i++) {
+        for (int i = 0; i < Config::INVENTORY_SIZE; i++) {
             if (spellInventory[i].getType() == SpellType::NO_SPELL) {
                 spellInventory[i] = *spell;
                 return;
@@ -28,7 +28,7 @@ void Player::pickupSpell(Spell *spell, SpellSlot activeSpellSlot) {
 }
 
 bool Player::isInventoryFull() {
-    for (int i = 0; i < INVENTORY_SIZE; i++) {
+    for (int i = 0; i < Config::INVENTORY_SIZE; i++) {
         if (spellInventory[i].getType() == SpellType::NO_SPELL) {
             return false;
         }

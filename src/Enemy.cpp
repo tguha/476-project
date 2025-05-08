@@ -22,7 +22,7 @@ void Enemy::moveTowardsPlayer(Grid<LibraryGen::Cell>& grid, Pathfinder& pathfind
     int enemyX = grid.mapXtoGridX(this->getPosition().x);
     int enemyY = grid.mapZtoGridY(this->getPosition().z);
     glm::ivec2 enemyPos = glm::ivec2(enemyX, enemyY);
-    
+
     glm::ivec2 start = enemyPos;
     glm::ivec2 goal = playerPos;
 
@@ -47,11 +47,11 @@ void Enemy::moveTowardsPlayer(Grid<LibraryGen::Cell>& grid, Pathfinder& pathfind
     // Move to the next step
     if (path.size() > 1) {
         glm::ivec2 nextPos = path[1]; // path[0] is current position
-        
+
         float worldX = grid.mapGridXtoWorldX(nextPos.x);
         float worldZ = grid.mapGridYtoWorldZ(nextPos.y);
-        std::cout << "Next Grid Position: " << nextPos.x << ", " << nextPos.y << std::endl;
-        std::cout << "Next World Position: " << worldX << ", " << worldZ << std::endl;
+        // std::cout << "Next Grid Position: " << nextPos.x << ", " << nextPos.y << std::endl;
+        // std::cout << "Next World Position: " << worldX << ", " << worldZ << std::endl;
         glm::vec3 nextPositionVec3(worldX, this->getPosition().y, worldZ);
         glm::vec3 direction = glm::normalize(nextPositionVec3 - this->getPosition());
 
