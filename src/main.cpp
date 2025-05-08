@@ -8,7 +8,6 @@
 #include <thread>
 #include <windows.h>
 #include <mmsystem.h>
-#pragma comment(lib, "winmm.lib")
 #include "GLSL.h"
 #include "Program.h"
 #include "MatrixStack.h"
@@ -26,10 +25,7 @@
 #include "BossRoomGen.h"
 #include "FrustumCulling.h"
 #include "../particles/particleGen.h"
-#ifdef WIN32
-#include <windows.h>
-#include <mmsystem.h>
-#endif
+#include "miniaudio.h"
 
 // value_ptr for glm
 #include <glm/gtc/type_ptr.hpp>
@@ -813,7 +809,7 @@ public:
 		particleAlphaTex->setWrapModes(GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE);
 
 		// Initialize particle system
-		particleSystem = make_shared<particleGen>(vec3(0.0f), 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.1f, 0.2f);
+		particleSystem = make_shared<particleGen>(vec3(0.0f), 0.0f, 0.2f, 0.6f, 0.8f, 0.8f, 1.0f, 0.1f, 0.2f);
 		particleSystem->gpuSetup();
 	}
 
@@ -1550,7 +1546,7 @@ public:
 	// 	shader->unbind();
 	// }
 
-
+//TODO: Add particle effects to orbs
 void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		// --- Collision Check Logic ---
 		for (auto& orb : orbCollectibles) {
