@@ -8,7 +8,6 @@
 #include <thread>
 #include <windows.h>
 #include <mmsystem.h>
-#pragma comment(lib, "winmm.lib")
 #include "GLSL.h"
 #include "Program.h"
 #include "MatrixStack.h"
@@ -30,11 +29,6 @@
 #include "GameObjectTypes.h"
 
 #include "../particles/particleGen.h"
-#ifdef WIN32
-#include <windows.h>
-#include <mmsystem.h>
-#endif
-
 
 // value_ptr for glm
 #include <glm/gtc/type_ptr.hpp>
@@ -539,7 +533,7 @@ public:
 		particleAlphaTex->setWrapModes(GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE);
 
 		// Initialize particle system
-		particleSystem = make_shared<particleGen>(vec3(0.0f), 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.1f, 0.2f);
+		particleSystem = make_shared<particleGen>(vec3(0.0f), 0.0f, 0.2f, 0.6f, 0.8f, 0.8f, 1.0f, 0.1f, 0.2f);
 		particleSystem->gpuSetup();
 	}
 
@@ -1279,7 +1273,7 @@ public:
 	// 	shader->unbind();
 	// }
 
-
+//TODO: Add particle effects to orbs
 void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		// --- Collision Check Logic ---
 		for (auto& orb : orbCollectibles) {
@@ -2477,9 +2471,10 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			//glDepthMask(GL_TRUE);
 			glDisable(GL_BLEND);
 
-			particleAlphaTex->unbind();
 
 			shader->unbind();
+			particleAlphaTex->unbind();
+			
 
 		Model->popMatrix();
 	}
@@ -2630,13 +2625,13 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			}
 			assimptexProg->unbind();
 		}
-
+		//TODO: sort them by z value
 		if (particleProg) {
 			particleProg->bind();
 			glPointSize(10.0f);
 			glUniformMatrix4fv(particleProg->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
 			glUniformMatrix4fv(particleProg->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
-			// particleAlphaTex->bind(particleProg->getUniform("alphaTexture"));
+			//particleAlphaTex->bind(particleProg->getUniform("alphaTexture"));
 			particleProg->unbind();
 		}
 
@@ -2681,6 +2676,9 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		drawLibGrnd(assimptexProg, Model); // Draw the library ground
 
 		drawBossRoom(assimptexProg, Model, true); // Draw the boss room
+
+		// 7. Draw Player (drawing last)
+		drawPlayer(assimptexProg, Model, animTime);
 
 		#if SHOW_HEALTHBAR
 		drawHealthBar();
@@ -2757,7 +2755,7 @@ int main(int argc, char *argv[])
 	windowManager->setEventCallbacks(application);
 	application->windowManager = windowManager;
 
-	PlaySound(TEXT("C:/Users/trigu/OneDrive/Desktop/476-project/resources/Breaking_Ground.wav"), NULL, SND_FILENAME|SND_ASYNC|SND_LOOP);
+	//PlaySound(TEXT("C:/Users/trigu/OneDrive/Desktop/476-project/resources/Breaking_Ground.wav"), NULL, SND_FILENAME|SND_ASYNC|SND_LOOP);
 
 	glfwSetInputMode(windowManager->getHandle(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 	glfwSetWindowUserPointer(windowManager->getHandle(), application);
