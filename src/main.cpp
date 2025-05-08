@@ -586,12 +586,13 @@ public:
  		string errStr;
 
 		// load the walking character model
-		stickfigure_running = new AssimpModel(resourceDirectory + "/CatWizard/CatWizardOrange.fbx");
+		stickfigure_running = new AssimpModel(resourceDirectory + "/CatWizard/CatWizardNoTex.fbx");
+		stickfigure_running->assignTexture("texture_diffuse1", resourceDirectory + "/CatWizard/textures/ImphenziaPalette02-Albedo.png");
 		//stickfigure_anim = new Animation(resourceDirectory + "/CatWizard/untitled.fbx", stickfigure_running, 0);
 		//stickfigure_idle = new Animation(resourceDirectory + "/Vanguard/Vanguard.fbx", stickfigure_running, 1);
 
 		//TEST Load the cat
-		CatWizard = new AssimpModel(resourceDirectory + "/CatWizard/CatWizardOrange.fbx");
+		//CatWizard = new AssimpModel(resourceDirectory + "/CatWizard/CatWizardOrange.fbx");
 
 
 		// --- Calculate Player Collision Box NOW that model is loaded ---
