@@ -25,6 +25,7 @@
 #include "Player.h"
 #include "BossRoomGen.h"
 #include "FrustumCulling.h"
+#include "BossEnemy.h"
 
 #include "Config.h"
 #include "GameObjectTypes.h"
@@ -151,6 +152,8 @@ public:
 	Animator *stickfigure_animator;
 
 	AssimpModel *CatWizard;
+
+	BossEnemy *bossEnemy;
 
 	float AnimDeltaTime = 0.0f;
 	float AnimLastFrame = 0.0f;
@@ -682,13 +685,14 @@ public:
 		// Use the scale factor used in drawEnemies
 		// Body scale was (0.5f, bodyBaseScaleY * 1.6f, 0.5f) where bodyBaseScaleY = 0.8f => (0.5, 1.28, 0.5)
 		glm::vec3 enemyCollisionScale = glm::vec3(0.5f, 1.28f, 0.5f); // Define the scale
-		vec3 bossSpawnPos = bossAreaCenter + vec3(0.0f, 0.8f, 0.0f);
+		vec3 bossSpawnPos = bossRoom->getWorldOrigin();
 
 		// Check if sphere model is loaded before creating enemies that use it
 		if (sphere) {
 			// enemies.push_back(new Enemy(bossSpawnPos, 200.0f, 0.0f, sphere, enemyCollisionScale, vec3(0.0f))); // <<-- Pass sphere and scale
 			// cout << " Enemy placed at boss area: (" << bossSpawnPos.x << ", " << bossSpawnPos.y << ", " << bossSpawnPos.z << ")" << endl;
 			enemies.push_back(new Enemy(libraryCenter + vec3(-5.0f, 0.8f, 8.0f), 50.0f, 2.0f, sphere, enemyCollisionScale, vec3(0.0f))); // <<-- Pass sphere and scale
+			bossEnemy = new BossEnemy(bossSpawnPos, BOSS_HP_MAX, sphere, vec3(1.0f), vec3(0, 1, 0), BOSS_SPECIAL_ATTACK_COOLDOWN);
 		}
 		else {
 			cerr << "ERROR: Sphere model not loaded, cannot create enemies." << endl;
@@ -1166,7 +1170,7 @@ public:
 		stickfigure_running->Draw(curS);
 		curS->unbind();
 
-		drawParticles(particleSystem, particleProg, Model);
+		// drawParticles(particleSystem, particleProg, Model);
 		Model->popMatrix();
 	}
 
@@ -1774,6 +1778,145 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			}
 		}
 		shader->unbind();
+	}
+
+	void drawBossEnemy(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
+		if (!shader || !Model || !bossEnemy) return; // Need boss enemy model
+
+		shader->bind(); // Use prog2 for simple colored shapes
+
+		// --- Material Settings ---
+		glm::vec3 bodyColor = glm::vec3(0.6f, 0.2f, 0.8f); // Purple-ish body
+		glm::vec3 eyeWhiteColor = glm::vec3(1.0f, 1.0f, 1.0f);
+		glm::vec3 eyePupilColor = glm::vec3(0.1f, 0.1f, 0.1f);
+
+		// --- Common Eye Parameters ---
+		float bodyBaseScaleY = 0.8f; // Base height factor before pill stretch
+		glm::vec3 eyeOffsetBase = glm::vec3(0.0f, bodyBaseScaleY * 0.4f, 0.45f); // Y up, Z forward from body center
+		float eyeSeparation = 0.25f; // Distance between eye centers
+		float whiteScale = 0.18f;
+		float pupilScale = 0.1f;
+		float pupilOffsetForward = 0.02f; // Push pupil slightly in front of white
+
+		if (bossEnemy->isAlive()) {
+			bossEnemy->lookAtPlayer(player->getPosition()); // Make the boss look at the player
+			glm::vec3 bossPos = bossEnemy->getPosition() + glm::vec3(0, 0.5f, 0); // Position the boss slightly above the ground
+			glm::vec3 bossRotation = bossEnemy->getRotation(); // Get rotation from the enemy object
+			float bossRotY = bossEnemy->getRotY();
+
+			Model->pushMatrix();
+			{
+				Model->loadIdentity(); // Reset the model matrix
+				Model->translate(bossPos);
+				Model->rotate(bossRotY, bossRotation); // Rotate the body to match the boss's rotation
+				// --- Draw Main Body (Pill Shape) ---
+				Model->pushMatrix();
+				{
+					// Model->translate(bossPos);
+					// Scale for pill shape ( taller in Y, squished in X/Z )
+					Model->scale(glm::vec3(0.5f, bodyBaseScaleY * 1.6f, 0.5f)); // Adjust scale factors as needed
+
+					// Set body material
+					glUniform3f(shader->getUniform("MatAmb"), bodyColor.r * 0.3f, bodyColor.g * 0.3f, bodyColor.b * 0.3f);
+					glUniform3f(shader->getUniform("MatDif"), bodyColor.r, bodyColor.g, bodyColor.b);
+					glUniform3f(shader->getUniform("MatSpec"), 0.3f, 0.3f, 0.3f);
+					glUniform1f(shader->getUniform("MatShine"), 8.0f);
+
+					setModel(shader, Model);
+					sphere->Draw(shader); // Draw the scaled sphere as the body
+				}
+				Model->popMatrix();
+
+
+				// --- Draw Eyes (Relative to Enemy Center) ---
+
+				// Set Eye Materials Once
+				// White Material Setup (done inside loop per part for clarity now)
+				// Black Material Setup (done inside loop per part for clarity now)
+
+				// Left Eye
+				Model->pushMatrix();
+				{
+					// Go to enemy center, then offset to eye position
+					// Model->translate(bossPos);
+					Model->translate(eyeOffsetBase + glm::vec3(-eyeSeparation, 0, 0));
+
+					// White Part
+					Model->pushMatrix();
+					{
+						Model->scale(glm::vec3(whiteScale));
+						// Set white material
+						glUniform3f(shader->getUniform("MatAmb"), eyeWhiteColor.r * 0.3f, eyeWhiteColor.g * 0.3f, eyeWhiteColor.b * 0.3f);
+						glUniform3f(shader->getUniform("MatDif"), eyeWhiteColor.r, eyeWhiteColor.g, eyeWhiteColor.b);
+						glUniform3f(shader->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f);
+						glUniform1f(shader->getUniform("MatShine"), 4.0f);
+						setModel(shader, Model);
+						sphere->Draw(shader);
+					}
+					Model->popMatrix(); // Pop white scale
+
+					// Pupil Part
+					Model->pushMatrix();
+					{
+						// Move slightly forward from white surface and scale down
+						Model->translate(glm::vec3(0, 0, whiteScale * 0.5f + pupilOffsetForward)); // Offset relative to white scale
+						Model->scale(glm::vec3(pupilScale));
+						// Set black material
+						glUniform3f(shader->getUniform("MatAmb"), eyePupilColor.r * 0.3f, eyePupilColor.g * 0.3f, eyePupilColor.b * 0.3f);
+						glUniform3f(shader->getUniform("MatDif"), eyePupilColor.r, eyePupilColor.g, eyePupilColor.b);
+						glUniform3f(shader->getUniform("MatSpec"), 0.5f, 0.5f, 0.5f); // Some specular highlight
+						glUniform1f(shader->getUniform("MatShine"), 32.0f);
+						setModel(shader, Model);
+						sphere->Draw(shader);
+					}
+					Model->popMatrix(); // Pop pupil transform
+				}
+				Model->popMatrix(); // Pop left eye transform
+
+
+				// Right Eye (Similar to Left)
+				Model->pushMatrix();
+				{
+					// Model->translate(bossPos);
+					Model->translate(eyeOffsetBase + glm::vec3(+eyeSeparation, 0, 0)); // Offset to the right
+
+					// White Part
+					Model->pushMatrix();
+					{
+						Model->scale(glm::vec3(whiteScale));
+						// Set white material
+						glUniform3f(shader->getUniform("MatAmb"), eyeWhiteColor.r * 0.3f, eyeWhiteColor.g * 0.3f, eyeWhiteColor.b * 0.3f);
+						glUniform3f(shader->getUniform("MatDif"), eyeWhiteColor.r, eyeWhiteColor.g, eyeWhiteColor.b);
+						glUniform3f(shader->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f);
+						glUniform1f(shader->getUniform("MatShine"), 4.0f);
+						setModel(shader, Model);
+						sphere->Draw(shader);
+					}
+					Model->popMatrix();
+
+					// Pupil Part
+					Model->pushMatrix();
+					{
+						Model->translate(glm::vec3(0, 0, whiteScale * 0.5f + pupilOffsetForward));
+						Model->scale(glm::vec3(pupilScale));
+						// Set black material
+						glUniform3f(shader->getUniform("MatAmb"), eyePupilColor.r * 0.3f, eyePupilColor.g * 0.3f, eyePupilColor.b * 0.3f);
+						glUniform3f(shader->getUniform("MatDif"), eyePupilColor.r, eyePupilColor.g, eyePupilColor.b);
+						glUniform3f(shader->getUniform("MatSpec"), 0.5f, 0.5f, 0.5f);
+						glUniform1f(shader->getUniform("MatShine"), 32.0f);
+						setModel(shader, Model);
+						sphere->Draw(shader);
+					}
+					Model->popMatrix();
+				}
+				Model->popMatrix(); // Pop right eye transform
+			}
+			Model->popMatrix(); // Pop boss body transform
+		}
+
+		shader->unbind();
+
+
 	}
 
 	void drawDoor(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
@@ -2681,6 +2824,8 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 		drawBossRoom(assimptexProg, Model, true); // Draw the boss room
 
+		drawBossEnemy(prog2, Model); // Draw the boss enemy
+
 		#if SHOW_HEALTHBAR
 		drawHealthBar();
 		drawEnemyHealthBars(View->topMatrix(), Projection->topMatrix());
@@ -2696,11 +2841,12 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			/* draws */
 			// drawGroundSections(prog2, Model);
 			// drawBorder(prog2, Model);
-			drawLibrary(prog2, Model, false);
-			drawBossRoom(prog2, Model, false);
-			drawDoor(prog2, Model);
+			// drawDoor(prog2, Model);
 			drawBooks(prog2, Model);
 			drawEnemies(prog2, Model);
+			drawLibrary(prog2, Model, false);
+			drawBossRoom(prog2, Model, false);
+			drawBossEnemy(prog2, Model);
 			drawOrbs(prog2, Model);
 			drawMiniPlayer(prog2, Model);
 
