@@ -6,8 +6,7 @@
 #include <glad/glad.h>
 #include <chrono>
 #include <thread>
-#include <windows.h>
-#include <mmsystem.h>
+// #include <mmsystem.h>
 #pragma comment(lib, "winmm.lib")
 #include "GLSL.h"
 #include "Program.h"
@@ -31,8 +30,7 @@
 
 #include "../particles/particleGen.h"
 #ifdef WIN32
-#include <windows.h>
-#include <mmsystem.h>
+// #include <mmsystem.h>
 #endif
 
 
@@ -732,6 +730,20 @@ public:
 				glUniform3f(curS->getUniform("MatDif"), 0.5f, 0.5f, 0.5f);
 				glUniform3f(curS->getUniform("MatSpec"), 0.7f, 0.7f, 0.7f);
 				glUniform1f(curS->getUniform("MatShine"), 10.0f);
+			break;
+			case 5:
+			//yellow
+			glUniform3f(curS->getUniform("MatAmb"), 0.95f , 0.78f , 0.14f );
+			glUniform3f(curS->getUniform("MatDif"), 0.95f, 0.78f, 0.14f);
+			glUniform3f(curS->getUniform("MatSpec"), 0.3f, 0.3f, 0.3f);
+			glUniform1f(curS->getUniform("MatShine"), 8.0f);
+			break;
+			case 6:
+			//brown
+			glUniform3f(shader->getUniform("MatAmb"), 0.15f, 0.08f, 0.03f);
+			glUniform3f(shader->getUniform("MatDif"), 0.6f, 0.3f, 0.1f);
+			glUniform3f(shader->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f);
+			glUniform1f(shader->getUniform("MatShine"), 4.0f);
 			break;
 		}
 	}
@@ -2693,17 +2705,25 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			glViewport(0, height-300, 300, 300);
 			SetOrthoMatrix(prog2);
 			SetTopView(prog2); /*MINI MAP*/
+			SetMaterialMan(prog2,6 );
 			//drawScene(prog2, CULL);
 			/* draws */
 			// drawGroundSections(prog2, Model);
 			// drawBorder(prog2, Model);
+			
+
 			drawLibrary(prog2, Model, false);
-			drawBossRoom(prog2, Model, false);
-			drawDoor(prog2, Model);
+			
+			// drawDoor(prog2, Model);
 			drawBooks(prog2, Model);
 			drawEnemies(prog2, Model);
-			drawOrbs(prog2, Model);
+			//drawOrbs(prog2, Model);
 			drawMiniPlayer(prog2, Model);
+			drawBorderWalls(prog2, Model);
+			drawLibGrnd(prog2, Model);
+			drawBossRoom(prog2, Model, false);
+
+			
 
 			//stripped down player draw
 
@@ -2757,7 +2777,7 @@ int main(int argc, char *argv[])
 	windowManager->setEventCallbacks(application);
 	application->windowManager = windowManager;
 
-	PlaySound(TEXT("C:/Users/trigu/OneDrive/Desktop/476-project/resources/Breaking_Ground.wav"), NULL, SND_FILENAME|SND_ASYNC|SND_LOOP);
+	//ound(TEXT("C:/Users/trigu/OneDrive/Desktop/476-project/resources/Breaking_Ground.wav"), NULL, SND_FILENAME|SND_ASYNC|SND_LOOP);
 
 	glfwSetInputMode(windowManager->getHandle(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 	glfwSetWindowUserPointer(windowManager->getHandle(), application);
