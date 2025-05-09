@@ -98,8 +98,6 @@ public:
 	
 	std::unordered_set<int> libraryGroundIDs; // Set to track unique IDs
 
-	 // Add particle alpha texture
-
 	// Scene layout parameters
 	vec3 libraryCenter = vec3(0.0f, Config::GROUND_HEIGHT, 0.0f);
 	vec3 bossAreaCenter = vec3(0.0f, Config::GROUND_HEIGHT, 60.0f); // Further away
@@ -150,11 +148,6 @@ public:
 	// vec3 characterMovement = vec3(0, 0, 0);
 	glm::vec3 manScale = glm::vec3(0.01, 0.01, 0.01);
 	glm::vec3 manMoveDir = glm::vec3(sin(radians(0.0f)), 0, cos(radians(0.0f)));
-
-	// initial position of light cycles
-	glm::vec3 start_lightcycle1_pos = glm::vec3(-384, -11, 31);
-	glm::vec3 start_lightcycle2_pos = glm::vec3(-365, -11, 9.1);
-
 
 	float theta = glm::radians(Config::CAMERA_DEFAULT_THETA_DEGREES); // controls yaw
 	float phi = glm::radians(Config::CAMERA_DEFAULT_PHI_DEGREES); // controls pitch
@@ -312,6 +305,23 @@ public:
 		ShadowProg->addUniform("Texture0");
 		ShadowProg->addUniform("shadowDepth");
 
+		ShadowProg->addUniform("hasTexture");
+		ShadowProg->addUniform("hasMaterial");
+		ShadowProg->addUniform("hasBones");
+
+		ShadowProg->addUniform("MatAmb");
+		ShadowProg->addUniform("MatDif");
+		ShadowProg->addUniform("MatSpec");
+		ShadowProg->addUniform("MatShine");
+		ShadowProg->addUniform("MatEmit");
+
+		for (int i = 0; i < Config::MAX_BONES; i++) {
+			ShadowProg->addUniform("finalBoneMatrices[" + to_string(i) + "]");
+		}
+		
+		ShadowProg->addAttribute("boneIds");
+		ShadowProg->addAttribute("weights");
+
 		DebugProg->addUniform("texBuf");
 		DebugProg->addUniform("vertPos");
 
@@ -329,12 +339,6 @@ public:
 		texProg->addUniform("MatAmb");
 		texProg->addUniform("MatSpec");
 		texProg->addUniform("MatShine");
-		texProg->addUniform("numLights");
-		for (int i = 0; i < Config::NUM_LIGHTS; i++) {
-			texProg->addUniform("lightPos[" + to_string(i) + "]");
-			texProg->addUniform("lightColor[" + to_string(i) + "]");
-			texProg->addUniform("lightIntensity[" + to_string(i) + "]");
-		}
 		texProg->addAttribute("vertPos");
 		texProg->addAttribute("vertNor");
 		texProg->addAttribute("vertTex");
@@ -353,11 +357,6 @@ public:
 		prog2->addUniform("MatDif");
 		prog2->addUniform("MatSpec");
 		prog2->addUniform("MatShine");
-		for (int i = 0; i < Config::NUM_LIGHTS; i++) {
-			prog2->addUniform("lightPos[" + to_string(i) + "]");
-			prog2->addUniform("lightColor[" + to_string(i) + "]");
-			prog2->addUniform("lightIntensity[" + to_string(i) + "]");
-		}
 		prog2->addUniform("numLights");
 		prog2->addUniform("hasEmittance");
 		prog2->addUniform("MatEmitt");
@@ -393,13 +392,6 @@ public:
 		assimptexProg->addUniform("MatAmb");
 		assimptexProg->addUniform("MatDif");
 		assimptexProg->addUniform("MatSpec");
-		assimptexProg->addUniform("MatShine");
-		for (int i = 0; i < Config::NUM_LIGHTS; i++) {
-			assimptexProg->addUniform("lightPos[" + to_string(i) + "]");
-			assimptexProg->addUniform("lightColor[" + to_string(i) + "]");
-			assimptexProg->addUniform("lightIntensity[" + to_string(i) + "]");
-		}
-		assimptexProg->addUniform("numLights");
 		assimptexProg->addUniform("hasTexture");
 
 		hudProg = make_shared<Program>();
@@ -887,29 +879,52 @@ public:
 
 		shader->bind(); // Bind the simple shader
 
-		// glUniform1i(shader->getUniform("hasTexture"), 1); // Set texture uniform
+		bool isShadowShader = (shader == ShadowProg);
+
+		if (isShadowShader) {
+			if (shader->getUniform("hasTexture") != -1) {
+				glUniform1i(shader->getUniform("hasTexture"), 1); // use texture
+			}
+			if (shader->getUniform("hasMaterial") != -1) {
+				glUniform1i(shader->getUniform("hasMaterial"), 1); // use materials
+			}
+			if (shader->getUniform("hasBones") != -1) {
+				glUniform1i(shader->getUniform("hasBones"), 0); // no bones
+			}
+		}
 
 		for (const auto& libGrnd : libraryGrounds) {
 			glBindVertexArray(libGrnd.VAO); // Bind each library ground VAO
 
-			libGrnd.texture->bind(shader->getUniform("texture_diffuse1")); // Bind the texture
-			glUniform1i(shader->getUniform("hasTexture"), 1); // Set texture uniform
+			if (isShadowShader) libGrnd.texture->bind(shader->getUniform("texture_diffuse1")); // Bind the texture
 
 			Model->pushMatrix();
 			Model->loadIdentity();
 			setModel(shader, Model);
-			SetMaterialMan(shader, 1); // Silver material
+			if (isShadowShader) SetMaterialMan(shader, 1); // Silver material
 			glDrawElements(GL_TRIANGLES, libGrnd.GiboLen, GL_UNSIGNED_SHORT, 0);
 			Model->popMatrix();
 
-			libGrnd.texture->unbind(); // Unbind the texture after drawing each library ground
+			if (isShadowShader) libGrnd.texture->unbind(); // Unbind the texture after drawing each library ground
 		}
 
 		glBindVertexArray(0); // Unbind VAO after drawing all library grounds
 
+		// Reset state flags before unbinging the shader
+		if (isShadowShader) {
+			if (shader->getUniform("hasTexture") != -1) {
+				glUniform1i(shader->getUniform("hasTexture"), 0);
+			}
+			if (shader->getUniform("hasMaterial") != -1) {
+				glUniform1i(shader->getUniform("hasMaterial"), 0);
+			}
+			if (shader->getUniform("hasBones") != -1) {
+				glUniform1i(shader->getUniform("hasBones"), 0); // no bones
+			}
+		}
+
 		shader->unbind(); // Unbind the simple shader
 	}
-
 
 	void initWall(float length, vec3 pos, vec3 dir, float height,
 	GLuint &WallVertexArrayID, GLuint &WallBuffObj, GLuint &WallNormBuffObj, GLuint &WIndxBuffObj, GLuint &WallTexBuffObj, int &w_GiboLen) {
@@ -999,18 +1014,33 @@ public:
 	}
 
 	void drawBorderWalls(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
-		if (!shader || !Model) {
-			cerr << "Error: Null pointer in drawBorderWalls." << endl;
-			return;
-		}
+		if (!shader || !Model) return; // safety checks
 
-		shader->bind(); // Bind the simple shader
+		shader->bind(); // Bind the shader
+
+		bool isShadowShader = (shader == ShadowProg);
+
+		if (isShadowShader) {
+			if (shader->getUniform("hasTexture") != -1) {
+				glUniform1i(shader->getUniform("hasTexture"), 1); // use texture
+			}
+			if (shader->getUniform("hasMaterial") != -1) {
+				glUniform1i(shader->getUniform("hasMaterial"), 0); // no materials
+			}
+			if (shader->getUniform("hasBones") != -1) {
+				glUniform1i(shader->getUniform("hasBones"), 0); // no bones
+			}
+		}
 
 		for (const auto& border : borderWalls) {
 			glBindVertexArray(border.WallVAID); // Bind each border VAO
 
-			border.texture->bind(shader->getUniform("texture_diffuse1")); // Bind the texture
-			glUniform1i(shader->getUniform("hasTexture"), 1); // Set texture uniform
+			// For shadow shader, explicitly set texture unit
+			if (isShadowShader) {
+				glActiveTexture(GL_TEXTURE0);
+				glBindTexture(GL_TEXTURE_2D, border.texture->getID());
+				glUniform1i(shader->getUniform("Texture0"), 0);
+			}
 
 			Model->pushMatrix();
 			Model->loadIdentity();
@@ -1024,15 +1054,46 @@ public:
 
 		glBindVertexArray(0); // Unbind VAO after drawing all borders
 
+		// Reset state flags if needed
+		if (isShadowShader) {
+			if (shader->getUniform("hasTexture") != -1) {
+				glUniform1i(shader->getUniform("hasTexture"), 0);
+			}
+			if (shader->getUniform("hasMaterial") != -1) {
+				glUniform1i(shader->getUniform("hasMaterial"), 0);
+			}
+			if (shader->getUniform("hasBones") != -1) {
+				glUniform1i(shader->getUniform("hasBones"), 0);
+			}
+		}
+
 		shader->unbind(); // Unbind the simple shader
 	}
 
 	void drawPlayer(shared_ptr<Program> curS, shared_ptr<MatrixStack> Model, float animTime) {
-		if (!curS || !Model || !stickfigure_running || !stickfigure_animator /* || !stickfigure_anim /*|| !stickfigure_idle*/) {
+		if (!curS || !Model || !stickfigure_running || !stickfigure_animator) {
 			cerr << "Error: Null pointer in drawPlayer." << endl;
 			return;
 		}
+
 		curS->bind();
+
+		// Check if we're using the shadow shader
+		bool isShadowShader = (curS == ShadowProg);
+
+		// Set flags for the appropriate shader
+	// For the shadow shader, we need to set texture, material, and bone flags
+		if (isShadowShader) {
+			if (curS->getUniform("hasTexture") != -1) {
+				glUniform1i(curS->getUniform("hasTexture"), 1); // Player uses texture
+			}
+			if (curS->getUniform("hasMaterial") != -1) {
+				glUniform1i(curS->getUniform("hasMaterial"), 0); // Player does not use materials
+			}
+			if (curS->getUniform("hasBones") != -1) {
+				glUniform1i(curS->getUniform("hasBones"), 1); // Player uses bone animation
+			}
+		}
 
 		// Animation update
 		/*
@@ -1076,28 +1137,58 @@ public:
 		glUniform1i(curS->getUniform("hasTexture"), 1);
 		setModel(curS, Model);
 		stickfigure_running->Draw(curS);
-		curS->unbind();
 
-		drawParticles(particleSystem, particleProg, Model);
+		// Reset flags if needed
+		if (isShadowShader) {
+			if (curS->getUniform("hasBones") != -1) {
+				glUniform1i(curS->getUniform("hasBones"), 0); // Reset bone flag
+			}
+			if (curS->getUniform("hasTexture") != -1) {
+				glUniform1i(curS->getUniform("hasTexture"), 0); // Reset texture flag
+			}
+			if (curS->getUniform("hasMaterial") != -1) {
+				glUniform1i(curS->getUniform("hasMaterial"), 0); // Reset material flag
+			}
+		}
+
+		curS->unbind(); // unbind the shader
+
+		if (isShadowShader) {
+			drawParticles(particleSystem, particleProg, Model); // draw particles if using shadow shader (actual render pass)
+		}
 		Model->popMatrix();
 	}
 
-
-
 	void drawBooks(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
+		if (!shader || !Model) return; // Check if shader and model stack are valid
+
 		shader->bind();
+
+		bool isShadowShader = (shader == ShadowProg);
+
+		if (isShadowShader) {
+			if (shader->getUniform("hasTexture") != -1) {
+				glUniform1i(shader->getUniform("hasTexture"), 0); // Books don't use texture
+			}
+			if (shader->getUniform("hasMaterial") != -1) {
+				glUniform1i(shader->getUniform("hasMaterial"), 1); // books use materials
+			}
+			if (shader->getUniform("hasBones") != -1) {
+				glUniform1i(shader->getUniform("hasBones"), 0); // Books don't use bones
+			}
+		}
 
 		for (const auto& book : books) {
 			// Common values for book halves
 			float halfThickness = book.scale.z * 0.5f;
 			glm::vec3 halfScaleVec = glm::vec3(book.scale.x, book.scale.y, halfThickness);
 
-			// Set Material (e.g., brown for cover) - Apply once if same for both halves
-			glUniform3f(shader->getUniform("MatAmb"), 0.15f, 0.08f, 0.03f);
-			glUniform3f(shader->getUniform("MatDif"), 0.6f, 0.3f, 0.1f);
-			glUniform3f(shader->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f);
-			glUniform1f(shader->getUniform("MatShine"), 4.0f);
-			glUniform1i(shader->getUniform("hasEmittance"), 0);
+			// Set Material properties - check for uniform existence first
+			if (shader->getUniform("MatAmb") != -1) glUniform3f(shader->getUniform("MatAmb"), 0.15f, 0.08f, 0.03f); // Brown ambient
+			if (shader->getUniform("MatDif") != -1) glUniform3f(shader->getUniform("MatDif"), 0.6f, 0.3f, 0.1f); // Brown diffuse
+			if (shader->getUniform("MatSpec") != -1) glUniform3f(shader->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f); // Low specular
+			if (shader->getUniform("MatShine") != -1) glUniform1f(shader->getUniform("MatShine"), 4.0f); // Low shininess
+			if (shader->getUniform("MatEmit") != -1) glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f); // No emission
 
 			// --- Draw Left Cover/Pages ---
 			Model->pushMatrix(); // SAVE current stack state
@@ -1154,6 +1245,13 @@ public:
 			Model->popMatrix(); // RESTORE saved stack state
 		}
 
+		// Reset flags if needed
+		if (isShadowShader) {
+			if (shader->getUniform("hasMaterial") != -1) {
+				glUniform1i(shader->getUniform("hasMaterial"), 0);
+			}
+		}
+
 		shader->unbind();
 	}
 
@@ -1161,16 +1259,15 @@ public:
 		shader->bind(); // Use prog2 for simple colored shapes
 
 		Model->pushMatrix();
-		Model->loadIdentity();
-		Model->translate(vec3(bossAreaCenter.x, bossAreaCenter.y, bossAreaCenter.z - 20)); // Center the sky sphere at the player position
-		Model->scale(vec3(5.0f)); // Scale up the sky sphere to cover the scene
+			Model->loadIdentity();
+			Model->translate(vec3(bossAreaCenter.x, bossAreaCenter.y, bossAreaCenter.z - 20)); // Center the sky sphere at the player position
+			Model->scale(vec3(5.0f)); // Scale up the sky sphere to cover the scene
 
-		setModel(shader, Model);
-		sky_sphere->Draw(shader);
-
-    Model->popMatrix();
-    shader->unbind();
-  }
+			setModel(shader, Model);
+			sky_sphere->Draw(shader);
+		Model->popMatrix();
+		shader->unbind();
+    }
 
 	// void drawBorder(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model){
 	// 	shader->bind();
@@ -1191,7 +1288,7 @@ public:
 	// }
 
 
-void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
+void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		// --- Collision Check Logic ---
 		for (auto& orb : orbCollectibles) {
 			// Perform collision check ONLY if not collected AND in the IDLE state
@@ -1205,7 +1302,21 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		}
 
 		// --- Drawing Logic ---
-		simpleShader->bind();
+		shader->bind();
+
+		bool isShadowShader = (shader == ShadowProg);
+
+		if (isShadowShader) {
+			if (shader->getUniform("hasTexture") != -1) {
+				glUniform1i(shader->getUniform("hasTexture"), 0); // no texture
+			}
+			if (shader->getUniform("hasMaterial") != -1) {
+				glUniform1i(shader->getUniform("hasMaterial"), 1); // use materials
+			}
+			if (shader->getUniform("hasBones") != -1) {
+				glUniform1i(shader->getUniform("hasBones"), 0); // no bones
+			}
+		}
 
 		int collectedOrbDrawIndex = 0;
 
@@ -1244,24 +1355,32 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 			// --- Set Material & Draw ---
 			// (Material setting code remains the same)
-			glUniform3f(simpleShader->getUniform("MatAmb"), orb.color.r * 0.2f, orb.color.g * 0.2f, orb.color.b * 0.2f);
-			glUniform3f(simpleShader->getUniform("MatDif"), orb.color.r * 0.8f, orb.color.g * 0.8f, orb.color.b * 0.8f);
-			glUniform3f(simpleShader->getUniform("MatSpec"), 0.8f, 0.8f, 0.8f);
-			glUniform1f(simpleShader->getUniform("MatShine"), 32.0f);
-			glUniform1i(simpleShader->getUniform("hasEmittance"), 0);
+			glUniform3f(shader->getUniform("MatAmb"), orb.color.r * 0.2f, orb.color.g * 0.2f, orb.color.b * 0.2f);
+			glUniform3f(shader->getUniform("MatDif"), orb.color.r * 0.8f, orb.color.g * 0.8f, orb.color.b * 0.8f);
+			glUniform3f(shader->getUniform("MatSpec"), 0.8f, 0.8f, 0.8f);
+			glUniform1f(shader->getUniform("MatShine"), 32.0f);
+			glUniform1i(shader->getUniform("hasEmit"), 0);
 
-			setModel(simpleShader, Model);
-			orb.model->Draw(simpleShader);
+			setModel(shader, Model);
+			orb.model->Draw(shader);
 
 			Model->popMatrix();
 		} // End drawing loop
 
-		simpleShader->unbind();
+		// Reset state mat flags
+		if (isShadowShader) {
+			if (shader->getUniform("hasTexture") != -1) glUniform1i(shader->getUniform("hasTexture"), 0);
+			if (shader->getUniform("hasMaterial") != -1) glUniform1i(shader->getUniform("hasMaterial"), 0);
+			if (shader->getUniform("hasBones") != -1) glUniform1i(shader->getUniform("hasBones"), 0);
+		}
+
+		shader->unbind();
 	}
 
 	void drawCat(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model, GLint texID, int texOn) {
 		if (!CatWizard) return; //Need Cat Model
-		shader->bind(); //Texture
+
+		shader->bind(); // Texture
 		if (texOn) glUniform1i(shader->getUniform("hasTexture"), 1);
 
 		Model->pushMatrix();
@@ -1277,9 +1396,23 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 	}
 
 	void drawEnemies(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
-		if (!sphere) return; // Need the sphere model
+		if (!shader || !Model || !sphere) return; // safety checks
 
-		shader->bind(); // Use prog2 for simple colored shapes
+		shader->bind(); // bind shader
+
+		bool isShadowShader = (shader == ShadowProg);
+
+		if (isShadowShader) {
+			if (shader->getUniform("hasTexture") != -1) {
+				glUniform1i(shader->getUniform("hasTexture"), 0); // no texture
+			}
+			if (shader->getUniform("hasMaterial") != -1) {
+				glUniform1i(shader->getUniform("hasMaterial"), 1); // use materials
+			}
+			if (shader->getUniform("hasBones") != -1) {
+				glUniform1i(shader->getUniform("hasBones"), 0); // no bones
+			}
+		}
 
 		// --- Material Settings ---
 		glm::vec3 bodyColor = glm::vec3(0.6f, 0.2f, 0.8f); // Purple-ish body
@@ -1307,11 +1440,25 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 				// Scale for pill shape ( taller in Y, squished in X/Z )
 				Model->scale(glm::vec3(0.5f, bodyBaseScaleY * 1.6f, 0.5f)); // Adjust scale factors as needed
 
-				// Set body material
-				glUniform3f(shader->getUniform("MatAmb"), bodyColor.r * 0.3f, bodyColor.g * 0.3f, bodyColor.b * 0.3f);
-				glUniform3f(shader->getUniform("MatDif"), bodyColor.r, bodyColor.g, bodyColor.b);
-				glUniform3f(shader->getUniform("MatSpec"), 0.3f, 0.3f, 0.3f);
-				glUniform1f(shader->getUniform("MatShine"), 8.0f);
+				// Set Material properties - check for uniform existence first
+				if (shader->getUniform("MatAmb") != -1) {
+					glUniform3f(shader->getUniform("MatAmb"), bodyColor.r * 0.3f, bodyColor.g * 0.3f, bodyColor.b * 0.3f);
+				}
+
+				if (shader->getUniform("MatDif") != -1) {
+					glUniform3f(shader->getUniform("MatDif"), bodyColor.r, bodyColor.g, bodyColor.b);
+				}
+
+				if (shader->getUniform("MatSpec") != -1) {
+					glUniform3f(shader->getUniform("MatSpec"), 0.3f, 0.3f, 0.3f);
+				}
+
+				if (shader->getUniform("MatShine") != -1) {
+					glUniform1f(shader->getUniform("MatShine"), 8.0f);
+				}
+				if (shader->getUniform("MatEmit") != -1) {
+					glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f); // No emission
+				}
 
 				setModel(shader, Model);
 				sphere->Draw(shader); // Draw the scaled sphere as the body
@@ -1336,11 +1483,28 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 				Model->pushMatrix();
 				{
 					Model->scale(glm::vec3(whiteScale));
-					// Set white material
-					glUniform3f(shader->getUniform("MatAmb"), eyeWhiteColor.r * 0.3f, eyeWhiteColor.g * 0.3f, eyeWhiteColor.b * 0.3f);
-					glUniform3f(shader->getUniform("MatDif"), eyeWhiteColor.r, eyeWhiteColor.g, eyeWhiteColor.b);
-					glUniform3f(shader->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f);
-					glUniform1f(shader->getUniform("MatShine"), 4.0f);
+					
+					// Set white Material properties - check for uniform existence first
+					if (shader->getUniform("MatAmb") != -1) {
+						glUniform3f(shader->getUniform("MatAmb"), eyeWhiteColor.r * 0.3f, eyeWhiteColor.g * 0.3f, eyeWhiteColor.b * 0.3f);
+					}
+
+					if (shader->getUniform("MatDif") != -1) {
+						glUniform3f(shader->getUniform("MatDif"), eyeWhiteColor.r, eyeWhiteColor.g, eyeWhiteColor.b);
+					}
+
+					if (shader->getUniform("MatSpec") != -1) {
+						glUniform3f(shader->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f);
+					}
+
+					if (shader->getUniform("MatShine") != -1) {
+						glUniform1f(shader->getUniform("MatShine"), 4.0f);
+					}
+
+					if (shader->getUniform("MatEmit") != -1) {
+						glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f); // No emission
+					}
+					
 					setModel(shader, Model);
 					sphere->Draw(shader);
 				}
@@ -1352,11 +1516,28 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 					// Move slightly forward from white surface and scale down
 					Model->translate(glm::vec3(0, 0, whiteScale * 0.5f + pupilOffsetForward)); // Offset relative to white scale
 					Model->scale(glm::vec3(pupilScale));
-					// Set black material
-					glUniform3f(shader->getUniform("MatAmb"), eyePupilColor.r * 0.3f, eyePupilColor.g * 0.3f, eyePupilColor.b * 0.3f);
-					glUniform3f(shader->getUniform("MatDif"), eyePupilColor.r, eyePupilColor.g, eyePupilColor.b);
-					glUniform3f(shader->getUniform("MatSpec"), 0.5f, 0.5f, 0.5f); // Some specular highlight
-					glUniform1f(shader->getUniform("MatShine"), 32.0f);
+
+					// Set black Material properties - check for uniform existence first
+					if (shader->getUniform("MatAmb") != -1) {
+						glUniform3f(shader->getUniform("MatAmb"), eyePupilColor.r * 0.3f, eyePupilColor.g * 0.3f, eyePupilColor.b * 0.3f);
+					}
+
+					if (shader->getUniform("MatDif") != -1) {
+						glUniform3f(shader->getUniform("MatDif"), eyePupilColor.r, eyePupilColor.g, eyePupilColor.b);
+					}
+
+					if (shader->getUniform("MatSpec") != -1) {
+						glUniform3f(shader->getUniform("MatSpec"), 0.5f, 0.5f, 0.5f); // Some specular highlight
+					}
+
+					if (shader->getUniform("MatShine") != -1) {
+						glUniform1f(shader->getUniform("MatShine"), 32.0f);
+					}
+
+					if (shader->getUniform("MatEmit") != -1) {
+						glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f); // No emission
+					}
+					
 					setModel(shader, Model);
 					sphere->Draw(shader);
 				}
@@ -1375,11 +1556,28 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 				Model->pushMatrix();
 				{
 					Model->scale(glm::vec3(whiteScale));
-					// Set white material
-					glUniform3f(shader->getUniform("MatAmb"), eyeWhiteColor.r * 0.3f, eyeWhiteColor.g * 0.3f, eyeWhiteColor.b * 0.3f);
-					glUniform3f(shader->getUniform("MatDif"), eyeWhiteColor.r, eyeWhiteColor.g, eyeWhiteColor.b);
-					glUniform3f(shader->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f);
-					glUniform1f(shader->getUniform("MatShine"), 4.0f);
+
+					// Set white Material properties - check for uniform existence first
+					if (shader->getUniform("MatAmb") != -1) {
+						glUniform3f(shader->getUniform("MatAmb"), eyeWhiteColor.r * 0.3f, eyeWhiteColor.g * 0.3f, eyeWhiteColor.b * 0.3f);
+					}
+
+					if (shader->getUniform("MatDif") != -1) {
+						glUniform3f(shader->getUniform("MatDif"), eyeWhiteColor.r, eyeWhiteColor.g, eyeWhiteColor.b);
+					}
+
+					if (shader->getUniform("MatSpec") != -1) {
+						glUniform3f(shader->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f);
+					}
+
+					if (shader->getUniform("MatShine") != -1) {
+						glUniform1f(shader->getUniform("MatShine"), 4.0f);
+					}
+
+					if (shader->getUniform("MatEmit") != -1) {
+						glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f); // No emission
+					}
+
 					setModel(shader, Model);
 					sphere->Draw(shader);
 				}
@@ -1390,11 +1588,28 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 				{
 					Model->translate(glm::vec3(0, 0, whiteScale * 0.5f + pupilOffsetForward));
 					Model->scale(glm::vec3(pupilScale));
-					// Set black material
-					glUniform3f(shader->getUniform("MatAmb"), eyePupilColor.r * 0.3f, eyePupilColor.g * 0.3f, eyePupilColor.b * 0.3f);
-					glUniform3f(shader->getUniform("MatDif"), eyePupilColor.r, eyePupilColor.g, eyePupilColor.b);
-					glUniform3f(shader->getUniform("MatSpec"), 0.5f, 0.5f, 0.5f);
-					glUniform1f(shader->getUniform("MatShine"), 32.0f);
+
+					// Set black Material properties - check for uniform existence first
+					if (shader->getUniform("MatAmb") != -1) {
+						glUniform3f(shader->getUniform("MatAmb"), eyePupilColor.r * 0.3f, eyePupilColor.g * 0.3f, eyePupilColor.b * 0.3f);
+					}
+
+					if (shader->getUniform("MatDif") != -1) {
+						glUniform3f(shader->getUniform("MatDif"), eyePupilColor.r, eyePupilColor.g, eyePupilColor.b);
+					}
+
+					if (shader->getUniform("MatSpec") != -1) {
+						glUniform3f(shader->getUniform("MatSpec"), 0.5f, 0.5f, 0.5f); // Some specular highlight
+					}
+
+					if (shader->getUniform("MatShine") != -1) {
+						glUniform1f(shader->getUniform("MatShine"), 32.0f);
+					}
+
+					if (shader->getUniform("MatEmit") != -1) {
+						glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f); // No emission
+					}
+
 					setModel(shader, Model);
 					sphere->Draw(shader);
 				}
@@ -1404,6 +1619,13 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 		} // End loop through enemies
 
+		// Reset flags if needed
+		if (isShadowShader) {
+			if (shader->getUniform("hasMaterial") != -1) {
+				glUniform1i(shader->getUniform("hasMaterial"), 0);
+			}
+		}
+
 		shader->unbind();
 	}
 
@@ -1411,8 +1633,39 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		if (!shader || !Model || !book_shelf1 || grid.getSize().x == 0 || grid.getSize().y == 0) return; // Safety checks
 
 		shader->bind();
-		if (shader == assimptexProg) {
-			glUniform1i(shader->getUniform("hasTexture"), 1); // Bookshelves should use texture
+
+		bool useTex = (shader == ShadowProg);
+		
+		if (useTex) {
+			if (shader->getUniform("hasTexture") != -1) {
+				glUniform1i(shader->getUniform("hasTexture"), 1);
+			}
+
+			if (shader->getUniform("hasMaterial") != -1) {
+				glUniform1i(shader->getUniform("hasMaterial"), 1);
+			}
+
+			// Set default material properties for library objects
+			if (shader->getUniform("MatAmb") != -1) {
+				glUniform3f(shader->getUniform("MatAmb"), 0.2f, 0.2f, 0.2f);
+			}
+			if (shader->getUniform("MatDif") != -1) {
+				glUniform3f(shader->getUniform("MatDif"), 0.8f, 0.8f, 0.8f);
+			}
+			if (shader->getUniform("MatSpec") != -1) {
+				glUniform3f(shader->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f);
+			}
+			if (shader->getUniform("MatShine") != -1) {
+				glUniform1f(shader->getUniform("MatShine"), 32.0f);
+			}
+			if (shader->getUniform("MatEmit") != -1) {
+				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+			}
+
+			// Set bone animation flag (library objects don't use bone animation)
+			if (shader->getUniform("hasBones") != -1) {
+				glUniform1i(shader->getUniform("hasBones"), 0);
+			}
 		}
 
 		float gridWorldWidth = Config::GROUND_SIZE * 2.0f; // The world space the grid should occupy (library floor width)
@@ -1605,15 +1858,33 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 				}
 			}
 		}
+
+		// Reset texture flag if we set it
+		if (useTex && shader->getUniform("hasTexture") != -1) {
+			glUniform1i(shader->getUniform("hasTexture"), 0);
+		}
+
 		shader->unbind();
 	}
 
 	void drawBossRoom(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model, bool cullFlag) {
 		if (!shader || !Model) return;
 		shader->bind();
-		if (shader == assimptexProg) {
-			glUniform1i(shader->getUniform("hasTexture"), 1);
+
+		bool isShadowShader = (shader == ShadowProg);
+		
+		if (isShadowShader) {
+			if (shader->getUniform("hasTexture") != -1) {
+				glUniform1i(shader->getUniform("hasTexture"), 1); // use texture
+			}
+			if (shader->getUniform("hasMaterial") != -1) {
+				glUniform1i(shader->getUniform("hasMaterial"), 0); // no materials
+			}
+			if (shader->getUniform("hasBones") != -1) {
+				glUniform1i(shader->getUniform("hasBones"), 0); // no bones
+			}
 		}
+
 		for (int z = 0; z < bossGrid.getSize().y; ++z) {
 			for (int x = 0; x < bossGrid.getSize().x; ++x) {
 				glm::ivec2 gridPos(x, z);
@@ -1683,6 +1954,20 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 				}
 			}
 		}
+
+		// Reset texture flag if we set it
+		if (isShadowShader) {
+			if (shader->getUniform("hasTexture") != -1) {
+				glUniform1i(shader->getUniform("hasTexture"), 0);
+			}
+			if (shader->getUniform("hasMaterial") != -1) {
+				glUniform1i(shader->getUniform("hasMaterial"), 0);
+			}
+			if (shader->getUniform("hasBones") != -1) {
+				glUniform1i(shader->getUniform("hasBones"), 0);
+			}
+		}
+
 		shader->unbind();
 	}
 
@@ -2253,15 +2538,21 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		if (!shader || !Model || !sphere) return; // Need shader, stack, model
 
 		shader->bind();
-		// Set material for projectiles (e.g., bright yellow/white, maybe emissive if shader supports)
-		SetMaterialMan(shader, 0); // Gold material for now
-		glUniform3f(shader->getUniform("MatAmb"), 0.8f, 0.8f, 0.1f);
-		glUniform3f(shader->getUniform("MatDif"), 1.0f, 1.0f, 0.5f);
-		glUniform3f(shader->getUniform("MatSpec"), 1.0f, 1.0f, 1.0f);
-		glUniform1f(shader->getUniform("MatShine"), 64.0f);
-		// Optional: Emissive properties if shader supports them
-		// if(shader->hasUniform("hasEmittance")) glUniform1i(shader->getUniform("hasEmittance"), 1);
-		// if(shader->hasUniform("MatEmitt")) glUniform3f(shader->getUniform("MatEmitt"), 1.0f, 1.0f, 0.8f);
+
+		bool isShadowShader = (shader == ShadowProg);
+
+		if (isShadowShader) {
+			if (shader->getUniform("hasTexture") != -1) glUniform1i(shader->getUniform("hasTexture"), 0);
+			if (shader->getUniform("hasMaterial") != -1) glUniform1i(shader->getUniform("hasMaterial"), 1); // use material
+			if (shader->getUniform("hasBones") != -1) glUniform1i(shader->getUniform("hasBones"), 0);
+		}
+
+		// Set Material properties - check for uniform existence first
+		if (shader->getUniform("MatAmb") != -1) glUniform3f(shader->getUniform("MatAmb"), 0.8f, 0.8f, 0.1f);
+		if (shader->getUniform("MatDif") != -1) glUniform3f(shader->getUniform("MatDif"), 1.0f, 1.0f, 0.5f);
+		if (shader->getUniform("MatSpec") != -1) glUniform3f(shader->getUniform("MatSpec"), 1.0f, 1.0f, 1.0f);
+		if (shader->getUniform("MatShine") != -1) glUniform1f(shader->getUniform("MatShine"), 64.0f);
+		if(shader->getUniform("MatEmit") != -1) glUniform3f(shader->getUniform("MatEmitt"), 1.0f, 1.0f, 0.8f);
 
 		for (const auto& proj : activeSpells) {
 			if (!proj.active) continue;
@@ -2470,10 +2761,111 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		glUniformMatrix4fv(curShade->getUniform("V"), 1, GL_FALSE, value_ptr(viewStack->topMatrix()));
 	}
 
+	// Function to draw the scene for shadow map generation
+	void drawSceneForShadowMap(shared_ptr<Program>& prog) {
+		auto Model = make_shared<MatrixStack>();
+
+		// Draw only shadow-casting objects
+		// Draw the library shelves
+		drawLibrary(prog, Model, false);
+
+		// Books
+		drawBooks(prog, Model);
+
+		// Enemies
+		drawEnemies(prog, Model);
+
+		// Player
+		drawPlayer(prog, Model, 0);
+
+		// Border walls
+		drawBorderWalls(prog, Model);
+
+		// Draw the floor
+		drawLibGrnd(prog, Model);
+
+		// Boss room
+		drawBossRoom(prog, Model, false);
+	}
+
+	// Function to draw the main scene with shadows
+	void drawMainScene(const shared_ptr<Program>& prog, shared_ptr<MatrixStack>& Model, float animTime) {
+		// Set default material and texture flags
+		glUniform1i(prog->getUniform("hasMaterial"), 1);
+		glUniform1i(prog->getUniform("hasTexture"), 0);
+		glUniform1i(prog->getUniform("hasBones"), 0);
+
+		// Set default material properties
+		vec3 defaultAmb = vec3(0.2f);
+		vec3 defaultDif = vec3(0.7f);
+		vec3 defaultSpec = vec3(0.2f);
+		float defaultShine = 64.0f;
+		vec3 defaultEmit = vec3(0.0f);
+
+		glUniform3fv(prog->getUniform("MatAmb"), 1, value_ptr(defaultAmb));
+		glUniform3fv(prog->getUniform("MatDif"), 1, value_ptr(defaultDif));
+		glUniform3fv(prog->getUniform("MatSpec"), 1, value_ptr(defaultSpec));
+		glUniform1f(prog->getUniform("MatShine"), defaultShine);
+		glUniform3fv(prog->getUniform("MatEmit"), 1, value_ptr(defaultEmit));
+
+		// Draw Library
+		drawLibrary(prog, Model, true);
+
+		// Draw Books
+		drawBooks(prog, Model);
+
+		// Draw Enemies
+		drawEnemies(prog, Model);
+
+		// Draw Orbs
+		drawOrbs(prog, Model);
+
+		// Draw Projectiles
+		drawProjectiles(prog, Model);
+
+		// Draw Player (with animation)
+		glUniform1i(prog->getUniform("hasBones"), 1); // Enable bones for player
+		drawPlayer(prog, Model, animTime);
+		glUniform1i(prog->getUniform("hasBones"), 0); // Disable bones after
+
+		// Draw Border Walls
+		glUniform1i(prog->getUniform("hasTexture"), 1); // Enable textures for walls
+		drawBorderWalls(prog, Model);
+
+		// Draw Library Ground
+		drawLibGrnd(prog, Model);
+
+		// Draw Boss Room
+		drawBossRoom(prog, Model, true);
+
+		// Reset texture flag
+		glUniform1i(prog->getUniform("hasTexture"), 0);
+	}
+
+	// Function to draw the mini map
+	void drawMiniMap(const shared_ptr<Program>& prog, shared_ptr<MatrixStack>& Model, int height) {
+		prog->bind();
+		glClear(GL_DEPTH_BUFFER_BIT);
+		glViewport(0, height - 300, 300, 300);
+
+		SetOrthoMatrixMiniMap(prog);
+		SetTopView(prog);
+
+		// Draw mini map elements
+		drawLibrary(prog, Model, false);
+		drawBossRoom(prog, Model, false);
+		drawDoor(prog, Model);
+		drawBooks(prog, Model);
+		drawEnemies(prog, Model);
+		drawOrbs(prog, Model);
+		drawMiniPlayer(prog, Model);
+
+		prog->unbind();
+	}
+
 	void render(float frametime, float animTime) {
-		// Get current frame buffer size.
 		int width, height;
-		glfwGetFramebufferSize(windowManager->getHandle(), &width, &height);
+		glfwGetFramebufferSize(windowManager->getHandle(), &width, &height); // Get current frame buffer size
 		float aspect = width / (float)height;
 
 		// --- Update Game Logic ---
@@ -2503,14 +2895,12 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO); // Bind shadow framebuffer
 			glClear(GL_DEPTH_BUFFER_BIT); // Clear depth buffer
 			glCullFace(GL_FRONT); // Cull front faces for shadow map
+
 			DepthProg->bind(); // Setup shadow shader and draw the scene
 			LO = SetOrthoMatrix(DepthProg);
 			LV = SetLightView(DepthProg, g_light, lightLA, lightUp);
 
-
-			// draw light casting objects
-			drawScene(DepthProg, 0, 0); // Draw the scene for shadow map
-
+			drawSceneForShadowMap(DepthProg); // Draw the scene from the lights perspective
 
 			DepthProg->unbind();
 			glCullFace(GL_BACK); // Reset culling to default
@@ -2522,13 +2912,17 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		// ===================================================
 		glViewport(0, 0, width, height); // Return viewport to screen size
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // Clear framebuffer
-		Projection->pushMatrix(); // Setup Camera
+
+		// Setup Camera
+		Projection->pushMatrix();
 		Projection->perspective(radians(45.0f), aspect, 0.1f, 1000.0f); // Adjusted near/far
 		View->pushMatrix();
 		View->loadIdentity();
 		View->lookAt(eye, lookAt, up); // Use updated eye/lookAt
-		ExtractVFPlanes(Projection->topMatrix(), View->topMatrix(), planes); // Update frustum planes
-		LSpace = LO * LV; // Light space matrix for shadow mapping
+
+		// Update frustum planes and light space matrix for shadow mapping
+		ExtractVFPlanes(Projection->topMatrix(), View->topMatrix(), planes);
+		LSpace = LO * LV;
 
 		// ==============================
 		// Second Pass: Render to Screen
@@ -2539,18 +2933,16 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 				SetOrthoMatrix(DepthProgDebug);
 				SetLightView(DepthProgDebug, g_light, lightLA, lightUp);
 
-
-				// draw light casting objects
-				drawScene(DepthProgDebug, ShadowProg->getUniform("Texture0"), 0);
-
+				drawSceneForShadowMap(DepthProgDebug); // Draw the scene from the lights perspective for debugging
 				
 				DepthProgDebug->unbind();
 			}
-			else { // Draw the depth map texture to a quad
+			else { // Draw the depth map texture to a quad for visualization
 				DebugProg->bind();
 				glActiveTexture(GL_TEXTURE0);
 				glBindTexture(GL_TEXTURE_2D, depthMap);
 				glUniform1i(DebugProg->getUniform("texBuf"), 0);
+
 				glEnableVertexAttribArray(0); // Now we actually draw the quad
 				glBindBuffer(GL_ARRAY_BUFFER, quad_vertexbuffer);
 				glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
@@ -2559,170 +2951,36 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 				DebugProg->unbind();
 			}
 		}
-		else { // Rendr the scene like normal
+		else { // Render the scene like normal with shadow mapping
 			ShadowProg->bind();
+
+			// Setup shadow mapping
 			glActiveTexture(GL_TEXTURE1);
 			glBindTexture(GL_TEXTURE_2D, depthMap); // Bind shadow map texture
 			glUniform1i(ShadowProg->getUniform("shadowDepth"), 1); // Set uniform for shadow map
+
+			// Set light and camera uniforms
 			glUniform3f(ShadowProg->getUniform("lightDir"), g_light.x, g_light.y, g_light.z); // Set light direction
+			glUniform3f(ShadowProg->getUniform("lightColor"), 1.0f, 1.0f, 1.0f); // White light
+			glUniform1f(ShadowProg->getUniform("lightIntensity"), 1.0f); // Full intensity
+
 			setCameraProjectionFromStack(ShadowProg, Projection);
 			setCameraViewFromStack(ShadowProg, View);
-			glUniformMatrix4fv(ShadowProg->getUniform("LSpace"), 1, GL_FALSE, value_ptr(LSpace)); // Set light space matrix
+			glUniformMatrix4fv(ShadowProg->getUniform("LV"), 1, GL_FALSE, value_ptr(LSpace)); // Set light space matrix
 
-			// setup point lights for shader to handle internally?
-
-			// draw light recieving objects (entire scene?)
-			drawScene(ShadowProg, ShadowProg->getUniform("Texture0"), 1);
-
+			drawMainScene(ShadowProg, Model, animTime); // Draw the entire scene with shadows
 
 			ShadowProg->unbind();
 		}
 
-		// --- Setup Lights ---
-		// Example: One bright light in the library, one dimmer in boss area
-		// vec3 lightPositions[NUM_LIGHTS] = {
-		// 	libraryCenter + vec3(0, 15, 0),      // Library light overhead
-		// 	bossAreaCenter + vec3(0, 10, 0),     // Boss area light overhead
-		// 	characterMovement + vec3(0, 1, 0.5), // Small light near player (optional)
-		// 	vec3(0, 0, 0)                        // Unused or ambient fill
-		// };
-
-		//vec3 lightPositions[Config::NUM_LIGHTS] = {
-		//	libraryCenter + vec3(0, 15, 0),      // Library light overhead
-		//	bossAreaCenter + vec3(0, 10, 0),     // Boss area light overhead
-		//	player->getPosition() + vec3(0, 1, 0.5), // Small light near player (optional)
-		//	vec3(0, 0, 0)                        // Unused or ambient fill
-		//};
-
-		//vec3 lightColors[Config::NUM_LIGHTS] = {
-		//	vec3(1.0f, 1.0f, 0.9f), // Slightly warm white
-		//	vec3(0.8f, 0.6f, 1.0f), // Dim purple/blue
-		//	vec3(0.3f, 0.3f, 0.3f),
-		//	vec3(0.1f, 0.1f, 0.1f)
-		//};
-		//float lightIntensities[Config::NUM_LIGHTS] = {
-		//	1.5f, // Bright library
-		//	0.8f, // Dimmer boss area
-		//	0.5f, // Player light
-		//	0.0f
-		//};
-		//int numActiveLights = 3; // How many lights we're actually using
-
-		// --- Update Shader Uniforms (Lights, P, V) ---
-		// Update prog2 (Simple Lighting)
-		if (prog2) {
-			prog2->bind();
-			glUniformMatrix4fv(prog2->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
-			glUniformMatrix4fv(prog2->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
-			glUniform1i(prog2->getUniform("numLights"), numActiveLights);
-			for (int i = 0; i < numActiveLights; ++i) {
-				string prefix = "lightPos[" + to_string(i) + "]";
-				glUniform3fv(prog2->getUniform(prefix), 1, value_ptr(lightPositions[i]));
-				prefix = "lightColor[" + to_string(i) + "]";
-				glUniform3fv(prog2->getUniform(prefix), 1, value_ptr(lightColors[i]));
-				prefix = "lightIntensity[" + to_string(i) + "]";
-				glUniform1f(prog2->getUniform(prefix), lightIntensities[i]);
-			}
-			prog2->unbind();
+		if (Config::SHOW_MINIMAP) { // Draw the mini map
+			drawMiniMap(prog2, Model, height);
 		}
 
-		// Update assimptexProg (Textured/Animated Lighting)
-		if (assimptexProg) {
-			assimptexProg->bind();
-			glUniformMatrix4fv(assimptexProg->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
-			glUniformMatrix4fv(assimptexProg->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
-			glUniform1i(assimptexProg->getUniform("numLights"), numActiveLights);
-			for (int i = 0; i < numActiveLights; ++i) {
-				string prefix = "lightPos[" + to_string(i) + "]";
-				glUniform3fv(assimptexProg->getUniform(prefix), 1, value_ptr(lightPositions[i]));
-				prefix = "lightColor[" + to_string(i) + "]";
-				glUniform3fv(assimptexProg->getUniform(prefix), 1, value_ptr(lightColors[i]));
-				prefix = "lightIntensity[" + to_string(i) + "]";
-				glUniform1f(assimptexProg->getUniform(prefix), lightIntensities[i]);
-			}
-			assimptexProg->unbind();
-		}
-
-		if (particleProg) {
-			particleProg->bind();
-			glPointSize(10.0f);
-			glUniformMatrix4fv(particleProg->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
-			glUniformMatrix4fv(particleProg->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
-			// particleAlphaTex->bind(particleProg->getUniform("alphaTexture"));
-			particleProg->unbind();
-		}
-
-		// --- Draw Scene Elements ---
-		// ORDER MATTERS for transparency, but with opaque objects and depth testing, it's less critical.
-		// Drawing grounds first is logical.
-
-		// 1. Draw Ground, Path
-		// drawGroundSections(prog2, Model);
-
-		// drawBorder(prog2, Model);
-
-		// 2. Draw the Static Library Shelves
-		drawLibrary(assimptexProg, Model, true);
-
-		// 3. Draw the Door
-		// drawDoor(prog2, Model);
-
-		// 4. Draw Falling/Interactable Books
-		drawBooks(prog2, Model);
-
-		// 5. Draw Enemies
-		drawEnemies(prog2, Model);
-
-		// 6. Draw Collectible Orbs
-		drawOrbs(prog2, Model);
-
-		drawProjectiles(prog2, Model);
-
-		// 7. Draw Player (often drawn last or near last)
-		drawPlayer(assimptexProg, Model, animTime);
-
-		/*
-		//Test drawing cat model
-		drawCat(assimptexProg, Model);
-		*/
-
-		// drawSkybox(assimptexProg, Model); // Draw the skybox last
-
-		drawBorderWalls(assimptexProg, Model); // Draw the borders
-
-		drawLibGrnd(assimptexProg, Model); // Draw the library ground
-
-		drawBossRoom(assimptexProg, Model, true); // Draw the boss room
-
-		if (Config::SHOW_HEALTHBAR) {
+		if (Config::SHOW_HEALTHBAR) { // Draw the health bar
 			drawHealthBar();
 			drawEnemyHealthBars(View->topMatrix(), Projection->topMatrix());
 		}
-
-		/*MINI MAP*/
-		prog2->bind();
-			glClear( GL_DEPTH_BUFFER_BIT);
-			glViewport(0, height-300, 300, 300);
-			SetOrthoMatrixMiniMap(prog2);
-			SetTopView(prog2); /*MINI MAP*/
-			//drawScene(prog2, CULL);
-			/* draws */
-			// drawGroundSections(prog2, Model);
-			// drawBorder(prog2, Model);
-			drawLibrary(prog2, Model, false);
-			drawBossRoom(prog2, Model, false);
-			drawDoor(prog2, Model);
-			drawBooks(prog2, Model);
-			drawEnemies(prog2, Model);
-			drawOrbs(prog2, Model);
-			drawMiniPlayer(prog2, Model);
-
-			//stripped down player draw
-
-			// if (SD)
-			// 	drawOccupied(prog2);
-
-		prog2->unbind();
 
 		// --- Cleanup ---
 		Projection->popMatrix();

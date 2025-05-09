@@ -11,18 +11,19 @@
 namespace Config {
     // --- Global Game Settings ---
 
-	// Debugging
-	constexpr bool DEBUG_MOVEMENT = true; // Set to false for release builds
-	constexpr bool DEBUG_ROOM_PLACEMENT = false; // Set to true for debugging room placement
-    bool DEBUG_LIGHTING = false;
-    bool DEBUG_GEOM = false;
+	// Debugging --- set all to false for release builds
+	constexpr bool DEBUG_ENEMY_MOVEMENT = true; // Debug enemy movement
+	constexpr bool DEBUG_ROOM_PLACEMENT = false; // Debugging room placement
+    extern bool DEBUG_LIGHTING = false;
+    extern bool DEBUG_GEOM = false;
 
     // Rendering & Shaders
-    constexpr int NUM_LIGHTS = 4;
     constexpr int MAX_BONES = 200;
+    extern bool SHADOW = true;
 
     // UI
     constexpr bool SHOW_HEALTHBAR = true;
+	constexpr bool SHOW_MINIMAP = true;
     const std::string RESOURCE_DIRECTORY_PREFIX = "../resources"; // Default, can be overridden
 
     // Default Window Dimensions
@@ -54,9 +55,6 @@ namespace Config {
     // Scene
     constexpr float GROUND_SIZE = 20.0f;
     constexpr float GROUND_HEIGHT = 0.0f;
-
-    // Shadows
-    bool SHADOW = true;
 
     // --- Utility Functions ---
 

@@ -1,5 +1,4 @@
-#ifndef BOSSROOMGEN_H
-#define BOSSROOMGEN_H
+#pragma once
 
 #include <vector>
 #include <glm/glm.hpp>
@@ -135,5 +134,3 @@ class BossRoomGen {
         void placeEntrance(); // Place the entrance in the boss room
         void placeExit(); // Place the exit in the boss room
 };
-
-#endif // BOSSROOMGEN_H
