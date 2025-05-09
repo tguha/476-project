@@ -411,7 +411,6 @@ void AssimpModel::SetVertexBoneData(Vertex& vertex, int boneID, float weight) {
         }
     }
 
-
     for (int i = 0; i < MAX_BONE_INFLUENCE; ++i) {
         if (vertex.m_BoneIDs[i] < 0) {
             vertex.m_Weights[i] = weight;

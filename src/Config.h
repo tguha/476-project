@@ -5,8 +5,8 @@
 #include <string>
 #include <random>
 
-// It's often better to use static const or constexpr for typed constants
-// instead of #define for better type safety and namespacing
+// If the value does not change, use constexpr
+// If the value changes, use inline static
 
 namespace Config {
     // --- Global Game Settings ---
@@ -14,16 +14,16 @@ namespace Config {
 	// Debugging --- set all to false for release builds
 	constexpr bool DEBUG_ENEMY_MOVEMENT = true; // Debug enemy movement
 	constexpr bool DEBUG_ROOM_PLACEMENT = false; // Debugging room placement
-    extern bool DEBUG_LIGHTING = false;
-    extern bool DEBUG_GEOM = false;
+    inline static bool DEBUG_LIGHTING = false;
+    inline static bool DEBUG_GEOM = false;
 
     // Rendering & Shaders
     constexpr int MAX_BONES = 200;
-    extern bool SHADOW = true;
+    inline static bool SHADOW = true;
 
     // UI
-    constexpr bool SHOW_HEALTHBAR = true;
-	constexpr bool SHOW_MINIMAP = true;
+    constexpr bool SHOW_HEALTHBAR = false;
+	constexpr bool SHOW_MINIMAP = false;
     const std::string RESOURCE_DIRECTORY_PREFIX = "../resources"; // Default, can be overridden
 
     // Default Window Dimensions

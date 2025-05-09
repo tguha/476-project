@@ -19,54 +19,51 @@ uniform mat4 finalBonesMatrices[MAX_BONES];
 
 uniform bool hasBones;
 
-out OUT_struct {
+out pass_struct {
 	vec3 fPos; // World space position
 	vec3 fragNor; // World space normal
 	vec2 vTexCoord; // Texture coordinates
 	vec4 fPosLS; // Position in light space
 	vec3 vColor; // Basic diffuse color
 	vec3 viewPos; // View space position for lighting calculations
-} vs_out;
+} info_struct;
 
 void main() {
 	vec4 finalPosition = vec4(0.0);
 	vec3 finalNormal = vec3(0.0);
 
 	if (hasBones) {
-		vec4 totalPosition = vec4(0.0);
-		vec3 totalNormal = vec3(0.0);
-
 		for (int i = 0; i < MAX_BONE_INFLUENCE; i++) {
 			if(boneIds[i] == -1) {
 				continue;
 			}
 			if(boneIds[i] >= MAX_BONES) {
-				totalPos = vec4(vertPos, 1.0f);
+				finalPosition = vec4(vertPos, 1.0f);
 				break;
 			}
 			mat4 boneTransform = finalBonesMatrices[boneIds[i]];
-			totalPosition += boneTransform * vec4(vertPos, 1.0f) * weights[i];
-			totalNormal += mat3(boneTransform) * vertNor * weights[i];
+			finalPosition += boneTransform * vec4(vertPos, 1.0f) * weights[i];
+			finalNormal += mat3(boneTransform) * vertNor * weights[i];
 		}
 
-		if (length(totalPos) < 0.001) {
-			totalPos = vec4(vertPos, 1.0f);
+		if (length(finalPosition) < 0.001) {
+			finalPosition = vec4(vertPos, 1.0f);
 		}
 	}
 	else {
-		totalPosition = vec4(vertPos, 1.0f);
-		totalNormal = vertNor;
+		finalPosition = vec4(vertPos, 1.0f);
+		finalNormal = vertNor;
 	}
 
-	vs_out.fPos = (M * finalPosition).xyz; // the position in world coordinates
-	vs_out.fragNor = (M * vec4(finalNormal, 0.0)).xyz; // the normal in world coordinates
-	vs_out.viewPos = (V * M * finalPosition).xyz; // the position in view coordinates)
+	info_struct.fPos = (M * finalPosition).xyz; // the position in world coordinates
+	info_struct.fragNor = (M * vec4(finalNormal, 0.0)).xyz; // the normal in world coordinates
+	info_struct.viewPos = (V * M * finalPosition).xyz; // the position in view coordinates)
 
-	vs_out.vTexCoord = vertTex; // pass through the texture coordinates to be interpolated
+	info_struct.vTexCoord = vertTex; // pass through the texture coordinates to be interpolated
 
-	vs_out.fPosLS = LV * M * finalPosition; // The vertex in light space
+	info_struct.fPosLS = LV * M * finalPosition; // The vertex in light space
 
-	vs_out.vColor = vec3(max(dot(vs_out.fragNor, normalize(lightDir)), 0)); // a color that could be blended - or be shading
+	info_struct.vColor = vec3(max(dot(info_struct.fragNor, normalize(lightDir)), 0)); // a color that could be blended - or be shading
 
 	gl_Position = P * V * M * finalPosition; // Final vertex position
 }

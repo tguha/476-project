@@ -59,12 +59,12 @@ public:
 	int window_height = Config::DEFAULT_WINDOW_HEIGHT;
 
 	// Our shader programs
-	std::shared_ptr<Program> texProg, hudProg, prog2, assimptexProg;
-	std::shared_ptr<Program> particleProg; // Add particle program
+	shared_ptr<Program> particleProg;
 	shared_ptr<Program> DepthProg;
 	shared_ptr<Program> DepthProgDebug;
 	shared_ptr<Program> ShadowProg;
 	shared_ptr<Program> DebugProg;
+	shared_ptr<Program> hudProg;
 
 	// Shadows
 	GLuint depthMapFBO;
@@ -72,7 +72,7 @@ public:
 	GLuint depthMap;
 
 	// Light
-	vec3 g_light = vec3(3, 5, 5);
+	vec3 g_light = vec3(3, 20, 3);
 
 	// PLayer
 	std::shared_ptr<Player> player;
@@ -283,25 +283,25 @@ public:
 		DepthProg->addUniform("LP");
 		DepthProg->addUniform("LV");
 		DepthProg->addUniform("M");
-		DepthProg->addUniform("vertPos");
-		DepthProg->addUniform("vertNor");
-		DepthProg->addUniform("vertTex");
+		DepthProg->addAttribute("vertPos");
+		DepthProg->addAttribute("vertNor");
+		DepthProg->addAttribute("vertTex");
 
 		DepthProgDebug->addUniform("LP");
 		DepthProgDebug->addUniform("LV");
 		DepthProgDebug->addUniform("M");
-		DepthProgDebug->addUniform("vertPos");
-		DepthProgDebug->addUniform("vertNor");
-		DepthProgDebug->addUniform("vertTex");
+		DepthProgDebug->addAttribute("vertPos");
+		DepthProgDebug->addAttribute("vertNor");
+		DepthProgDebug->addAttribute("vertTex");
 
 		ShadowProg->addUniform("P");
 		ShadowProg->addUniform("V");
 		ShadowProg->addUniform("M");
 		ShadowProg->addUniform("LV");
-		ShadowProg->addUniform("LightDir");
-		ShadowProg->addUniform("vertPos");
-		ShadowProg->addUniform("vertNor");
-		ShadowProg->addUniform("vertTex");
+		ShadowProg->addUniform("lightDir");
+		ShadowProg->addAttribute("vertPos");
+		ShadowProg->addAttribute("vertNor");
+		ShadowProg->addAttribute("vertTex");
 		ShadowProg->addUniform("Texture0");
 		ShadowProg->addUniform("shadowDepth");
 
@@ -323,76 +323,76 @@ public:
 		ShadowProg->addAttribute("weights");
 
 		DebugProg->addUniform("texBuf");
-		DebugProg->addUniform("vertPos");
+		DebugProg->addAttribute("vertPos");
 
 		initShadow();
 
-		// Initialize the GLSL program that we will use for texture mapping
-		texProg = make_shared<Program>();
-		texProg->setVerbose(true);
-		texProg->setShaderNames(resourceDirectory + "/tex_vert.glsl", resourceDirectory + "/tex_frag0.glsl");
-		texProg->init();
-		texProg->addUniform("P");
-		texProg->addUniform("V");
-		texProg->addUniform("M");
-		texProg->addUniform("Texture0");
-		texProg->addUniform("MatAmb");
-		texProg->addUniform("MatSpec");
-		texProg->addUniform("MatShine");
-		texProg->addAttribute("vertPos");
-		texProg->addAttribute("vertNor");
-		texProg->addAttribute("vertTex");
+		//// Initialize the GLSL program that we will use for texture mapping
+		//texProg = make_shared<Program>();
+		//texProg->setVerbose(true);
+		//texProg->setShaderNames(resourceDirectory + "/tex_vert.glsl", resourceDirectory + "/tex_frag0.glsl");
+		//texProg->init();
+		//texProg->addUniform("P");
+		//texProg->addUniform("V");
+		//texProg->addUniform("M");
+		//texProg->addUniform("Texture0");
+		//texProg->addUniform("MatAmb");
+		//texProg->addUniform("MatSpec");
+		//texProg->addUniform("MatShine");
+		//texProg->addAttribute("vertPos");
+		//texProg->addAttribute("vertNor");
+		//texProg->addAttribute("vertTex");
 
-		// Initialize the GLSL program that we will use for rendering
-		prog2 = make_shared<Program>();
-		prog2->setVerbose(true);
-		prog2->setShaderNames(resourceDirectory + "/simple_light_vert.glsl", resourceDirectory + "/simple_light_frag.glsl");
-		prog2->init();
-		prog2->addUniform("P");
-		prog2->addUniform("V");
-		prog2->addUniform("M");
-		prog2->addUniform("MatAmb");
-		prog2->addAttribute("vertPos");
-		prog2->addAttribute("vertNor");
-		prog2->addUniform("MatDif");
-		prog2->addUniform("MatSpec");
-		prog2->addUniform("MatShine");
-		prog2->addUniform("numLights");
-		prog2->addUniform("hasEmittance");
-		prog2->addUniform("MatEmitt");
-		prog2->addUniform("MatEmittIntensity");
-		prog2->addUniform("discardCounter");
-		prog2->addUniform("activateDiscard");
-		prog2->addUniform("randFloat1");
-		prog2->addUniform("randFloat2");
-		prog2->addUniform("randFloat3");
-		prog2->addUniform("randFloat4");
+		//// Initialize the GLSL program that we will use for rendering
+		//prog2 = make_shared<Program>();
+		//prog2->setVerbose(true);
+		//prog2->setShaderNames(resourceDirectory + "/simple_light_vert.glsl", resourceDirectory + "/simple_light_frag.glsl");
+		//prog2->init();
+		//prog2->addUniform("P");
+		//prog2->addUniform("V");
+		//prog2->addUniform("M");
+		//prog2->addUniform("MatAmb");
+		//prog2->addAttribute("vertPos");
+		//prog2->addAttribute("vertNor");
+		//prog2->addUniform("MatDif");
+		//prog2->addUniform("MatSpec");
+		//prog2->addUniform("MatShine");
+		//prog2->addUniform("numLights");
+		//prog2->addUniform("hasEmittance");
+		//prog2->addUniform("MatEmitt");
+		//prog2->addUniform("MatEmittIntensity");
+		//prog2->addUniform("discardCounter");
+		//prog2->addUniform("activateDiscard");
+		//prog2->addUniform("randFloat1");
+		//prog2->addUniform("randFloat2");
+		//prog2->addUniform("randFloat3");
+		//prog2->addUniform("randFloat4");
 
-		// Initialize the GLSL program that we will use for assimp models
-		assimptexProg = make_shared<Program>();
-		assimptexProg->setVerbose(true);
-		assimptexProg->setShaderNames(resourceDirectory + "/assimp_tex_vert.glsl", resourceDirectory + "/assimp_tex_frag.glsl");
-		assimptexProg->init();
-		assimptexProg->addUniform("P");
-		assimptexProg->addUniform("V");
-		assimptexProg->addUniform("M");
-		assimptexProg->addUniform("texture_diffuse1");
-		assimptexProg->addUniform("texture_specular1");
-		assimptexProg->addUniform("texture_roughness1");
-		assimptexProg->addUniform("texture_metalness1");
-		assimptexProg->addUniform("texture_emission1");
-		assimptexProg->addAttribute("vertPos");
-		assimptexProg->addAttribute("vertNor");
-		assimptexProg->addAttribute("vertTex");
-		assimptexProg->addAttribute("boneIds");
-		assimptexProg->addAttribute("weights");
-		for (int i = 0; i < Config::MAX_BONES; i++) {
-			assimptexProg->addUniform("finalBonesMatrices[" + to_string(i) + "]");
-		}
-		assimptexProg->addUniform("MatAmb");
-		assimptexProg->addUniform("MatDif");
-		assimptexProg->addUniform("MatSpec");
-		assimptexProg->addUniform("hasTexture");
+		//// Initialize the GLSL program that we will use for assimp models
+		//assimptexProg = make_shared<Program>();
+		//assimptexProg->setVerbose(true);
+		//assimptexProg->setShaderNames(resourceDirectory + "/assimp_tex_vert.glsl", resourceDirectory + "/assimp_tex_frag.glsl");
+		//assimptexProg->init();
+		//assimptexProg->addUniform("P");
+		//assimptexProg->addUniform("V");
+		//assimptexProg->addUniform("M");
+		//assimptexProg->addUniform("texture_diffuse1");
+		//assimptexProg->addUniform("texture_specular1");
+		//assimptexProg->addUniform("texture_roughness1");
+		//assimptexProg->addUniform("texture_metalness1");
+		//assimptexProg->addUniform("texture_emission1");
+		//assimptexProg->addAttribute("vertPos");
+		//assimptexProg->addAttribute("vertNor");
+		//assimptexProg->addAttribute("vertTex");
+		//assimptexProg->addAttribute("boneIds");
+		//assimptexProg->addAttribute("weights");
+		//for (int i = 0; i < Config::MAX_BONES; i++) {
+		//	assimptexProg->addUniform("finalBonesMatrices[" + to_string(i) + "]");
+		//}
+		//assimptexProg->addUniform("MatAmb");
+		//assimptexProg->addUniform("MatDif");
+		//assimptexProg->addUniform("MatSpec");
+		//assimptexProg->addUniform("hasTexture");
 
 		hudProg = make_shared<Program>();
 		hudProg->setVerbose(true);
@@ -2632,7 +2632,7 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		curS->unbind();
 	}
 
-	void drawHealthBar() {
+	void drawHealthBar(shared_ptr<Program> curShade) {
 		float heatlhBarWidth = 350.0f;
 		float healthBarHeight = 25.0f;
 		float healthBarStartX = 100.0f;
@@ -2645,15 +2645,16 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(healthBarStartX, healthBarStartY, 0.0f));  // HUD position
 		model = glm::scale(model, glm::vec3(heatlhBarWidth, healthBarHeight, 1.0f));                          // HUD size
 
-		hudProg->bind();
-		glUniformMatrix4fv(hudProg->getUniform("projection"), 1, GL_FALSE, value_ptr(projection));
-		glUniformMatrix4fv(hudProg->getUniform("model"), 1, GL_FALSE, value_ptr(model));
-		glUniform1f(hudProg->getUniform("healthPercent"), player->getHitpoints() / Config::PLAYER_HP_MAX); // Pass health value
-		glUniform1f(hudProg->getUniform("BarStartX"), healthBarStartX); // Pass max health value
-		glUniform1f(hudProg->getUniform("BarWidth"), heatlhBarWidth); // Pass max health value
+		curShade->bind();
 
-		healthBar->Draw(hudProg);
-		hudProg->unbind();
+		glUniformMatrix4fv(curShade->getUniform("projection"), 1, GL_FALSE, value_ptr(projection));
+		glUniformMatrix4fv(curShade->getUniform("model"), 1, GL_FALSE, value_ptr(model));
+		glUniform1f(curShade->getUniform("healthPercent"), player->getHitpoints() / Config::PLAYER_HP_MAX); // Pass health value
+		glUniform1f(curShade->getUniform("BarStartX"), healthBarStartX); // Pass max health value
+		glUniform1f(curShade->getUniform("BarWidth"), heatlhBarWidth); // Pass max health value
+
+		healthBar->Draw(curShade);
+		curShade->unbind();
 	}
 
 	// Draw particles
@@ -2668,7 +2669,7 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 
 			// Disable depth writing but keep depth testing
 			//glDepthMask(GL_FALSE);
-      glUniformMatrix4fv(shader->getUniform("M"), 1, GL_FALSE, value_ptr(Model->topMatrix()));
+			glUniformMatrix4fv(shader->getUniform("M"), 1, GL_FALSE, value_ptr(Model->topMatrix()));
 			gen->drawMe(shader);
 
 			// Restore state
@@ -2682,7 +2683,7 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		Model->popMatrix();
 	}
 
-	void drawEnemyHealthBars(glm::mat4 viewMatrix, glm::mat4 projMatrix) {
+	void drawEnemyHealthBars(shared_ptr<Program> curShade, glm::mat4 viewMatrix, glm::mat4 projMatrix) {
 		float healthBarWidth = 100.0f;
 		float healthBarHeight = 10.0f;
 		float healthBarOffsetY = 15.0f;  // Offset above enemy head
@@ -2718,15 +2719,15 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 			glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(screenPos.x - (healthBarWidth / 2.0f), screenPos.y, 0.0f));
 			model = glm::scale(model, glm::vec3(healthBarWidth, healthBarHeight, 1.0f));
 
-			hudProg->bind();
-			glUniformMatrix4fv(hudProg->getUniform("projection"), 1, GL_FALSE, glm::value_ptr(hudProjection));
-			glUniformMatrix4fv(hudProg->getUniform("model"), 1, GL_FALSE, glm::value_ptr(model));
-			glUniform1f(hudProg->getUniform("healthPercent"), enemy->getHitpoints() / ENEMY_HP_MAX);
-			glUniform1f(hudProg->getUniform("BarStartX"), screenPos.x - (healthBarWidth / 2.0f));
-			glUniform1f(hudProg->getUniform("BarWidth"), healthBarWidth);
+			curShade->bind();
+			glUniformMatrix4fv(curShade->getUniform("projection"), 1, GL_FALSE, glm::value_ptr(hudProjection));
+			glUniformMatrix4fv(curShade->getUniform("model"), 1, GL_FALSE, glm::value_ptr(model));
+			glUniform1f(curShade->getUniform("healthPercent"), enemy->getHitpoints() / ENEMY_HP_MAX);
+			glUniform1f(curShade->getUniform("BarStartX"), screenPos.x - (healthBarWidth / 2.0f));
+			glUniform1f(curShade->getUniform("BarWidth"), healthBarWidth);
 
-			healthBar->Draw(hudProg);
-			hudProg->unbind();
+			healthBar->Draw(curShade);
+			curShade->unbind();
 		}
 	}
 
@@ -2766,22 +2767,15 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		auto Model = make_shared<MatrixStack>();
 
 		// Draw only shadow-casting objects
-		// Draw the library shelves
-		drawLibrary(prog, Model, false);
-
-		// Books
-		drawBooks(prog, Model);
-
-		// Enemies
-		drawEnemies(prog, Model);
-
-		// Player
-		drawPlayer(prog, Model, 0);
+		drawLibrary(prog, Model, false); // Draw the library shelves
+		drawBooks(prog, Model); // Books
+		drawEnemies(prog, Model); // Enemies
+		drawPlayer(prog, Model, 0); // Player
 
 		// Border walls
 		drawBorderWalls(prog, Model);
 
-		// Draw the floor
+		// Floor
 		drawLibGrnd(prog, Model);
 
 		// Boss room
@@ -2863,12 +2857,17 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		prog->unbind();
 	}
 
+	void updateLight() {
+		g_light = player->getPosition() + vec3(0, 2, 0); // Update light position based on player
+	}
+
 	void render(float frametime, float animTime) {
 		int width, height;
 		glfwGetFramebufferSize(windowManager->getHandle(), &width, &height); // Get current frame buffer size
 		float aspect = width / (float)height;
 
 		// --- Update Game Logic ---
+		//updateLight();
 		charMove();
 		updateCameraVectors();
 		updateBooks(frametime);
@@ -2974,12 +2973,12 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		}
 
 		if (Config::SHOW_MINIMAP) { // Draw the mini map
-			drawMiniMap(prog2, Model, height);
+			drawMiniMap(ShadowProg, Model, height);
 		}
 
 		if (Config::SHOW_HEALTHBAR) { // Draw the health bar
-			drawHealthBar();
-			drawEnemyHealthBars(View->topMatrix(), Projection->topMatrix());
+			drawHealthBar(hudProg);
+			drawEnemyHealthBars(hudProg, View->topMatrix(), Projection->topMatrix());
 		}
 
 		// --- Cleanup ---
@@ -3092,6 +3091,12 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 			else {
 				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
 			}
+		}
+		if (key == GLFW_KEY_O && action == GLFW_PRESS) { // toggle debug light
+			Config::DEBUG_LIGHTING = !Config::DEBUG_LIGHTING;
+		}
+		if (key == GLFW_KEY_P && action == GLFW_PRESS) { // toggle debug geom
+			Config::DEBUG_GEOM = !Config::DEBUG_GEOM;
 		}
 	}
 

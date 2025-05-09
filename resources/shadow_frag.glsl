@@ -16,14 +16,14 @@ uniform vec3 lightDir;
 uniform bool hasTexture;
 uniform bool hasMaterial;
 
-in OUT_struct {
+in pass_struct {
    vec3 fPos;
    vec3 fragNor;
    vec2 vTexCoord;
    vec4 fPosLS;
    vec3 vColor;
    vec3 viewPos;
-} in_struct;
+} info_struct;
 
 out vec4 Outcolor;
 
@@ -46,15 +46,15 @@ float TestShadow(vec4 LSfPos) { // returns 1 if shadowed
 }
 
 void main() {
-	vec3 normal = normalize(in_struct.fragNor);
-	vec3 viewDir = normalize(-in_struct.viewPos);
-	vec3 lightDirection = normalize())
+	vec3 normal = normalize(info_struct.fragNor);
+	vec3 viewDir = normalize(-info_struct.viewPos);
+	vec3 lightDirection = normalize(lightDir);
 
 	vec4 texColor; // base color from texture or vertex color
 	if (hasTexture) {
-		texColor = texture(Texture0, in_struct.vTexCoord);
+		texColor = texture(Texture0, info_struct.vTexCoord);
 	} else {
-		texColor = vec4(in_struct.vColor, 1.0);
+		texColor = vec4(info_struct.vColor, 1);
 	}
 
 	// Define default material properties for when no material is specified
@@ -83,9 +83,9 @@ void main() {
     float spec = pow(max(dot(normal, halfwayDir), 0.0), shininess);
     vec3 specular = spec * specularColor * lightColor * lightIntensity;
 
-    float shadow = TestShadow(out_struct.fPosLS); // Calculate shadow
+    float shadow = TestShadow(info_struct.fPosLS); // Calculate shadow
 
-	float ambFactor = 0.3; // ambient factor
+	float ambFactor = 2.0; // ambient factor
 
 	vec3 result = ambient * ambFactor + (1.0 - shadow) * (diffuse + specular); // Final color calculation with shadow
 
