@@ -6,6 +6,8 @@ layout(location = 2) in vec2 vertTex;
 layout(location = 5) in ivec4 boneIds;
 layout(location = 6) in vec4 weights;
 
+
+
 uniform mat4 P;
 uniform mat4 M;
 uniform mat4 V;
@@ -26,8 +28,8 @@ out float distance[MAX_LIGHTS];
 
 void main() {
     vec4 totalPosition = vec4(0.0);
-  vec3 totalNormal = vec3(0.0);
-  for (int i = 0; i < MAX_BONE_INFLUENCE; i++) {
+    vec3 totalNormal = vec3(0.0);
+    for (int i = 0; i < MAX_BONE_INFLUENCE; i++) {
     if(boneIds[i] == -1) {
       continue;
     }
