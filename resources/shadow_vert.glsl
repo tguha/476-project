@@ -20,12 +20,12 @@ uniform mat4 finalBonesMatrices[MAX_BONES];
 uniform bool hasBones;
 
 out pass_struct {
-	vec3 fPos; // World space position
-	vec3 fragNor; // World space normal
+	vec3 fPos;		// World space position
+	vec3 fragNor;	// World space normal
 	vec2 vTexCoord; // Texture coordinates
-	vec4 fPosLS; // Position in light space
-	vec3 vColor; // Basic diffuse color
-	vec3 viewPos; // View space position for lighting calculations
+	vec4 fPosLS;	// Position in light space
+	vec3 vColor;	// Basic diffuse color
+	vec3 viewPos;	// View space position for lighting calculations
 } info_struct;
 
 void main() {

@@ -68,15 +68,38 @@ void AssimpMesh::Draw(const std::shared_ptr<Program> prog) const {
         {"texture_emission", "TexEmit"}
     };
 
+    // Corresponding boolean uniform names
+    std::map<std::string, std::string> typeToBoolUniform = {
+        {"texture_diffuse", "hasTexDif"},
+        {"texture_specular", "hasTexSpec"},
+        {"texture_normal", "hasTexNor"},
+        {"texture_roughness", "hasTexRough"},
+        {"texture_metalness", "hasTexMet"},
+        {"texture_emission", "hasTexEmit"}
+    };
+
+    // First, set all texture availability flags to false
+    for (const auto& pair : typeToBoolUniform) {
+        if (prog->getUniform(pair.second) != -1) {
+            glUniform1i(prog->getUniform(pair.second), 0);
+        }
+    }
+
     int textureUnit = 0;
     for (const auto& texture : textures) {
         std::string uniformName = typeToUniform[texture.type];
+        std::string boolUniformName = typeToBoolUniform[texture.type];
 
         // Only bind the first texture of each type and it exists
         if (prog->getUniform(uniformName) != -1 && boundTextures.find(texture.type) == boundTextures.end()) {
             glActiveTexture(GL_TEXTURE0 + textureUnit);
             glBindTexture(GL_TEXTURE_2D, texture.id);
             glUniform1i(prog->getUniform(uniformName), textureUnit);
+
+            // Set the boolean flag to indicate this texture is available
+            if (prog->getUniform(boolUniformName) != -1) {
+                glUniform1i(prog->getUniform(boolUniformName), 1);
+            }
 
             boundTextures[texture.type] = true;
             textureUnit++;

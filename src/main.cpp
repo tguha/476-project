@@ -282,7 +282,13 @@ public:
 		ShadowProg->addAttribute("vertTex");
 		ShadowProg->addUniform("shadowDepth");
 
-		ShadowProg->addUniform("hasTexture");
+		ShadowProg->addUniform("hasTexDif");
+		ShadowProg->addUniform("hasTexSpec");
+		ShadowProg->addUniform("hasTexRough");
+		ShadowProg->addUniform("hasTexMet");
+		ShadowProg->addUniform("hasTexNor");
+		ShadowProg->addUniform("hasTexEmit");
+
 		ShadowProg->addUniform("hasMaterial");
 		ShadowProg->addUniform("hasBones");
 
@@ -617,14 +623,7 @@ public:
 		}
 	}
 
-	void setProgFlags(shared_ptr<Program> shader, bool hasTex, bool hasMat, bool hasBones) {
-		if (hasTex) {
-			glUniform1i(shader->getUniform("hasTexture"), 1);
-		}
-		else {
-			glUniform1i(shader->getUniform("hasTexture"), 0);
-		}
-
+	void setProgFlags(shared_ptr<Program> shader, bool hasMat, bool hasBones) {
 		if (hasMat) {
 			glUniform1i(shader->getUniform("hasMaterial"), 1);
 		}
@@ -641,7 +640,6 @@ public:
 	}
 
 	void clearProgFlags(shared_ptr<Program> shader) {
-		glUniform1i(shader->getUniform("hasTexture"), 0);
 		glUniform1i(shader->getUniform("hasMaterial"), 0);
 		glUniform1i(shader->getUniform("hasBones"), 0);
 	}
@@ -857,7 +855,7 @@ public:
 
 		bool isShadowShader = (shader == ShadowProg);
 
-		if (isShadowShader) setProgFlags(shader, true, false, false); // texture, material, no bones
+		if (isShadowShader) setProgFlags(shader, false, false); // material, no bones
 
 		for (const auto& libGrnd : libraryGrounds) {
 			glBindVertexArray(libGrnd.VAO); // Bind each library ground VAO
@@ -975,7 +973,7 @@ public:
 
 		bool isShadowShader = (shader == ShadowProg);
 
-		if (isShadowShader) setProgFlags(shader, true, false, false); // texture, no material, no bones
+		if (isShadowShader) setProgFlags(shader, false, false); // no material, no bones
 
 		for (const auto& border : borderWalls) {
 			glBindVertexArray(border.WallVAID); // Bind each border VAO
@@ -1012,7 +1010,7 @@ public:
 		// Check if we're using the shadow shader
 		bool isShadowShader = (curS == ShadowProg);
 
-		if (isShadowShader) setProgFlags(curS, true, false, true); // texture, no material, bones for animation
+		if (isShadowShader) setProgFlags(curS, false, true); // no material, bones for animation
 
 		// Animation update
 		/*
@@ -1071,7 +1069,7 @@ public:
 
 		bool isShadowShader = (shader == ShadowProg);
 
-		if (isShadowShader) setProgFlags(shader, false, true, false); // no texture, material, no bones
+		if (isShadowShader) setProgFlags(shader, true, false); // material, no bones
 
 		for (const auto& book : books) {
 			// Common values for book halves
@@ -1173,7 +1171,7 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 
 		bool isShadowShader = (shader == ShadowProg);
 
-		if (isShadowShader) setProgFlags(shader, false, true, false); // no texture, material, no bones
+		if (isShadowShader) setProgFlags(shader, true, false); // material, no bones
 
 		int collectedOrbDrawIndex = 0;
 
@@ -1229,7 +1227,7 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 
 		bool isShadowShader = (shader == ShadowProg);
 
-		if (isShadowShader) setProgFlags(shader, true, false, false); // texture, no material, no bones
+		if (isShadowShader) setProgFlags(shader, false, false); // no material, no bones
 
 		Model->pushMatrix();
 			Model->loadIdentity();
@@ -1251,7 +1249,7 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 
 		bool isShadowShader = (shader == ShadowProg);
 
-		if (isShadowShader) setProgFlags(shader, false, true, false); // no texture, material, no bones
+		if (isShadowShader) setProgFlags(shader, true, false); // material, no bones
 
 		// --- Material Settings ---
 		glm::vec3 bodyColor = glm::vec3(0.6f, 0.2f, 0.8f); // Purple-ish body
@@ -1373,7 +1371,7 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		bool isShadowShader = (shader == ShadowProg);
 		
 		if (isShadowShader) {
-			setProgFlags(shader, true, true, false); // texture, material, no bones
+			setProgFlags(shader, true, false); // material, no bones
 			SetMaterial(shader, Material::grey);
 		}
 
@@ -1579,7 +1577,7 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 
 		bool isShadowShader = (shader == ShadowProg);
 		
-		if (isShadowShader) setProgFlags(shader, true, false, false); // texture, no material, no bones
+		if (isShadowShader) setProgFlags(shader, false, false); // no material, no bones
 
 		for (int z = 0; z < bossGrid.getSize().y; ++z) {
 			for (int x = 0; x < bossGrid.getSize().x; ++x) {
@@ -1663,7 +1661,7 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 
 		bool isShadowShader = (shader == ShadowProg);
 
-		if (isShadowShader) setProgFlags(shader, false, true, false); // no texture, material, no bones
+		if (isShadowShader) setProgFlags(shader, true, false); // material, no bones
 
 		Model->pushMatrix();
 		Model->loadIdentity();
@@ -2247,7 +2245,7 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 
 		bool isShadowShader = (shader == ShadowProg);
 
-		if (isShadowShader) setProgFlags(shader, false, true, false); // no texture, material, no bones
+		if (isShadowShader) setProgFlags(shader, true, false); // material, no bones
 
 		// Set Material properties - check for uniform existence first
 		if (isShadowShader) SetMaterial(shader, Material::orb_glowing_yellow);
@@ -2301,7 +2299,7 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 
 		bool isShadowShader = (curS == ShadowProg);
 
-		if (isShadowShader) setProgFlags(curS, false, true, false); // no texture, material, no bones
+		if (isShadowShader) setProgFlags(curS, true, false); // material, no bones
 
 		// Model matrix setup
 		Model->pushMatrix();
@@ -2367,7 +2365,7 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 
 			bool isShadowShader = (shader == ShadowProg);
 
-			if (isShadowShader) setProgFlags(shader, true, false, false); // texture, no material, no bones
+			if (isShadowShader) setProgFlags(shader, false, false); // no material, no bones
 
 			if (isShadowShader) particleAlphaTex->bind(particleProg->getUniform("alphaTexture"));
 
@@ -2500,7 +2498,7 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 
 		if (isShadowShader) {
 			prog->bind();
-			setProgFlags(prog, false, true, false); // no texture, material, no bones
+			setProgFlags(prog, true, false); // material, no bones
 
 			SetMaterial(prog, Material::defaultMaterial); // Set default material
 
