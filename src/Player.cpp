@@ -11,7 +11,7 @@ SpellSlot Player::getActiveSpellSlot() {
 }
 
 void Player::pickupSpell(Spell *spell, SpellSlot activeSpellSlot) {
-    
+
     // Put spell in inventory
     if (isInventoryFull()) {
         for (int i = 0; i < Config::INVENTORY_SIZE; i++) {

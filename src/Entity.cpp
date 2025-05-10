@@ -15,6 +15,7 @@ Entity::Entity(const glm::vec3& startPosition, float hp, float speed, AssimpMode
     if (hitpoints <= 0) { // Ensure entity starts dead if given 0 or less HP
         alive = false;
     }
+    this->originalHitpoints = this->hitpoints; // Store original hitpoints for potential use
     updateAABB(); // Calculate initial AABB based on provided model and scale
 }
 
@@ -30,6 +31,15 @@ float Entity::getHitpoints() const {
 bool Entity::isAlive() const {
     // Check both the flag and hitpoints for robustness
     return alive && hitpoints > 0;
+}
+
+void Entity::setAlive() {
+    alive = true; // Set alive flag to true
+    hitpoints = originalHitpoints; // Reset hitpoints to original value
+}
+
+void Entity::resetHitpoints() {
+    hitpoints = originalHitpoints; // Reset hitpoints to original value
 }
 
 glm::vec3 Entity::getAABBMin() const {

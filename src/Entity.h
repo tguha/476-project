@@ -13,6 +13,7 @@ class Entity {
         float currentHitpoints;
         float moveSpeed;
         bool alive;
+        float originalHitpoints; // Store original hitpoints for potential
 
         // --- Collision Data ---
         glm::vec3 aabbMin;
@@ -40,6 +41,8 @@ class Entity {
 
         float getHitpoints() const;
         bool isAlive() const;
+        void setAlive();
+        void resetHitpoints(); // Reset hitpoints to original value
         glm::vec3 getAABBMin() const; // Getter for AABB
         glm::vec3 getAABBMax() const; // Getter for AABB
 

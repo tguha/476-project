@@ -13,6 +13,7 @@ class BossEnemy : public Enemy {
         } phase = BossPhase::PHASE_1;
         bool enraged;
         float specialAttackCooldown;
+        glm::vec3 bossDirection = glm::vec3(0.0f, 0.0f, 0.0f);
 
     public:
         BossEnemy(const glm::vec3& position, float hitpoints, AssimpModel* model, const glm::vec3& scale, const glm::vec3& rotation, float specialAttackCooldown);
@@ -23,4 +24,7 @@ class BossEnemy : public Enemy {
         void launchProjectile(const glm::vec3& targetPosition, float speed, float damage, float deltaTime);
         BossPhase getPhase() const { return phase; }
         bool isEnraged() const { return enraged; }
+        glm::vec3 getBossDirection() const { return bossDirection; }
+        float getSpecialAttackCooldown() const { return specialAttackCooldown; }
+        void setSpecialAttackCooldown(float cooldown) { specialAttackCooldown = cooldown; }
 };

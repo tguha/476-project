@@ -18,6 +18,7 @@ void BossEnemy::changePhase() {
 
 void BossEnemy::lookAtPlayer(const glm::vec3& playerPosition) {
     glm::vec3 direction = glm::normalize(playerPosition - this->getPosition());
+    this->bossDirection = direction; // Store the direction for potential use in other methods
     float angle = glm::degrees(atan2(direction.x, direction.z)); // Calculate angle in degrees
     if (angle < 0) {
         angle += 360.0f; // Normalize angle to [0, 360)
@@ -27,3 +28,4 @@ void BossEnemy::lookAtPlayer(const glm::vec3& playerPosition) {
 
     // this->setRotY(atan2(direction.x, direction.z)); // Rotate towards player
 }
+

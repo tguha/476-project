@@ -40,6 +40,8 @@ void LibraryGen::generate(glm::ivec2 size, glm::vec3 worldOrigin, glm::vec3 spaw
 
     seedGen.seed(std::random_device()());
 
+    clusterCenters.clear(); // Clear any existing cluster centers
+
     placeBorder();
 
     // int numberOfClusters = size.x * size.y / 50; // Destiny controls the number of clusters
