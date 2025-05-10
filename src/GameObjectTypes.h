@@ -28,6 +28,23 @@ enum class Man_State {
     STANDING
 };
 
+enum class Material {
+    purple,
+    black,
+    eye_white,
+    pupil_white,
+    bronze,
+    silver,
+    brown,
+    orb_glowing_blue,
+	orb_glowing_red,
+	orb_glowing_yellow,
+    grey,
+    wood,
+    mini_map,
+    defaultMaterial,
+};
+
 // --- Structs ---
 struct SpellProjectile {
     glm::vec3 position;
@@ -91,13 +108,13 @@ public:
     float openSpeed = glm::radians(120.0f);
     AssimpModel* bookModel;
     AssimpModel* orbModel;
-    vec3 orbColor;
+    Material orbColor;
     float orbScale = 0.1f;
     bool orbSpawned = false;
 
-    Book(AssimpModel* bookMdl, AssimpModel* orbMdl, const glm::vec3& pos, const glm::vec3& scl, const glm::quat& orient, const glm::vec3& orbClr)
+    Book(AssimpModel* bookMdl, AssimpModel* orbMdl, const glm::vec3& pos, const glm::vec3& scl, const glm::quat& orient, Material orbMat)
         : initialPosition(pos), position(pos), scale(scl), orientation(orient),
-        bookModel(bookMdl), orbModel(orbMdl), orbColor(orbClr) {
+        bookModel(bookMdl), orbModel(orbMdl), orbColor(orbMat) {
     }
 
     ~Book() {
@@ -176,7 +193,7 @@ public:
     glm::vec3 AABBmin;
     glm::vec3 AABBmax;
     bool collected;
-    glm::vec3 color;
+    Material material;
     OrbState state = OrbState::SPAWNING;
     glm::vec3 spawnPosition;
     glm::vec3 idlePosition;
@@ -184,8 +201,8 @@ public:
     float levitationStartTime = 0.0f;
     float levitationDuration = 0.75f;
 
-    Collectible(AssimpModel* mdl, const glm::vec3& spawnPos, float scl, const glm::vec3& clr)
-        : model(mdl), position(spawnPos), scale(scl), collected(false), color(clr),
+    Collectible(AssimpModel* mdl, const glm::vec3& spawnPos, float scl, Material orbMat)
+        : model(mdl), position(spawnPos), scale(scl), collected(false), material(orbMat),
         state(OrbState::LEVITATING), spawnPosition(spawnPos)
     {
         idlePosition = spawnPosition + glm::vec3(0.0f, levitationHeight, 0.0f);

@@ -27,28 +27,17 @@
 #include "FrustumCulling.h"
 #include "Config.h"
 #include "GameObjectTypes.h"
-
 #include "../particles/particleGen.h"
-//#ifdef WIN32
-//#include <windows.h>
-//#include <mmsystem.h>
-//#endif
 
-
-// value_ptr for glm
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtx/quaternion.hpp> // For glm::quat and glm::rotation
-#include <glm/gtx/vector_angle.hpp> // Also sometimes needed for glm::rotation
-#include <algorithm>  // For std::remove_if
-#include <limits>  // For std::numeric_limits (used in updateBoundingBox)
+#include <glm/gtx/quaternion.hpp>
+#include <glm/gtx/vector_angle.hpp>
+#include <algorithm>
+#include <limits>
 
 using namespace std;
 using namespace glm;
-
-void initQuad();
-
-#define ENEMY_MOVEMENT 1 // 1 = enable enemy movement, 0 = disable enemy movement
 
 class Application : public EventCallbacks {
 public:
@@ -222,25 +211,14 @@ public:
 		eye = player->getPosition() - front;
 		lookAt = player->getPosition();
 
-		// manRot.y = theta + radians(-90.0f);
-		// manRot.y = - manRot.y;
-		// manRot.x = phi;
-
 		player->setRotY(-(theta + radians(-90.0f)));
 		player->setRotX(phi);
 
-		// cout << "Theta: " << theta << " Phi: " << phi << endl;
 		manMoveDir = vec3(sin(player->getRotY()), 0, cos(player->getRotY()));
 		right = normalize(cross(manMoveDir, up));
-
-		// lookAt = eye + front;
-
-
 	}
 
 	void mouseCallback(GLFWwindow *window, int button, int action, int mods) {
-		double posX, posY;
-
 		if (action == GLFW_PRESS) {
 			shootSpell();
 		}
@@ -249,7 +227,6 @@ public:
 	void resizeCallback(GLFWwindow *window, int width, int height) {
 		glViewport(0, 0, width, height);
 	}
-
 
 	void init(const std::string& resourceDirectory) {
 		GLSL::checkVersion();
@@ -283,9 +260,8 @@ public:
 		DepthProg->addUniform("LP");
 		DepthProg->addUniform("LV");
 		DepthProg->addUniform("M");
+		DebugProg->addUniform("texBuf");
 		DepthProg->addAttribute("vertPos");
-		DepthProg->addAttribute("vertNor");
-		DepthProg->addAttribute("vertTex");
 
 		DepthProgDebug->addUniform("LP");
 		DepthProgDebug->addUniform("LV");
@@ -299,20 +275,27 @@ public:
 		ShadowProg->addUniform("M");
 		ShadowProg->addUniform("LV");
 		ShadowProg->addUniform("lightDir");
+		ShadowProg->addUniform("lightColor");
+		ShadowProg->addUniform("lightIntensity");
 		ShadowProg->addAttribute("vertPos");
 		ShadowProg->addAttribute("vertNor");
 		ShadowProg->addAttribute("vertTex");
-		ShadowProg->addUniform("Texture0");
 		ShadowProg->addUniform("shadowDepth");
 
 		ShadowProg->addUniform("hasTexture");
 		ShadowProg->addUniform("hasMaterial");
 		ShadowProg->addUniform("hasBones");
 
-		ShadowProg->addUniform("MatAmb");
-		ShadowProg->addUniform("MatDif");
-		ShadowProg->addUniform("MatSpec");
-		ShadowProg->addUniform("MatShine");
+		ShadowProg->addUniform("TexDif");
+		ShadowProg->addUniform("TexSpec");
+		ShadowProg->addUniform("TexRough");
+		ShadowProg->addUniform("TexMet");
+		ShadowProg->addUniform("TexNor");
+		ShadowProg->addUniform("TexEmit");
+
+		ShadowProg->addUniform("MatAlbedo");
+		ShadowProg->addUniform("MatRough");
+		ShadowProg->addUniform("MatMetal");
 		ShadowProg->addUniform("MatEmit");
 
 		for (int i = 0; i < Config::MAX_BONES; i++) {
@@ -322,77 +305,7 @@ public:
 		ShadowProg->addAttribute("boneIds");
 		ShadowProg->addAttribute("weights");
 
-		DebugProg->addUniform("texBuf");
-		DebugProg->addAttribute("vertPos");
-
 		initShadow();
-
-		//// Initialize the GLSL program that we will use for texture mapping
-		//texProg = make_shared<Program>();
-		//texProg->setVerbose(true);
-		//texProg->setShaderNames(resourceDirectory + "/tex_vert.glsl", resourceDirectory + "/tex_frag0.glsl");
-		//texProg->init();
-		//texProg->addUniform("P");
-		//texProg->addUniform("V");
-		//texProg->addUniform("M");
-		//texProg->addUniform("Texture0");
-		//texProg->addUniform("MatAmb");
-		//texProg->addUniform("MatSpec");
-		//texProg->addUniform("MatShine");
-		//texProg->addAttribute("vertPos");
-		//texProg->addAttribute("vertNor");
-		//texProg->addAttribute("vertTex");
-
-		//// Initialize the GLSL program that we will use for rendering
-		//prog2 = make_shared<Program>();
-		//prog2->setVerbose(true);
-		//prog2->setShaderNames(resourceDirectory + "/simple_light_vert.glsl", resourceDirectory + "/simple_light_frag.glsl");
-		//prog2->init();
-		//prog2->addUniform("P");
-		//prog2->addUniform("V");
-		//prog2->addUniform("M");
-		//prog2->addUniform("MatAmb");
-		//prog2->addAttribute("vertPos");
-		//prog2->addAttribute("vertNor");
-		//prog2->addUniform("MatDif");
-		//prog2->addUniform("MatSpec");
-		//prog2->addUniform("MatShine");
-		//prog2->addUniform("numLights");
-		//prog2->addUniform("hasEmittance");
-		//prog2->addUniform("MatEmitt");
-		//prog2->addUniform("MatEmittIntensity");
-		//prog2->addUniform("discardCounter");
-		//prog2->addUniform("activateDiscard");
-		//prog2->addUniform("randFloat1");
-		//prog2->addUniform("randFloat2");
-		//prog2->addUniform("randFloat3");
-		//prog2->addUniform("randFloat4");
-
-		//// Initialize the GLSL program that we will use for assimp models
-		//assimptexProg = make_shared<Program>();
-		//assimptexProg->setVerbose(true);
-		//assimptexProg->setShaderNames(resourceDirectory + "/assimp_tex_vert.glsl", resourceDirectory + "/assimp_tex_frag.glsl");
-		//assimptexProg->init();
-		//assimptexProg->addUniform("P");
-		//assimptexProg->addUniform("V");
-		//assimptexProg->addUniform("M");
-		//assimptexProg->addUniform("texture_diffuse1");
-		//assimptexProg->addUniform("texture_specular1");
-		//assimptexProg->addUniform("texture_roughness1");
-		//assimptexProg->addUniform("texture_metalness1");
-		//assimptexProg->addUniform("texture_emission1");
-		//assimptexProg->addAttribute("vertPos");
-		//assimptexProg->addAttribute("vertNor");
-		//assimptexProg->addAttribute("vertTex");
-		//assimptexProg->addAttribute("boneIds");
-		//assimptexProg->addAttribute("weights");
-		//for (int i = 0; i < Config::MAX_BONES; i++) {
-		//	assimptexProg->addUniform("finalBonesMatrices[" + to_string(i) + "]");
-		//}
-		//assimptexProg->addUniform("MatAmb");
-		//assimptexProg->addUniform("MatDif");
-		//assimptexProg->addUniform("MatSpec");
-		//assimptexProg->addUniform("hasTexture");
 
 		hudProg = make_shared<Program>();
 		hudProg->setVerbose(true);
@@ -491,12 +404,9 @@ public:
 
 		// load the walking character model
 		stickfigure_running = new AssimpModel(resourceDirectory + "/CatWizard/CatWizardOrange.fbx");
-		//stickfigure_anim = new Animation(resourceDirectory + "/CatWizard/untitled.fbx", stickfigure_running, 0);
-		//stickfigure_idle = new Animation(resourceDirectory + "/Vanguard/Vanguard.fbx", stickfigure_running, 1);
 
 		//TEST Load the cat
 		CatWizard = new AssimpModel(resourceDirectory + "/CatWizard/CatWizardOrange.fbx");
-
 
 		// --- Calculate Player Collision Box NOW that model is loaded ---
 		calculatePlayerLocalAABB();
@@ -506,35 +416,30 @@ public:
 		// load the cube (books)
 		cube = new AssimpModel(resourceDirectory + "/cube.obj");
 
-		// book_shelf1 = new AssimpModel(resourceDirectory + "/book_shelf/source/bookshelf_cluster.obj");
-
-		// book_shelf1->assignTexture("texture_diffuse1", resourceDirectory + "/book_shelf/textures/bookstack_textures_2.jpg");
-		// book_shelf1->assignTexture("texture_specular1", resourceDirectory + "/book_shelf/textures/bookstack_specular.jpg");
-
 		book_shelf1 = new AssimpModel(resourceDirectory + "/cluster_assets/bookshelf_texture2.obj");
 
-		book_shelf1->assignTexture("texture_diffuse1", resourceDirectory + "/cluster_assets/darker_bookshelf_diffuse.png");
+		book_shelf1->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/darker_bookshelf_diffuse.png");
 
 		book_shelf2 = new AssimpModel(resourceDirectory + "/cluster_assets/bookshelf_texture2.obj");
 
-		book_shelf2->assignTexture("texture_diffuse1", resourceDirectory + "/cluster_assets/glowing_bookshelf_bake_diffuse.png");
+		book_shelf2->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/glowing_bookshelf_bake_diffuse.png");
 
 		candelabra = new AssimpModel(resourceDirectory + "/cluster_assets/candelabrum/Candelabrum.obj");
 
-		candelabra->assignTexture("texture_diffuse1", resourceDirectory + "/cluster_assets/candelabrum/textures/defaultobject_gloss.png");
-		candelabra->assignTexture("texture_specular1", resourceDirectory + "/cluster_assets/candelabrum/textures/defaultobject_specular.png");
-		candelabra->assignTexture("texture_normal1", resourceDirectory + "/cluster_assets/candelabrum/textures/defaultobject_normal.png");
+		candelabra->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/candelabrum/textures/defaultobject_gloss.png");
+		candelabra->assignTexture("texture_specular", resourceDirectory + "/cluster_assets/candelabrum/textures/defaultobject_specular.png");
+		candelabra->assignTexture("texture_normal", resourceDirectory + "/cluster_assets/candelabrum/textures/defaultobject_normal.png");
 
 		chest = new AssimpModel(resourceDirectory + "/cluster_assets/chest/Chest.obj");
 
-		chest->assignTexture("texture_diffuse1", resourceDirectory + "/cluster_assets/chest/textures/TreasureChestDiffuse_2.png");
-		chest->assignTexture("texture_roughness1", resourceDirectory + "/cluster_assets/chest/textures/TreasureChestRoughness_2.png");
-		chest->assignTexture("texture_metalness1", resourceDirectory + "/cluster_assets/chest/textures/TreasureChestMetal_2.png");
-		chest->assignTexture("texture_normal1", resourceDirectory + "/cluster_assets/chest/textures/TreasureChestNormal_2.png");
+		chest->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/chest/textures/TreasureChestDiffuse_2.png");
+		chest->assignTexture("texture_roughness", resourceDirectory + "/cluster_assets/chest/textures/TreasureChestRoughness_2.png");
+		chest->assignTexture("texture_metalness", resourceDirectory + "/cluster_assets/chest/textures/TreasureChestMetal_2.png");
+		chest->assignTexture("texture_normal", resourceDirectory + "/cluster_assets/chest/textures/TreasureChestNormal_2.png");
 
 		library_bench = new AssimpModel(resourceDirectory + "/cluster_assets/library_bench/library_bench.obj");
 
-		library_bench->assignTexture("texture_diffuse1", resourceDirectory + "/cluster_assets/library_bench/textures/bench_diffuse.png");
+		library_bench->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/library_bench/textures/bench_diffuse.png");
 
 		// low_poly_bookshelf = new AssimpModel(resourceDirectory + "/cluster_assets/low_poly_bookshelf/Low_poly_bookshelf.obj");
 
@@ -545,27 +450,27 @@ public:
 
 		table_chairs1 = new AssimpModel(resourceDirectory + "/cluster_assets/table_chairs/table_chairs_3.obj");
 
-		table_chairs1->assignTexture("texture_diffuse1", resourceDirectory + "/cluster_assets/table_chairs/textures/table_chairs_3_diffuse.png");
+		table_chairs1->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/table_chairs/textures/table_chairs_3_diffuse.png");
 
 		table_chairs2 = new AssimpModel(resourceDirectory + "/cluster_assets/table_chairs/table_chairs_4.obj");
 
-		table_chairs2->assignTexture("texture_diffuse1", resourceDirectory + "/cluster_assets/table_chairs/textures/table_chairs_4_diffuse.png");
+		table_chairs2->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/table_chairs/textures/table_chairs_4_diffuse.png");
 
 		grandfather_clock = new AssimpModel(resourceDirectory + "/cluster_assets/grandfather_clock/grandfather_clock.obj");
 
-		grandfather_clock->assignTexture("texture_diffuse1", resourceDirectory + "/cluster_assets/grandfather_clock/textures/Clock_L_lambert1_BaseColor.tga.png");
-		grandfather_clock->assignTexture("texture_metalness1", resourceDirectory + "/cluster_assets/grandfather_clock/textures/Clock_L_lambert1_Metallic.tga.png");
-		grandfather_clock->assignTexture("texture_roughness1", resourceDirectory + "/cluster_assets/grandfather_clock/textures/Clock_L_lambert1_Roughness.tga.png");
-		grandfather_clock->assignTexture("texture_normal1", resourceDirectory + "/cluster_assets/grandfather_clock/textures/Clock_L_lambert1_Normal.tga.jpg");
+		grandfather_clock->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/grandfather_clock/textures/Clock_L_lambert1_BaseColor.tga.png");
+		grandfather_clock->assignTexture("texture_metalness", resourceDirectory + "/cluster_assets/grandfather_clock/textures/Clock_L_lambert1_Metallic.tga.png");
+		grandfather_clock->assignTexture("texture_roughness", resourceDirectory + "/cluster_assets/grandfather_clock/textures/Clock_L_lambert1_Roughness.tga.png");
+		grandfather_clock->assignTexture("texture_normal", resourceDirectory + "/cluster_assets/grandfather_clock/textures/Clock_L_lambert1_Normal.tga.jpg");
 
 		bookstand = new AssimpModel(resourceDirectory + "/cluster_assets/bookstand/bookstand.obj");
-		bookstand->assignTexture("texture_diffuse1", resourceDirectory + "/cluster_assets/bookstand/textures/bookstand_diffuse.png");
+		bookstand->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/bookstand/textures/bookstand_diffuse.png");
 
 		door = new AssimpModel(resourceDirectory + "/cluster_assets/door/door.obj");
-		door->assignTexture("texture_diffuse1", resourceDirectory + "/cluster_assets/door/Door_diffuse.png");
+		door->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/door/Door_diffuse.png");
 
 		sky_sphere = new AssimpModel(resourceDirectory + "/sky_sphere/skybox_sphere.obj");
-		sky_sphere->assignTexture("texture_diffuse1", resourceDirectory + "/sky_sphere/sky_sphere.fbm/infinite_lib2.png");
+		sky_sphere->assignTexture("texture_diffuse", resourceDirectory + "/sky_sphere/sky_sphere.fbm/infinite_lib2.png");
 
 		// border = new AssimpModel(resourceDirectory + "/border.obj");
 
@@ -574,7 +479,7 @@ public:
 
 		// health bar
 		healthBar = new AssimpModel(resourceDirectory + "/Quad/hud_quad.obj");
-		healthBar->assignTexture("texture_diffuse1", resourceDirectory + "/healthbar.bmp");
+		healthBar->assignTexture("texture_diffuse", resourceDirectory + "/healthbar.bmp");
 
 		baseSphereLocalAABBMin = sphere->getBoundingBoxMin();
 		baseSphereLocalAABBMax = sphere->getBoundingBoxMax();
@@ -599,44 +504,146 @@ public:
 		}
 	}
 
-	void SetMaterialMan(shared_ptr<Program> curS, int i) {
-		switch (i) {
-			case 0:
-			// gold
-				glUniform3f(curS->getUniform("MatAmb"), 0.24725f, 0.1995f, 0.0745f);
-				glUniform3f(curS->getUniform("MatDif"), 0.75164f, 0.60648f, 0.22648f);
-				glUniform3f(curS->getUniform("MatSpec"), 0.628281f, 0.555802f, 0.366065f);
-				glUniform1f(curS->getUniform("MatShine"), 51.2f);
-			break;
-			case 1:
-			// silver
-				glUniform3f(curS->getUniform("MatAmb"), 0.19225f, 0.19225f, 0.19225f);
-				glUniform3f(curS->getUniform("MatDif"), 0.50754f, 0.50754f, 0.50754f);
-				glUniform3f(curS->getUniform("MatSpec"), 0.508273f, 0.508273f, 0.508273f);
-				glUniform1f(curS->getUniform("MatShine"), 51.2f);
-			break;
-			case 2:
-			// bronze
-				glUniform3f(curS->getUniform("MatAmb"), 0.2125f, 0.1275f, 0.054f);
-				glUniform3f(curS->getUniform("MatDif"), 0.714f, 0.4284f, 0.18144f);
-				glUniform3f(curS->getUniform("MatSpec"), 0.393548f, 0.271906f, 0.166721f);
-				glUniform1f(curS->getUniform("MatShine"), 25.6f);
-			break;
-			case 3:
-			// black
-				glUniform3f(curS->getUniform("MatAmb"), 0.01f, 0.01f, 0.01f);
-				glUniform3f(curS->getUniform("MatDif"), 0.07f, 0.07f, 0.07f);
-				glUniform3f(curS->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f);
-				glUniform1f(curS->getUniform("MatShine"), 10.0f);
-			break;
-			case 4:
-			// dark white
-				glUniform3f(curS->getUniform("MatAmb"), 0.05f, 0.05f, 0.05f);
-				glUniform3f(curS->getUniform("MatDif"), 0.5f, 0.5f, 0.5f);
-				glUniform3f(curS->getUniform("MatSpec"), 0.7f, 0.7f, 0.7f);
-				glUniform1f(curS->getUniform("MatShine"), 10.0f);
-			break;
+	void SetMaterial(shared_ptr<Program> shader, Material color) {
+		/* Some important notes about PBR materials:
+
+		Albedo (Base Color):
+		Never use pure black (0,0,0) or pure white (1,1,1)
+		Realistic materials range from about 0.04 to 0.95
+		For metals, this is the actual metal color
+
+		Roughness:
+		0.0 = perfectly smooth (mirror-like)
+		1.0 = completely rough (diffuse)
+		Most materials fall between 0.2-0.8
+
+		Metalness:
+		0.0 = non-metallic (dielectric)
+		1.0 = metallic
+		Should almost always be 0 or 1, rarely in between
+
+		Emission:
+		Only for materials that emit light
+		Values can exceed 1.0 for strong emission
+		Most materials have (0,0,0) emission
+
+		Good reference values can be found at physicallybased.info. */
+
+		switch (color) {
+		case Material::purple:
+				glUniform3f(shader->getUniform("MatAlbedo"), 0.3f, 0.1f, 0.4f);
+				glUniform1f(shader->getUniform("MatRough"), 0.7f);
+				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
+				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				break;
+			case Material::black:
+				glUniform3f(shader->getUniform("MatAlbedo"), 0.04f, 0.04f, 0.04f);
+				glUniform1f(shader->getUniform("MatRough"), 0.8f);
+				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
+				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				break;
+			case Material::eye_white:
+				glUniform3f(shader->getUniform("MatAlbedo"), 0.95f, 0.95f, 0.95f);
+				glUniform1f(shader->getUniform("MatRough"), 0.2f);
+				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
+				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				break;
+			case Material::pupil_white:
+				glUniform3f(shader->getUniform("MatAlbedo"), 0.85f, 0.85f, 0.9f);
+				glUniform1f(shader->getUniform("MatRough"), 0.1f);
+				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
+				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				break;
+			case Material::bronze:
+				glUniform3f(shader->getUniform("MatAlbedo"), 0.714f, 0.4284f, 0.181f);
+				glUniform1f(shader->getUniform("MatRough"), 0.4f);
+				glUniform1f(shader->getUniform("MatMetal"), 1.0f);
+				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				break;
+			case Material::silver:
+				glUniform3f(shader->getUniform("MatAlbedo"), 0.972f, 0.960f, 0.915f);
+				glUniform1f(shader->getUniform("MatRough"), 0.2f);
+				glUniform1f(shader->getUniform("MatMetal"), 1.0f);
+				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				break;
+			case Material::brown:
+				glUniform3f(shader->getUniform("MatAlbedo"), 0.25f, 0.15f, 0.08f);
+				glUniform1f(shader->getUniform("MatRough"), 0.7f);
+				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
+				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				break;
+			case Material::orb_glowing_blue:
+				glUniform3f(shader->getUniform("MatAlbedo"), 0.1f, 0.2f, 0.5f);
+				glUniform1f(shader->getUniform("MatRough"), 0.2f);
+				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
+				glUniform3f(shader->getUniform("MatEmit"), 0.2f, 0.6f, 2.0f);
+				break;
+			case Material::orb_glowing_red:
+				glUniform3f(shader->getUniform("MatAlbedo"), 0.5f, 0.1f, 0.1f);
+				glUniform1f(shader->getUniform("MatRough"), 0.2f);
+				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
+				glUniform3f(shader->getUniform("MatEmit"), 2.0f, 0.3f, 0.2f);
+				break;
+			case Material::orb_glowing_yellow:
+				glUniform3f(shader->getUniform("MatAlbedo"), 0.5f, 0.4f, 0.1f);
+				glUniform1f(shader->getUniform("MatRough"), 0.2f);
+				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
+				glUniform3f(shader->getUniform("MatEmit"), 2.0f, 1.8f, 0.2f);
+				break;
+			case Material::grey:
+				glUniform3f(shader->getUniform("MatAlbedo"), 0.8f, 0.8f, 0.8f);
+				glUniform1f(shader->getUniform("MatRough"), 0.6f);
+				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
+				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				break;
+			case Material::wood:
+				glUniform3f(shader->getUniform("MatAlbedo"), 0.65f, 0.45f, 0.25f);
+				glUniform1f(shader->getUniform("MatRough"), 0.8f);
+				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
+				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				break;
+			case Material::mini_map:
+				glUniform3f(shader->getUniform("MatAlbedo"), 0.65f, 0.45f, 0.25f);
+				glUniform1f(shader->getUniform("MatRough"), 0.0f);
+				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
+				glUniform3f(shader->getUniform("MatEmit"), 1.0f, 1.0f, 1.0f);
+				break;
+			case Material::defaultMaterial:
+				glUniform3f(shader->getUniform("MatAlbedo"), 0.5f, 0.5f, 0.5f);
+				glUniform1f(shader->getUniform("MatRough"), 0.0f);
+				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
+				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				break;
 		}
+	}
+
+	void setProgFlags(shared_ptr<Program> shader, bool hasTex, bool hasMat, bool hasBones) {
+		if (hasTex) {
+			glUniform1i(shader->getUniform("hasTexture"), 1);
+		}
+		else {
+			glUniform1i(shader->getUniform("hasTexture"), 0);
+		}
+
+		if (hasMat) {
+			glUniform1i(shader->getUniform("hasMaterial"), 1);
+		}
+		else {
+			glUniform1i(shader->getUniform("hasMaterial"), 0);
+		}
+
+		if (hasBones) {
+			glUniform1i(shader->getUniform("hasBones"), 1);
+		}
+		else {
+			glUniform1i(shader->getUniform("hasBones"), 0);
+		}
+	}
+
+	void clearProgFlags(shared_ptr<Program> shader) {
+		glUniform1i(shader->getUniform("hasTexture"), 0);
+		glUniform1i(shader->getUniform("hasMaterial"), 0);
+		glUniform1i(shader->getUniform("hasBones"), 0);
 	}
 
 	/* helper for sending top of the matrix strack to GPU */
@@ -733,51 +740,20 @@ public:
 
 	// Draw the ground sections (library, boss area, path)
 	void drawGroundSections(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
-		if (!shader || !Model || quad_VertexArrayID == 0) { // Check if ground is initialized
-			// cerr << "Error: Cannot draw ground sections - shader, model, or ground VAO invalid." << endl;
-			return;
-		}
+		if (!shader || !Model || quad_VertexArrayID == 0) return;
 
-		shader->bind(); // Bind the simple shader
+		shader->bind();
 
 		glBindVertexArray(quad_VertexArrayID); // Bind ground VAO
 
-		// 1. Draw Library Ground
-		// Model->pushMatrix();
-		// Model->loadIdentity();
-		// Model->translate(libraryCenter); // Center the ground plane
-		// // No scaling needed if initGround used Config::GROUND_SIZE correctly relative to its vertices
-		// setModel(shader, Model);
-		// SetMaterialMan(shader, 1); // Silver material
-		// glDrawElements(GL_TRIANGLES, g_GiboLen, GL_UNSIGNED_SHORT, 0);
-		// Model->popMatrix();
-
-		// 2. Draw Boss Area Ground
+		// Draw Boss Area Ground
 		Model->pushMatrix();
 		Model->loadIdentity();
 		Model->translate(bossAreaCenter); // Position the boss ground plane
 		setModel(shader, Model);
-		SetMaterialMan(shader, 2); // Bronze material
+		SetMaterial(shader, Material::bronze);
 		glDrawElements(GL_TRIANGLES, g_GiboLen, GL_UNSIGNED_SHORT, 0);
 		Model->popMatrix();
-
-		// 3. Draw Path (Scaled ground geometry)
-		// Model->pushMatrix();
-		// Model->loadIdentity();
-		// // Calculate path dimensions and position
-		// float pathLength = bossAreaCenter.z - libraryCenter.z - 2 * Config::GROUND_SIZE;
-		// if (pathLength < 0) pathLength = 0; // Avoid negative length if areas overlap
-		// float pathCenterZ = libraryCenter.z + Config::GROUND_SIZE + pathLength * 0.5f;
-		// // Calculate scaling factors based on the original ground quad size (Config::GROUND_SIZE * 2)
-		// float scaleX = pathWidth / (Config::GROUND_SIZE * 2.0f);
-		// float scaleZ = pathLength / (Config::GROUND_SIZE * 2.0f);
-
-		// Model->translate(vec3(libraryCenter.x, Config::GROUND_HEIGHT, pathCenterZ)); // Center the path segment
-		// Model->scale(vec3(scaleX, 1.0f, scaleZ)); // Scale ground quad to path dimensions
-		// setModel(shader, Model);
-		// SetMaterialMan(shader, 4); // Dark white material
-		// glDrawElements(GL_TRIANGLES, g_GiboLen, GL_UNSIGNED_SHORT, 0);
-		// Model->popMatrix();
 
 		// Unbind VAO after drawing all ground parts
 		glBindVertexArray(0);
@@ -881,27 +857,17 @@ public:
 
 		bool isShadowShader = (shader == ShadowProg);
 
-		if (isShadowShader) {
-			if (shader->getUniform("hasTexture") != -1) {
-				glUniform1i(shader->getUniform("hasTexture"), 1); // use texture
-			}
-			if (shader->getUniform("hasMaterial") != -1) {
-				glUniform1i(shader->getUniform("hasMaterial"), 1); // use materials
-			}
-			if (shader->getUniform("hasBones") != -1) {
-				glUniform1i(shader->getUniform("hasBones"), 0); // no bones
-			}
-		}
+		if (isShadowShader) setProgFlags(shader, true, false, false); // texture, material, no bones
 
 		for (const auto& libGrnd : libraryGrounds) {
 			glBindVertexArray(libGrnd.VAO); // Bind each library ground VAO
 
-			if (isShadowShader) libGrnd.texture->bind(shader->getUniform("texture_diffuse1")); // Bind the texture
+			if (isShadowShader) libGrnd.texture->bind(shader->getUniform("texDif")); // Bind the texture
 
 			Model->pushMatrix();
 			Model->loadIdentity();
 			setModel(shader, Model);
-			if (isShadowShader) SetMaterialMan(shader, 1); // Silver material
+			if (isShadowShader) SetMaterial(shader, Material::silver); // set the material
 			glDrawElements(GL_TRIANGLES, libGrnd.GiboLen, GL_UNSIGNED_SHORT, 0);
 			Model->popMatrix();
 
@@ -910,18 +876,7 @@ public:
 
 		glBindVertexArray(0); // Unbind VAO after drawing all library grounds
 
-		// Reset state flags before unbinging the shader
-		if (isShadowShader) {
-			if (shader->getUniform("hasTexture") != -1) {
-				glUniform1i(shader->getUniform("hasTexture"), 0);
-			}
-			if (shader->getUniform("hasMaterial") != -1) {
-				glUniform1i(shader->getUniform("hasMaterial"), 0);
-			}
-			if (shader->getUniform("hasBones") != -1) {
-				glUniform1i(shader->getUniform("hasBones"), 0); // no bones
-			}
-		}
+		if (isShadowShader) clearProgFlags(shader); // Clear shader flags
 
 		shader->unbind(); // Unbind the simple shader
 	}
@@ -1020,17 +975,7 @@ public:
 
 		bool isShadowShader = (shader == ShadowProg);
 
-		if (isShadowShader) {
-			if (shader->getUniform("hasTexture") != -1) {
-				glUniform1i(shader->getUniform("hasTexture"), 1); // use texture
-			}
-			if (shader->getUniform("hasMaterial") != -1) {
-				glUniform1i(shader->getUniform("hasMaterial"), 0); // no materials
-			}
-			if (shader->getUniform("hasBones") != -1) {
-				glUniform1i(shader->getUniform("hasBones"), 0); // no bones
-			}
-		}
+		if (isShadowShader) setProgFlags(shader, true, false, false); // texture, no material, no bones
 
 		for (const auto& border : borderWalls) {
 			glBindVertexArray(border.WallVAID); // Bind each border VAO
@@ -1039,13 +984,13 @@ public:
 			if (isShadowShader) {
 				glActiveTexture(GL_TEXTURE0);
 				glBindTexture(GL_TEXTURE_2D, border.texture->getID());
-				glUniform1i(shader->getUniform("Texture0"), 0);
+				glUniform1i(shader->getUniform("texDif"), 0);
 			}
 
 			Model->pushMatrix();
 			Model->loadIdentity();
 			setModel(shader, Model);
-			// SetMaterialMan(shader, 3); // Black material
+			// SetMaterial(shader, Material::black); // set the material
 			glDrawElements(GL_TRIANGLES, border.GiboLen, GL_UNSIGNED_SHORT, 0);
 			Model->popMatrix();
 
@@ -1054,46 +999,20 @@ public:
 
 		glBindVertexArray(0); // Unbind VAO after drawing all borders
 
-		// Reset state flags if needed
-		if (isShadowShader) {
-			if (shader->getUniform("hasTexture") != -1) {
-				glUniform1i(shader->getUniform("hasTexture"), 0);
-			}
-			if (shader->getUniform("hasMaterial") != -1) {
-				glUniform1i(shader->getUniform("hasMaterial"), 0);
-			}
-			if (shader->getUniform("hasBones") != -1) {
-				glUniform1i(shader->getUniform("hasBones"), 0);
-			}
-		}
+		if (isShadowShader) clearProgFlags(shader); // Clear shader flags
 
 		shader->unbind(); // Unbind the simple shader
 	}
 
 	void drawPlayer(shared_ptr<Program> curS, shared_ptr<MatrixStack> Model, float animTime) {
-		if (!curS || !Model || !stickfigure_running || !stickfigure_animator) {
-			cerr << "Error: Null pointer in drawPlayer." << endl;
-			return;
-		}
+		if (!curS || !Model || !stickfigure_running || !stickfigure_animator) return;
 
 		curS->bind();
 
 		// Check if we're using the shadow shader
 		bool isShadowShader = (curS == ShadowProg);
 
-		// Set flags for the appropriate shader
-	// For the shadow shader, we need to set texture, material, and bone flags
-		if (isShadowShader) {
-			if (curS->getUniform("hasTexture") != -1) {
-				glUniform1i(curS->getUniform("hasTexture"), 1); // Player uses texture
-			}
-			if (curS->getUniform("hasMaterial") != -1) {
-				glUniform1i(curS->getUniform("hasMaterial"), 0); // Player does not use materials
-			}
-			if (curS->getUniform("hasBones") != -1) {
-				glUniform1i(curS->getUniform("hasBones"), 1); // Player uses bone animation
-			}
-		}
+		if (isShadowShader) setProgFlags(curS, true, false, true); // texture, no material, bones for animation
 
 		// Animation update
 		/*
@@ -1133,29 +1052,15 @@ public:
 			manAABBmin, // This is the visual/interaction AABB
 			manAABBmax);
 
-		// Set uniforms and draw
-		glUniform1i(curS->getUniform("hasTexture"), 1);
 		setModel(curS, Model);
 		stickfigure_running->Draw(curS);
 
 		// Reset flags if needed
-		if (isShadowShader) {
-			if (curS->getUniform("hasBones") != -1) {
-				glUniform1i(curS->getUniform("hasBones"), 0); // Reset bone flag
-			}
-			if (curS->getUniform("hasTexture") != -1) {
-				glUniform1i(curS->getUniform("hasTexture"), 0); // Reset texture flag
-			}
-			if (curS->getUniform("hasMaterial") != -1) {
-				glUniform1i(curS->getUniform("hasMaterial"), 0); // Reset material flag
-			}
-		}
+		if (isShadowShader) clearProgFlags(curS); // Clear shader flags
 
 		curS->unbind(); // unbind the shader
 
-		if (isShadowShader) {
-			drawParticles(particleSystem, particleProg, Model); // draw particles if using shadow shader (actual render pass)
-		}
+		if (isShadowShader) drawParticles(particleSystem, particleProg, Model); // draw particles if using shadow shader (actual render pass)
 		Model->popMatrix();
 	}
 
@@ -1166,17 +1071,7 @@ public:
 
 		bool isShadowShader = (shader == ShadowProg);
 
-		if (isShadowShader) {
-			if (shader->getUniform("hasTexture") != -1) {
-				glUniform1i(shader->getUniform("hasTexture"), 0); // Books don't use texture
-			}
-			if (shader->getUniform("hasMaterial") != -1) {
-				glUniform1i(shader->getUniform("hasMaterial"), 1); // books use materials
-			}
-			if (shader->getUniform("hasBones") != -1) {
-				glUniform1i(shader->getUniform("hasBones"), 0); // Books don't use bones
-			}
-		}
+		if (isShadowShader) setProgFlags(shader, false, true, false); // no texture, material, no bones
 
 		for (const auto& book : books) {
 			// Common values for book halves
@@ -1184,11 +1079,7 @@ public:
 			glm::vec3 halfScaleVec = glm::vec3(book.scale.x, book.scale.y, halfThickness);
 
 			// Set Material properties - check for uniform existence first
-			if (shader->getUniform("MatAmb") != -1) glUniform3f(shader->getUniform("MatAmb"), 0.15f, 0.08f, 0.03f); // Brown ambient
-			if (shader->getUniform("MatDif") != -1) glUniform3f(shader->getUniform("MatDif"), 0.6f, 0.3f, 0.1f); // Brown diffuse
-			if (shader->getUniform("MatSpec") != -1) glUniform3f(shader->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f); // Low specular
-			if (shader->getUniform("MatShine") != -1) glUniform1f(shader->getUniform("MatShine"), 4.0f); // Low shininess
-			if (shader->getUniform("MatEmit") != -1) glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f); // No emission
+			if (isShadowShader) SetMaterial(shader, Material::brown);
 
 			// --- Draw Left Cover/Pages ---
 			Model->pushMatrix(); // SAVE current stack state
@@ -1245,18 +1136,13 @@ public:
 			Model->popMatrix(); // RESTORE saved stack state
 		}
 
-		// Reset flags if needed
-		if (isShadowShader) {
-			if (shader->getUniform("hasMaterial") != -1) {
-				glUniform1i(shader->getUniform("hasMaterial"), 0);
-			}
-		}
+		if (isShadowShader) clearProgFlags(shader); // Clear shader flags
 
 		shader->unbind();
 	}
 
 	void drawSkybox(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
-		shader->bind(); // Use prog2 for simple colored shapes
+		shader->bind();
 
 		Model->pushMatrix();
 			Model->loadIdentity();
@@ -1268,25 +1154,6 @@ public:
 		Model->popMatrix();
 		shader->unbind();
     }
-
-	// void drawBorder(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model){
-	// 	shader->bind();
-
-	// 	glUniform3f(shader->getUniform("MatAmb"), 0.15f, 0.08f, 0.03f);
-	// 	glUniform3f(shader->getUniform("MatDif"), 0.6f, 0.3f, 0.1f);
-	// 	glUniform3f(shader->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f);
-	// 	glUniform1f(shader->getUniform("MatShine"), 4.0f);
-	// 	glUniform1i(shader->getUniform("hasEmittance"), 0);
-
-	// 	Model->pushMatrix();
-	// 		Model->translate(bossAreaCenter);
-	// 		Model->scale(0.28f);
-	// 		setModel(shader, Model);
-	// 		border->Draw(shader);
-	// 	Model->popMatrix();
-	// 	shader->unbind();
-	// }
-
 
 void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		// --- Collision Check Logic ---
@@ -1306,17 +1173,7 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 
 		bool isShadowShader = (shader == ShadowProg);
 
-		if (isShadowShader) {
-			if (shader->getUniform("hasTexture") != -1) {
-				glUniform1i(shader->getUniform("hasTexture"), 0); // no texture
-			}
-			if (shader->getUniform("hasMaterial") != -1) {
-				glUniform1i(shader->getUniform("hasMaterial"), 1); // use materials
-			}
-			if (shader->getUniform("hasBones") != -1) {
-				glUniform1i(shader->getUniform("hasBones"), 0); // no bones
-			}
-		}
+		if (isShadowShader) setProgFlags(shader, false, true, false); // no texture, material, no bones
 
 		int collectedOrbDrawIndex = 0;
 
@@ -1349,39 +1206,30 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 
 			// --- Set up transformations ---
 			Model->pushMatrix();
-			Model->loadIdentity();
-			Model->translate(currentDrawPosition);
-			Model->scale(currentDrawScale); // Use current scale
+				Model->loadIdentity();
+				Model->translate(currentDrawPosition);
+				Model->scale(currentDrawScale); // Use current scale
 
-			// --- Set Material & Draw ---
-			// (Material setting code remains the same)
-			glUniform3f(shader->getUniform("MatAmb"), orb.color.r * 0.2f, orb.color.g * 0.2f, orb.color.b * 0.2f);
-			glUniform3f(shader->getUniform("MatDif"), orb.color.r * 0.8f, orb.color.g * 0.8f, orb.color.b * 0.8f);
-			glUniform3f(shader->getUniform("MatSpec"), 0.8f, 0.8f, 0.8f);
-			glUniform1f(shader->getUniform("MatShine"), 32.0f);
-			glUniform1i(shader->getUniform("hasEmit"), 0);
-
-			setModel(shader, Model);
-			orb.model->Draw(shader);
-
+				// --- Set Material & Draw ---
+				if (isShadowShader) SetMaterial(shader, orb.material); // Set material for shadow shader
+				setModel(shader, Model);
+				orb.model->Draw(shader);
 			Model->popMatrix();
 		} // End drawing loop
 
-		// Reset state mat flags
-		if (isShadowShader) {
-			if (shader->getUniform("hasTexture") != -1) glUniform1i(shader->getUniform("hasTexture"), 0);
-			if (shader->getUniform("hasMaterial") != -1) glUniform1i(shader->getUniform("hasMaterial"), 0);
-			if (shader->getUniform("hasBones") != -1) glUniform1i(shader->getUniform("hasBones"), 0);
-		}
+		if (isShadowShader) clearProgFlags(shader); // Clear shader flags
 
 		shader->unbind();
 	}
 
-	void drawCat(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model, GLint texID, int texOn) {
+	void drawCat(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		if (!CatWizard) return; //Need Cat Model
 
 		shader->bind(); // Texture
-		if (texOn) glUniform1i(shader->getUniform("hasTexture"), 1);
+
+		bool isShadowShader = (shader == ShadowProg);
+
+		if (isShadowShader) setProgFlags(shader, true, false, false); // texture, no material, no bones
 
 		Model->pushMatrix();
 			Model->loadIdentity();
@@ -1391,6 +1239,7 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 			setModel(shader, Model);
 			CatWizard->Draw(shader);
 		Model->popMatrix();
+		if (isShadowShader) clearProgFlags(shader); // Clear shader flags
 		shader->unbind();
 
 	}
@@ -1402,17 +1251,7 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 
 		bool isShadowShader = (shader == ShadowProg);
 
-		if (isShadowShader) {
-			if (shader->getUniform("hasTexture") != -1) {
-				glUniform1i(shader->getUniform("hasTexture"), 0); // no texture
-			}
-			if (shader->getUniform("hasMaterial") != -1) {
-				glUniform1i(shader->getUniform("hasMaterial"), 1); // use materials
-			}
-			if (shader->getUniform("hasBones") != -1) {
-				glUniform1i(shader->getUniform("hasBones"), 0); // no bones
-			}
-		}
+		if (isShadowShader) setProgFlags(shader, false, true, false); // no texture, material, no bones
 
 		// --- Material Settings ---
 		glm::vec3 bodyColor = glm::vec3(0.6f, 0.2f, 0.8f); // Purple-ish body
@@ -1440,25 +1279,7 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 				// Scale for pill shape ( taller in Y, squished in X/Z )
 				Model->scale(glm::vec3(0.5f, bodyBaseScaleY * 1.6f, 0.5f)); // Adjust scale factors as needed
 
-				// Set Material properties - check for uniform existence first
-				if (shader->getUniform("MatAmb") != -1) {
-					glUniform3f(shader->getUniform("MatAmb"), bodyColor.r * 0.3f, bodyColor.g * 0.3f, bodyColor.b * 0.3f);
-				}
-
-				if (shader->getUniform("MatDif") != -1) {
-					glUniform3f(shader->getUniform("MatDif"), bodyColor.r, bodyColor.g, bodyColor.b);
-				}
-
-				if (shader->getUniform("MatSpec") != -1) {
-					glUniform3f(shader->getUniform("MatSpec"), 0.3f, 0.3f, 0.3f);
-				}
-
-				if (shader->getUniform("MatShine") != -1) {
-					glUniform1f(shader->getUniform("MatShine"), 8.0f);
-				}
-				if (shader->getUniform("MatEmit") != -1) {
-					glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f); // No emission
-				}
+				if (isShadowShader) SetMaterial(shader, Material::purple);
 
 				setModel(shader, Model);
 				sphere->Draw(shader); // Draw the scaled sphere as the body
@@ -1467,10 +1288,6 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 
 
 			// --- Draw Eyes (Relative to Enemy Center) ---
-
-			// Set Eye Materials Once
-			// White Material Setup (done inside loop per part for clarity now)
-			// Black Material Setup (done inside loop per part for clarity now)
 
 			// Left Eye
 			Model->pushMatrix();
@@ -1484,26 +1301,7 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 				{
 					Model->scale(glm::vec3(whiteScale));
 					
-					// Set white Material properties - check for uniform existence first
-					if (shader->getUniform("MatAmb") != -1) {
-						glUniform3f(shader->getUniform("MatAmb"), eyeWhiteColor.r * 0.3f, eyeWhiteColor.g * 0.3f, eyeWhiteColor.b * 0.3f);
-					}
-
-					if (shader->getUniform("MatDif") != -1) {
-						glUniform3f(shader->getUniform("MatDif"), eyeWhiteColor.r, eyeWhiteColor.g, eyeWhiteColor.b);
-					}
-
-					if (shader->getUniform("MatSpec") != -1) {
-						glUniform3f(shader->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f);
-					}
-
-					if (shader->getUniform("MatShine") != -1) {
-						glUniform1f(shader->getUniform("MatShine"), 4.0f);
-					}
-
-					if (shader->getUniform("MatEmit") != -1) {
-						glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f); // No emission
-					}
+					if (isShadowShader) SetMaterial(shader, Material::eye_white);
 					
 					setModel(shader, Model);
 					sphere->Draw(shader);
@@ -1517,26 +1315,7 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 					Model->translate(glm::vec3(0, 0, whiteScale * 0.5f + pupilOffsetForward)); // Offset relative to white scale
 					Model->scale(glm::vec3(pupilScale));
 
-					// Set black Material properties - check for uniform existence first
-					if (shader->getUniform("MatAmb") != -1) {
-						glUniform3f(shader->getUniform("MatAmb"), eyePupilColor.r * 0.3f, eyePupilColor.g * 0.3f, eyePupilColor.b * 0.3f);
-					}
-
-					if (shader->getUniform("MatDif") != -1) {
-						glUniform3f(shader->getUniform("MatDif"), eyePupilColor.r, eyePupilColor.g, eyePupilColor.b);
-					}
-
-					if (shader->getUniform("MatSpec") != -1) {
-						glUniform3f(shader->getUniform("MatSpec"), 0.5f, 0.5f, 0.5f); // Some specular highlight
-					}
-
-					if (shader->getUniform("MatShine") != -1) {
-						glUniform1f(shader->getUniform("MatShine"), 32.0f);
-					}
-
-					if (shader->getUniform("MatEmit") != -1) {
-						glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f); // No emission
-					}
+					if (isShadowShader) SetMaterial(shader, Material::black);
 					
 					setModel(shader, Model);
 					sphere->Draw(shader);
@@ -1557,26 +1336,7 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 				{
 					Model->scale(glm::vec3(whiteScale));
 
-					// Set white Material properties - check for uniform existence first
-					if (shader->getUniform("MatAmb") != -1) {
-						glUniform3f(shader->getUniform("MatAmb"), eyeWhiteColor.r * 0.3f, eyeWhiteColor.g * 0.3f, eyeWhiteColor.b * 0.3f);
-					}
-
-					if (shader->getUniform("MatDif") != -1) {
-						glUniform3f(shader->getUniform("MatDif"), eyeWhiteColor.r, eyeWhiteColor.g, eyeWhiteColor.b);
-					}
-
-					if (shader->getUniform("MatSpec") != -1) {
-						glUniform3f(shader->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f);
-					}
-
-					if (shader->getUniform("MatShine") != -1) {
-						glUniform1f(shader->getUniform("MatShine"), 4.0f);
-					}
-
-					if (shader->getUniform("MatEmit") != -1) {
-						glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f); // No emission
-					}
+					if (isShadowShader) SetMaterial(shader, Material::eye_white);
 
 					setModel(shader, Model);
 					sphere->Draw(shader);
@@ -1589,26 +1349,7 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 					Model->translate(glm::vec3(0, 0, whiteScale * 0.5f + pupilOffsetForward));
 					Model->scale(glm::vec3(pupilScale));
 
-					// Set black Material properties - check for uniform existence first
-					if (shader->getUniform("MatAmb") != -1) {
-						glUniform3f(shader->getUniform("MatAmb"), eyePupilColor.r * 0.3f, eyePupilColor.g * 0.3f, eyePupilColor.b * 0.3f);
-					}
-
-					if (shader->getUniform("MatDif") != -1) {
-						glUniform3f(shader->getUniform("MatDif"), eyePupilColor.r, eyePupilColor.g, eyePupilColor.b);
-					}
-
-					if (shader->getUniform("MatSpec") != -1) {
-						glUniform3f(shader->getUniform("MatSpec"), 0.5f, 0.5f, 0.5f); // Some specular highlight
-					}
-
-					if (shader->getUniform("MatShine") != -1) {
-						glUniform1f(shader->getUniform("MatShine"), 32.0f);
-					}
-
-					if (shader->getUniform("MatEmit") != -1) {
-						glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f); // No emission
-					}
+					if (isShadowShader) SetMaterial(shader, Material::pupil_white);
 
 					setModel(shader, Model);
 					sphere->Draw(shader);
@@ -1619,12 +1360,7 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 
 		} // End loop through enemies
 
-		// Reset flags if needed
-		if (isShadowShader) {
-			if (shader->getUniform("hasMaterial") != -1) {
-				glUniform1i(shader->getUniform("hasMaterial"), 0);
-			}
-		}
+		if (isShadowShader) clearProgFlags(shader); // Clear shader flags
 
 		shader->unbind();
 	}
@@ -1634,38 +1370,11 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 
 		shader->bind();
 
-		bool useTex = (shader == ShadowProg);
+		bool isShadowShader = (shader == ShadowProg);
 		
-		if (useTex) {
-			if (shader->getUniform("hasTexture") != -1) {
-				glUniform1i(shader->getUniform("hasTexture"), 1);
-			}
-
-			if (shader->getUniform("hasMaterial") != -1) {
-				glUniform1i(shader->getUniform("hasMaterial"), 1);
-			}
-
-			// Set default material properties for library objects
-			if (shader->getUniform("MatAmb") != -1) {
-				glUniform3f(shader->getUniform("MatAmb"), 0.2f, 0.2f, 0.2f);
-			}
-			if (shader->getUniform("MatDif") != -1) {
-				glUniform3f(shader->getUniform("MatDif"), 0.8f, 0.8f, 0.8f);
-			}
-			if (shader->getUniform("MatSpec") != -1) {
-				glUniform3f(shader->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f);
-			}
-			if (shader->getUniform("MatShine") != -1) {
-				glUniform1f(shader->getUniform("MatShine"), 32.0f);
-			}
-			if (shader->getUniform("MatEmit") != -1) {
-				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
-			}
-
-			// Set bone animation flag (library objects don't use bone animation)
-			if (shader->getUniform("hasBones") != -1) {
-				glUniform1i(shader->getUniform("hasBones"), 0);
-			}
+		if (isShadowShader) {
+			setProgFlags(shader, true, true, false); // texture, material, no bones
+			SetMaterial(shader, Material::grey);
 		}
 
 		float gridWorldWidth = Config::GROUND_SIZE * 2.0f; // The world space the grid should occupy (library floor width)
@@ -1859,10 +1568,7 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 			}
 		}
 
-		// Reset texture flag if we set it
-		if (useTex && shader->getUniform("hasTexture") != -1) {
-			glUniform1i(shader->getUniform("hasTexture"), 0);
-		}
+		if (isShadowShader) clearProgFlags(shader); // Clear shader flags
 
 		shader->unbind();
 	}
@@ -1873,17 +1579,7 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 
 		bool isShadowShader = (shader == ShadowProg);
 		
-		if (isShadowShader) {
-			if (shader->getUniform("hasTexture") != -1) {
-				glUniform1i(shader->getUniform("hasTexture"), 1); // use texture
-			}
-			if (shader->getUniform("hasMaterial") != -1) {
-				glUniform1i(shader->getUniform("hasMaterial"), 0); // no materials
-			}
-			if (shader->getUniform("hasBones") != -1) {
-				glUniform1i(shader->getUniform("hasBones"), 0); // no bones
-			}
-		}
+		if (isShadowShader) setProgFlags(shader, true, false, false); // texture, no material, no bones
 
 		for (int z = 0; z < bossGrid.getSize().y; ++z) {
 			for (int x = 0; x < bossGrid.getSize().x; ++x) {
@@ -1955,18 +1651,7 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 			}
 		}
 
-		// Reset texture flag if we set it
-		if (isShadowShader) {
-			if (shader->getUniform("hasTexture") != -1) {
-				glUniform1i(shader->getUniform("hasTexture"), 0);
-			}
-			if (shader->getUniform("hasMaterial") != -1) {
-				glUniform1i(shader->getUniform("hasMaterial"), 0);
-			}
-			if (shader->getUniform("hasBones") != -1) {
-				glUniform1i(shader->getUniform("hasBones"), 0);
-			}
-		}
+		if (isShadowShader) clearProgFlags(shader); // Clear shader flags
 
 		shader->unbind();
 	}
@@ -1976,16 +1661,23 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 
 		shader->bind();
 
+		bool isShadowShader = (shader == ShadowProg);
+
+		if (isShadowShader) setProgFlags(shader, false, true, false); // no texture, material, no bones
+
 		Model->pushMatrix();
 		Model->loadIdentity();
 		Model->translate(doorPosition); // Position set in class members
 		Model->scale(doorScale);      // Scale set in class members
 
-		SetMaterialMan(shader, 5); // Use Wood material
+		if (isShadowShader) SetMaterial(shader, Material::wood);
 		setModel(shader, Model);
 		cube->Draw(shader);
 
 		Model->popMatrix();
+
+		if (isShadowShader) clearProgFlags(shader); // Clear shader flags
+
 		shader->unbind();
 	}
 
@@ -2061,7 +1753,23 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 
 						glm::vec3 bookScale = glm::vec3(0.7f, 0.9f, 0.2f);
 						glm::quat bookOrientation = glm::angleAxis(glm::radians(Config::randFloat(-10.f, 10.f)), glm::vec3(0, 1, 0));
-						glm::vec3 orbColor = glm::vec3(Config::randFloat(0.2f, 1.0f), Config::randFloat(0.2f, 1.0f), Config::randFloat(0.2f, 1.0f));
+
+						// Select one of the 3 orb materials
+						Material orbColor;
+						int randomChoice = Config::randInt(0, 2);
+						switch (randomChoice) {
+						case 0:
+							orbColor = Material::orb_glowing_blue;
+							break;
+						case 1:
+							orbColor = Material::orb_glowing_red;
+							break;
+						case 2:
+							orbColor = Material::orb_glowing_yellow;
+							break;
+						default:
+							orbColor = Material::orb_glowing_blue; // Fallback
+						}
 
 						books.emplace_back(cube, sphere, spawnPos, bookScale, bookOrientation, orbColor);
 
@@ -2121,9 +1829,7 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 				// glm::vec3 playerMin = player->getAABBMin();
 				// glm::vec3 playerMax = player->getAABBMax();
 
-			#if ENEMY_MOVEMENT
-			enemy->moveTowardsPlayer(grid, pathfinder, player->getPosition(), deltaTime);
-			#endif
+			if (Config::ENABLE_ENEMY_MOVEMENT) enemy->moveTowardsPlayer(grid, pathfinder, player->getPosition(), deltaTime);
 
 			static float lastDamageTime = 0.0f; // Track the last time damage was applied
 			if (distance(enemy->getPosition(), player->getPosition()) < 1.0f) {
@@ -2541,18 +2247,10 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 
 		bool isShadowShader = (shader == ShadowProg);
 
-		if (isShadowShader) {
-			if (shader->getUniform("hasTexture") != -1) glUniform1i(shader->getUniform("hasTexture"), 0);
-			if (shader->getUniform("hasMaterial") != -1) glUniform1i(shader->getUniform("hasMaterial"), 1); // use material
-			if (shader->getUniform("hasBones") != -1) glUniform1i(shader->getUniform("hasBones"), 0);
-		}
+		if (isShadowShader) setProgFlags(shader, false, true, false); // no texture, material, no bones
 
 		// Set Material properties - check for uniform existence first
-		if (shader->getUniform("MatAmb") != -1) glUniform3f(shader->getUniform("MatAmb"), 0.8f, 0.8f, 0.1f);
-		if (shader->getUniform("MatDif") != -1) glUniform3f(shader->getUniform("MatDif"), 1.0f, 1.0f, 0.5f);
-		if (shader->getUniform("MatSpec") != -1) glUniform3f(shader->getUniform("MatSpec"), 1.0f, 1.0f, 1.0f);
-		if (shader->getUniform("MatShine") != -1) glUniform1f(shader->getUniform("MatShine"), 64.0f);
-		if(shader->getUniform("MatEmit") != -1) glUniform3f(shader->getUniform("MatEmitt"), 1.0f, 1.0f, 0.8f);
+		if (isShadowShader) SetMaterial(shader, Material::orb_glowing_yellow);
 
 		for (const auto& proj : activeSpells) {
 			if (!proj.active) continue;
@@ -2577,6 +2275,8 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 			Model->popMatrix();
 		}
 
+		if (isShadowShader) clearProgFlags(shader);
+
 		shader->unbind();
 	}
 
@@ -2599,6 +2299,10 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
   //sphere->Draw(shader);
 		curS->bind();
 
+		bool isShadowShader = (curS == ShadowProg);
+
+		if (isShadowShader) setProgFlags(curS, false, true, false); // no texture, material, no bones
+
 		// Model matrix setup
 		Model->pushMatrix();
 		Model->loadIdentity();
@@ -2620,10 +2324,9 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		//glUniform1i(curS->getUniform("hasTexture"), 1); //0.6f, 0.2f, 0.8f
 		//0.8f, 0.4f, 0.2f
 		// 0.95, 0.78, 0.14
-		glUniform3f(curS->getUniform("MatAmb"), 0.95f , 0.78f , 0.14f );
-		glUniform3f(curS->getUniform("MatDif"), 0.95f, 0.78f, 0.14f);
-		glUniform3f(curS->getUniform("MatSpec"), 0.3f, 0.3f, 0.3f);
-		glUniform1f(curS->getUniform("MatShine"), 8.0f);
+		
+		if (isShadowShader) SetMaterial(curS, Material::mini_map);
+
 		setModel(curS, Model);
 		//stickfigure_running->Draw(curS);
 		sphere->Draw(curS);
@@ -2661,7 +2364,12 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 	void drawParticles(shared_ptr<particleGen> gen, shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		Model->pushMatrix();
 			shader->bind();
-			particleAlphaTex->bind(particleProg->getUniform("alphaTexture"));
+
+			bool isShadowShader = (shader == ShadowProg);
+
+			if (isShadowShader) setProgFlags(shader, true, false, false); // texture, no material, no bones
+
+			if (isShadowShader) particleAlphaTex->bind(particleProg->getUniform("alphaTexture"));
 
 			// Enable blending for transparency
 			glEnable(GL_BLEND);
@@ -2677,6 +2385,8 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 			glDisable(GL_BLEND);
 
 			particleAlphaTex->unbind();
+
+			if (isShadowShader) clearProgFlags(shader);
 
 			shader->unbind();
 
@@ -2785,22 +2495,17 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 	// Function to draw the main scene with shadows
 	void drawMainScene(const shared_ptr<Program>& prog, shared_ptr<MatrixStack>& Model, float animTime) {
 		// Set default material and texture flags
-		glUniform1i(prog->getUniform("hasMaterial"), 1);
-		glUniform1i(prog->getUniform("hasTexture"), 0);
-		glUniform1i(prog->getUniform("hasBones"), 0);
 
-		// Set default material properties
-		vec3 defaultAmb = vec3(0.2f);
-		vec3 defaultDif = vec3(0.7f);
-		vec3 defaultSpec = vec3(0.2f);
-		float defaultShine = 64.0f;
-		vec3 defaultEmit = vec3(0.0f);
+		bool isShadowShader = (prog == ShadowProg);
 
-		glUniform3fv(prog->getUniform("MatAmb"), 1, value_ptr(defaultAmb));
-		glUniform3fv(prog->getUniform("MatDif"), 1, value_ptr(defaultDif));
-		glUniform3fv(prog->getUniform("MatSpec"), 1, value_ptr(defaultSpec));
-		glUniform1f(prog->getUniform("MatShine"), defaultShine);
-		glUniform3fv(prog->getUniform("MatEmit"), 1, value_ptr(defaultEmit));
+		if (isShadowShader) {
+			prog->bind();
+			setProgFlags(prog, false, true, false); // no texture, material, no bones
+
+			SetMaterial(prog, Material::defaultMaterial); // Set default material
+
+			prog->unbind();
+		}
 
 		// Draw Library
 		drawLibrary(prog, Model, true);
@@ -2818,12 +2523,9 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		drawProjectiles(prog, Model);
 
 		// Draw Player (with animation)
-		glUniform1i(prog->getUniform("hasBones"), 1); // Enable bones for player
 		drawPlayer(prog, Model, animTime);
-		glUniform1i(prog->getUniform("hasBones"), 0); // Disable bones after
 
 		// Draw Border Walls
-		glUniform1i(prog->getUniform("hasTexture"), 1); // Enable textures for walls
 		drawBorderWalls(prog, Model);
 
 		// Draw Library Ground
@@ -2832,8 +2534,11 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		// Draw Boss Room
 		drawBossRoom(prog, Model, true);
 
-		// Reset texture flag
-		glUniform1i(prog->getUniform("hasTexture"), 0);
+		if (isShadowShader) {
+			prog->bind();
+			clearProgFlags(prog); // Reset flags
+			prog->unbind();
+		}
 	}
 
 	// Function to draw the mini map
@@ -2991,13 +2696,11 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 	}
 
 	void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
-		if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
-		{
+		if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
 			glfwSetWindowShouldClose(window, GL_TRUE);
 		}
 
-		if (key == GLFW_KEY_F11 && action == GLFW_PRESS)
-		{
+		if (key == GLFW_KEY_F11 && action == GLFW_PRESS) {
 			//Fullscreen Mode
 			if (!windowMaximized) {
 				glfwMaximizeWindow(window);
@@ -3143,15 +2846,12 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 	}
 };
 
-
-
 void mouseMoveCallbackWrapper(GLFWwindow* window, double xpos, double ypos) {
 	Application* app = (Application*)glfwGetWindowUserPointer(window);
 	app->mouseMoveCallback(window, xpos, ypos);
 }
 
-int main(int argc, char *argv[])
-{
+int main(int argc, char *argv[]) {
 	// Where the resources are loaded from
 	std::string resourceDir = "../resources";
 

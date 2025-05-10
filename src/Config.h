@@ -46,6 +46,7 @@ namespace Config {
     constexpr float CAMERA_PHI_MAX_DEGREES = -10.0f;
 
     // Gameplay
+    constexpr bool ENABLE_ENEMY_MOVEMENT = true;
     constexpr float INTERACTION_RADIUS = 5.0f;
     constexpr float SPELL_PROJECTILE_SPEED = 20.0f;
     constexpr float SPELL_PROJECTILE_LIFETIME = 2.0f;
@@ -63,6 +64,11 @@ namespace Config {
         static std::mt19937 generator(std::random_device{}());
         std::uniform_real_distribution<float> distribution(l, h);
         return distribution(generator);
+    }
+
+	// A random integer generator
+    inline int randInt(int min, int max) {
+        return min + rand() % (max - min + 1);
     }
 }
 
