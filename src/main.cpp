@@ -237,22 +237,22 @@ public:
 
 		// Initialize GLSL programs for shadow mapping
 		DepthProg = make_shared<Program>();
-		DepthProg->setVerbose(true);
+		DepthProg->setVerbose(Config::DEBUG_SHADER);
 		DepthProg->setShaderNames(resourceDirectory + "/depth_vert.glsl", resourceDirectory + "/depth_frag.glsl");
 		DepthProg->init();
 
 		DepthProgDebug = make_shared<Program>();
-		DepthProgDebug->setVerbose(true);
+		DepthProgDebug->setVerbose(Config::DEBUG_SHADER);
 		DepthProgDebug->setShaderNames(resourceDirectory + "/depth_vertDebug.glsl", resourceDirectory + "/depth_fragDebug.glsl");
 		DepthProgDebug->init();
 
 		ShadowProg = make_shared<Program>();
-		ShadowProg->setVerbose(true);
+		ShadowProg->setVerbose(Config::DEBUG_SHADER);
 		ShadowProg->setShaderNames(resourceDirectory + "/shadow_vert.glsl", resourceDirectory + "/shadow_frag.glsl");
 		ShadowProg->init();
 
 		DebugProg = make_shared<Program>();
-		DebugProg->setVerbose(true);
+		DebugProg->setVerbose(Config::DEBUG_SHADER);
 		DebugProg->setShaderNames(resourceDirectory + "/pass_vert.glsl", resourceDirectory + "/pass_texfrag.glsl");
 		DebugProg->init();
 
@@ -314,7 +314,7 @@ public:
 		initShadow();
 
 		hudProg = make_shared<Program>();
-		hudProg->setVerbose(true);
+		hudProg->setVerbose(Config::DEBUG_SHADER);
 		hudProg->setShaderNames(resourceDirectory + "/hud_vert.glsl", resourceDirectory + "/hud_frag.glsl");
 		hudProg->init();
 		hudProg->addUniform("projection");
@@ -325,7 +325,7 @@ public:
 
 		// Initialize the particle program
 		particleProg = make_shared<Program>();
-		particleProg->setVerbose(true);
+		particleProg->setVerbose(Config::DEBUG_SHADER);
 		particleProg->setShaderNames(resourceDirectory + "/particle_vert.glsl", resourceDirectory + "/particle_frag.glsl");
 		particleProg->init();
 		particleProg->addUniform("P");
@@ -860,7 +860,7 @@ public:
 		for (const auto& libGrnd : libraryGrounds) {
 			glBindVertexArray(libGrnd.VAO); // Bind each library ground VAO
 
-			if (isShadowShader) libGrnd.texture->bind(shader->getUniform("texDif")); // Bind the texture
+			if (isShadowShader) libGrnd.texture->bind(shader->getUniform("TexDif")); // Bind the texture
 
 			Model->pushMatrix();
 			Model->loadIdentity();
@@ -982,7 +982,7 @@ public:
 			if (isShadowShader) {
 				glActiveTexture(GL_TEXTURE0);
 				glBindTexture(GL_TEXTURE_2D, border.texture->getID());
-				glUniform1i(shader->getUniform("texDif"), 0);
+				glUniform1i(shader->getUniform("TexDif"), 0);
 			}
 
 			Model->pushMatrix();
@@ -2585,8 +2585,14 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		auto Model = make_shared<MatrixStack>();
 
 		// Shadow mapping parameters
-		vec3 lightLA = vec3(0.0);
+		/*vec3 lightLA = vec3(0.0);
 		vec3 lightUp = vec3(0, 1, 0);
+		mat4 LO, LV, LSpace;*/
+
+		vec3 lightPos = vec3(0, 50, 0); // Fixed light position above the scene
+		vec3 lightTarget = libraryCenter; // Light looks at library center
+		vec3 lightDir = normalize(lightPos - lightTarget); // Light direction
+		vec3 lightUp = vec3(0, 0, 1); // Use a different up vector to avoid gimbal lock
 		mat4 LO, LV, LSpace;
 		
 		// ========================================================================
@@ -2599,8 +2605,17 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 			glCullFace(GL_FRONT); // Cull front faces for shadow map
 
 			DepthProg->bind(); // Setup shadow shader and draw the scene
-			LO = SetOrthoMatrix(DepthProg);
-			LV = SetLightView(DepthProg, g_light, lightLA, lightUp);
+			/*LO = SetOrthoMatrix(DepthProg);
+			LV = SetLightView(DepthProg, g_light, lightLA, lightUp);*/
+
+			// Create a stable orthographic projection that covers the scene
+			float size = Config::ORTHO_SIZE;
+			LO = glm::ortho(-size, size, -size, size, 1.0f, 200.0f);
+			glUniformMatrix4fv(DepthProg->getUniform("LP"), 1, GL_FALSE, value_ptr(LO));
+
+			// Create a stable light view matrix
+			LV = glm::lookAt(lightPos, lightTarget, lightUp);
+			glUniformMatrix4fv(DepthProg->getUniform("LV"), 1, GL_FALSE, value_ptr(LV));
 
 			drawSceneForShadowMap(DepthProg); // Draw the scene from the lights perspective
 
@@ -2617,14 +2632,13 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 
 		// Setup Camera
 		Projection->pushMatrix();
-		Projection->perspective(radians(45.0f), aspect, 0.1f, 1000.0f); // Adjusted near/far
+		Projection->perspective(radians(45.0f), aspect, 0.1f, 100.0f);
 		View->pushMatrix();
 		View->loadIdentity();
 		View->lookAt(eye, lookAt, up); // Use updated eye/lookAt
 
 		// Update frustum planes and light space matrix for shadow mapping
 		ExtractVFPlanes(Projection->topMatrix(), View->topMatrix(), planes);
-		LSpace = LO * LV;
 
 		// ==============================
 		// Second Pass: Render to Screen
@@ -2632,8 +2646,17 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		if (Config::DEBUG_LIGHTING) { // Debugging light view from lights perspective
 			if (Config::DEBUG_GEOM) {
 				DepthProgDebug->bind();
-				SetOrthoMatrix(DepthProgDebug);
-				SetLightView(DepthProgDebug, g_light, lightLA, lightUp);
+				/*SetOrthoMatrix(DepthProgDebug);
+				SetLightView(DepthProgDebug, g_light, lightLA, lightUp);*/
+
+				// Create a stable orthographic projection that covers the scene
+				//float size = Config::ORTHO_SIZE;
+				//LO = glm::ortho(-size, size, -size, size, 1.0f, 100.0f);
+				glUniformMatrix4fv(DepthProg->getUniform("LP"), 1, GL_FALSE, value_ptr(LO));
+
+				// Create a stable light view matrix
+				//LV = glm::lookAt(lightPos, lightTarget, lightUp);
+				glUniformMatrix4fv(DepthProg->getUniform("LV"), 1, GL_FALSE, value_ptr(LV));
 
 				drawSceneForShadowMap(DepthProgDebug); // Draw the scene from the lights perspective for debugging
 				
@@ -2662,12 +2685,14 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 			glUniform1i(ShadowProg->getUniform("shadowDepth"), 1); // Set uniform for shadow map
 
 			// Set light and camera uniforms
-			glUniform3f(ShadowProg->getUniform("lightDir"), g_light.x, g_light.y, g_light.z); // Set light direction
+			glUniform3f(ShadowProg->getUniform("lightDir"), lightDir.x, lightDir.y, lightDir.z); // Set light direction
 			glUniform3f(ShadowProg->getUniform("lightColor"), 1.0f, 1.0f, 1.0f); // White light
 			glUniform1f(ShadowProg->getUniform("lightIntensity"), 1.0f); // Full intensity
 
 			setCameraProjectionFromStack(ShadowProg, Projection);
 			setCameraViewFromStack(ShadowProg, View);
+
+			LSpace = LO * LV;
 			glUniformMatrix4fv(ShadowProg->getUniform("LV"), 1, GL_FALSE, value_ptr(LSpace)); // Set light space matrix
 
 			drawMainScene(ShadowProg, Model, animTime); // Draw the entire scene with shadows
@@ -2877,8 +2902,6 @@ int main(int argc, char *argv[]) {
 	windowManager->init(640, 480);
 	windowManager->setEventCallbacks(application);
 	application->windowManager = windowManager;
-
-	PlaySound(TEXT("C:/Users/trigu/OneDrive/Desktop/476-project/resources/Breaking_Ground.wav"), NULL, SND_FILENAME|SND_ASYNC|SND_LOOP);
 
 	glfwSetInputMode(windowManager->getHandle(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 	glfwSetWindowUserPointer(windowManager->getHandle(), application);

@@ -56,7 +56,7 @@ void main() {
 	}
 
 	info_struct.fPos = (M * finalPosition).xyz; // the position in world coordinates
-	info_struct.fragNor = (M * vec4(finalNormal, 0.0)).xyz; // the normal in world coordinates
+	info_struct.fragNor = normalize((M * vec4(finalNormal, 0.0)).xyz); // the normal in world coordinates
 	info_struct.viewPos = (V * M * finalPosition).xyz; // the position in view coordinates)
 
 	info_struct.vTexCoord = vertTex; // pass through the texture coordinates to be interpolated

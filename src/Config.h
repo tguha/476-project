@@ -16,10 +16,12 @@ namespace Config {
 	constexpr bool DEBUG_ROOM_PLACEMENT = false; // Debugging room placement
     inline static bool DEBUG_LIGHTING = false;
     inline static bool DEBUG_GEOM = false;
+	constexpr bool DEBUG_SHADER = true; // Sets verbose flag for shaders
 
     // Rendering & Shaders
     constexpr int MAX_BONES = 200;
     inline static bool SHADOW = true;
+    constexpr float ORTHO_SIZE = 60.0f;
 
     // UI
     constexpr bool SHOW_HEALTHBAR = false;

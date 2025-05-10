@@ -115,29 +115,31 @@ void main() {
 
 	vec3 albedo = info_struct.vColor;
 	float roughness = 0.5;
+    vec3 specularTint = vec3(1.0);
 	float metallic = 0.0;
 	vec3 emission = vec3(0.0);
 	vec3 normal = normalize(info_struct.fragNor);
 
-	// --- Sample texture if available, then sample material properties if available ---
+	// --- Sample material if available, then sample texture properties if available (overwrite material info) ---
 
-	if (hasTexDif) {
+	if (hasMaterial) {
+		albedo = MatAlbedo;
+        roughness = MatRough;
+        metallic = MatMetal;
+        emission = MatEmit;
+	}
+
+    if (hasTexDif) {
 		albedo = texture(TexDif, info_struct.vTexCoord).rgb;
-	} else if (hasMaterial) {
-		albedo = MatAlbedo; 
 	}
 
-	if (hasTexRough) {
+    if (hasTexRough) {
         roughness = texture(TexRough, info_struct.vTexCoord).r;
-    } else if (hasMaterial) {
-		roughness = MatRough;
-	}
+    }
 
-	 if (hasTexMet) {
+    if (hasTexMet) {
         metallic = texture(TexMet, info_struct.vTexCoord).r;
-    } else if (hasMaterial) {
-		metallic = MatMetal;
-	}
+    }
 
 	if (hasTexNor) {
 		mat3 TBN = calculateTBN(info_struct.fragNor, info_struct.fPos, info_struct.vTexCoord);
@@ -147,9 +149,11 @@ void main() {
     
     if (hasTexEmit) {
         emission = texture(TexEmit, info_struct.vTexCoord).rgb;
-    } else if (hasMaterial) {
-		emission = MatEmit;
-	}
+    }
+
+    if (hasTexSpec) {
+        specularTint = texture(TexSpec, info_struct.vTexCoord).rgb;
+    }
 
 	// --- Ensure normal is normalized after all transforms ---
 
@@ -160,6 +164,9 @@ void main() {
 
 	// Calculate reflectance at normal incidence
     vec3 F0 = vec3(0.04); // Default for dielectrics
+    if (hasTexSpec && metallic < 0.5) {
+        F0 = specularTint;
+    }
     F0 = mix(F0, albedo, metallic);
 
 	// Cook-Torrance BRDF
