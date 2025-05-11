@@ -139,7 +139,7 @@ public:
 
 	AssimpModel *sky_sphere;
 
-	AssimpModel *border;
+	AssimpModel *border, *lock, *key;
 
 	//  vector of books
 	vector<Book> books;
@@ -670,6 +670,12 @@ public:
 		// health bar
 		healthBar = new AssimpModel(resourceDirectory + "/Quad/hud_quad.obj");
 		healthBar->assignTexture("texture_diffuse1", resourceDirectory + "/healthbar.bmp");
+
+		//key
+		key = new AssimpModel(resourceDirectory + "/Key_and_Lock/key.obj");
+
+		//lock
+		//lock = new AssimpModel(resourceDirectory + "/Key_and_Lock/lock.obj");
 
 		baseSphereLocalAABBMin = sphere->getBoundingBoxMin();
 		baseSphereLocalAABBMax = sphere->getBoundingBoxMax();
@@ -2544,6 +2550,45 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		}
 	}
 
+
+	void drawLock(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model){
+		//need models
+		shader->bind();
+
+
+		Model->pushMatrix();
+			Model->loadIdentity();
+			//Model->translate(doorPosition + ...);
+			//Model->scale();
+			SetMaterialMan(shader, 5); //gold
+			setModel(shader, Model);
+			//lock->Draw(shader);
+		Model->popMatrix();
+		shader->unbind();
+
+
+	}
+
+	void updateLock(){
+		//unlock one of the locks if have a key
+	}
+
+	void drawKey(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model){
+		//need models
+		shader->bind();
+
+
+		Model->pushMatrix();
+			Model->loadIdentity();
+			//Model->translate(last enemy pos));
+			//Model->scale();
+			SetMaterialMan(shader, 5); //gold
+			setModel(shader, Model);
+			//lock->Draw(shader);
+		Model->popMatrix();
+		shader->unbind();
+	}
+
 	void render(float frametime, float animTime) {
 		// Get current frame buffer size.
 		int width, height;
@@ -2693,6 +2738,10 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		drawLibGrnd(assimptexProg, Model); // Draw the library ground
 
 		drawBossRoom(assimptexProg, Model, true); // Draw the boss room
+
+		//testing drawing lock and key
+		// drawLock(prog2, Model);
+		// drawKey(prog2, Model);
 
 		#if SHOW_HEALTHBAR
 		drawHealthBar();
