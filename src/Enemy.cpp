@@ -15,7 +15,7 @@ void Enemy::setHit(bool hit) {
     setDamageTimer(Config::ENEMY_HIT_DURATION);
 }
 
-void Enemy::moveTowardsPlayer(Grid<LibraryGen::Cell>& grid, Pathfinder& pathfinder, const glm::vec3& playerPosition, float deltaTime) {
+void Enemy::moveTowardsPlayer(const glm::vec3& playerPosition, float deltaTime) {
     
     vec3 direction = glm::normalize(playerPosition - this->getPosition());
     direction.y = 0; // Keep the enemy on the same Y level

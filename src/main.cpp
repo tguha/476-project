@@ -2205,7 +2205,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 				// glm::vec3 playerMax = player->getAABBMax();
 
 			if (enemy->isAggro()) {
-				enemy->moveTowardsPlayer(grid, pathfinder, player->getPosition(), deltaTime);
+				enemy->moveTowardsPlayer(player->getPosition(), deltaTime);
 			}
 
 			static float lastDamageTime = 0.0f; // Track the last time damage was applied
