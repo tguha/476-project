@@ -2651,9 +2651,9 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 				if (checkAABBCollision(proj.aabbMin, proj.aabbMax, enemy->getAABBMin(), enemy->getAABBMax())) {
 					cout << "[DEBUG] Spell HIT enemy!" << endl;
 
-					if (!enemy->isHit()) {
-						enemy->setHit(true); // Mark enemy as hit
-					}
+					// if (!enemy->isHit()) {
+					// 	enemy->setHit(true); // Mark enemy as hit
+					// }
 
 					enemy->takeDamage(damageAmount);
 					proj.active = false; // Deactivate projectile
@@ -2667,9 +2667,9 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 					cout << "[DEBUG] Spell HIT boss!" << endl;
 					damageAmount = 500.0f; // Boss takes more damage
 
-					if (!bossEnemy->isHit()) {
-						bossEnemy->setHit(true); // Mark enemy as hit
-					}
+					// if (!bossEnemy->isHit()) {
+					// 	bossEnemy->setHit(true); // Mark enemy as hit
+					// }
 
 					bossEnemy->takeDamage(damageAmount);
 					proj.active = false; // Deactivate projectile

@@ -29,7 +29,8 @@ class Enemy : public Entity {
         float getDamageTimer() const;
         void setDamageTimer(float timer);
 
+
     // --- Override virtual functions if needed ---
     // virtual void move(const glm::vec3& direction) override; // Example override
-    // virtual void takeDamage(float damage) override; // Example override
+    void takeDamage(float damage) override; // Example override
 };

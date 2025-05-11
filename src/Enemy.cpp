@@ -53,3 +53,16 @@ float Enemy::getDamageTimer() const {
 void Enemy::setDamageTimer(float timer) {
     this->damageTimer = timer;
 }
+
+void Enemy::takeDamage(float damage) {
+    if (!isAlive()) return; // Can't damage dead entities
+
+    this->setHit(true);
+
+    hitpoints -= damage;
+    if (hitpoints <= 0) {
+        hitpoints = 0;
+        alive = false; // Set alive flag to false
+        // Handle entity death visuals/logic here or in derived class override
+    }
+}
