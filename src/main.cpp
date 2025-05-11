@@ -6,9 +6,10 @@
 #include <glad/glad.h>
 #include <chrono>
 #include <thread>
-#include <windows.h>
-#include <mmsystem.h>
+// #include <windows.h>
+// #include <mmsystem.h>
 #include <set>
+#pragma comment(lib, "winmm.lib")
 #include "GLSL.h"
 #include "Program.h"
 #include "MatrixStack.h"
@@ -56,7 +57,7 @@ public:
 	int window_height = Config::DEFAULT_WINDOW_HEIGHT;
 
 	// Our shader programs
-	std::shared_ptr<Program> texProg, hudProg, prog2, assimptexProg;
+	std::shared_ptr<Program> texProg, hudProg, prog2, prog2_enemy, assimptexProg, redFlashProg;
 	std::shared_ptr<Program> particleProg; // Add particle program
 
 	// ground data - Reused for all flat ground planes
@@ -233,6 +234,10 @@ public:
 	ivec2 bossEntranceDir = glm::ivec2(0, 1); // Direction of the boss entrance (relative to the library grid)
 
 	glm::vec4 planes[6]; // Frustum planes
+
+	// red flash damage indicator
+	float redFlashTimer = 0.0f;
+	float redFlashDuration = 0.5f; // Duration of the red flash effect
 
 	// Flags for game state
 	bool canFightboss = false; // Flag to check if the player can fight the boss
@@ -485,6 +490,36 @@ public:
 		prog2->addUniform("randFloat3");
 		prog2->addUniform("randFloat4");
 
+		prog2_enemy = make_shared<Program>();
+		prog2_enemy->setVerbose(true);
+		prog2_enemy->setShaderNames(resourceDirectory + "/simple_light_vert_enemy.glsl", resourceDirectory + "/simple_light_frag_enemy.glsl");
+		prog2_enemy->init();
+		prog2_enemy->addUniform("P");
+		prog2_enemy->addUniform("V");
+		prog2_enemy->addUniform("M");
+		prog2_enemy->addUniform("MatAmb");
+		prog2_enemy->addAttribute("vertPos");
+		prog2_enemy->addAttribute("vertNor");
+		prog2_enemy->addUniform("MatDif");
+		prog2_enemy->addUniform("MatSpec");
+		prog2_enemy->addUniform("MatShine");
+		for (int i = 0; i < Config::NUM_LIGHTS; i++) {
+			prog2_enemy->addUniform("lightPos[" + to_string(i) + "]");
+			prog2_enemy->addUniform("lightColor[" + to_string(i) + "]");
+			prog2_enemy->addUniform("lightIntensity[" + to_string(i) + "]");
+		}
+		prog2_enemy->addUniform("numLights");
+		prog2_enemy->addUniform("hasEmittance");
+		prog2_enemy->addUniform("MatEmitt");
+		prog2_enemy->addUniform("MatEmittIntensity");
+		prog2_enemy->addUniform("discardCounter");
+		prog2_enemy->addUniform("activateDiscard");
+		prog2_enemy->addUniform("randFloat1");
+		prog2_enemy->addUniform("randFloat2");
+		prog2_enemy->addUniform("randFloat3");
+		prog2_enemy->addUniform("randFloat4");
+		prog2_enemy->addUniform("alpha");
+
 		// Initialize the GLSL program that we will use for assimp models
 		assimptexProg = make_shared<Program>();
 		assimptexProg->setVerbose(true);
@@ -539,6 +574,15 @@ public:
 		particleProg->addUniform("alphaTexture");
 		particleProg->addAttribute("vertPos");
 		particleProg->addAttribute("vertColor");
+
+		redFlashProg = make_shared<Program>();
+		redFlashProg->setVerbose(true);
+		redFlashProg->setShaderNames(resourceDirectory + "/red_flash_vert.glsl", resourceDirectory + "/red_flash_frag.glsl");
+		redFlashProg->init();
+		redFlashProg->addUniform("projection");
+		redFlashProg->addUniform("model");
+		redFlashProg->addUniform("color");
+		redFlashProg->addUniform("alpha");
 
 		updateCameraVectors();
 
@@ -718,7 +762,7 @@ public:
 		if (sphere) {
 			// enemies.push_back(new Enemy(bossSpawnPos, 200.0f, 0.0f, sphere, enemyCollisionScale, vec3(0.0f))); // <<-- Pass sphere and scale
 			// cout << " Enemy placed at boss area: (" << bossSpawnPos.x << ", " << bossSpawnPos.y << ", " << bossSpawnPos.z << ")" << endl;
-			enemies.push_back(new Enemy(libraryCenter + vec3(-5.0f, 0.8f, 8.0f), 50.0f, 2.0f, sphere, enemyCollisionScale, vec3(0.0f))); // <<-- Pass sphere and scale
+			enemies.push_back(new Enemy(libraryCenter + vec3(-5.0f, 0.8f, 8.0f), ENEMY_HP_MAX / 2, 2.0f, sphere, enemyCollisionScale, vec3(0.0f))); // <<-- Pass sphere and scale
 			bossEnemy = new BossEnemy(bossSpawnPos, BOSS_HP_MAX, sphere, vec3(1.0f), vec3(0, 1, 0), BOSS_SPECIAL_ATTACK_COOLDOWN);
 		}
 		else {
@@ -1482,6 +1526,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			Model->pushMatrix();
 			{
 				Model->translate(enemyPos);
+				Model->rotate(enemy->getRotY(), glm::vec3(0, 1, 0));
 				// Scale for pill shape ( taller in Y, squished in X/Z )
 				Model->scale(glm::vec3(0.5f, bodyBaseScaleY * 1.6f, 0.5f)); // Adjust scale factors as needed
 
@@ -1490,6 +1535,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 				glUniform3f(shader->getUniform("MatDif"), bodyColor.r, bodyColor.g, bodyColor.b);
 				glUniform3f(shader->getUniform("MatSpec"), 0.3f, 0.3f, 0.3f);
 				glUniform1f(shader->getUniform("MatShine"), 8.0f);
+				glUniform1f(shader->getUniform("alpha"), enemy->getDamageTimer() / Config::ENEMY_HIT_DURATION);
 
 				setModel(shader, Model);
 				sphere->Draw(shader); // Draw the scaled sphere as the body
@@ -2129,9 +2175,22 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 	void updateEnemies(float deltaTime) {
 		static Pathfinder pathfinder(gridSize);
+		int screenWidth, screenHeight;
+		glfwGetFramebufferSize(windowManager->getHandle(), &screenWidth, &screenHeight);
 		// TODO: Add enemy movement, AI, attack logic later
 		for (auto* enemy : enemies) {
 			if (!enemy->isAlive()) enemy->setPosition(enemy->getPosition() - vec3(0.0f, 3.0f, 0.0f));
+
+			if (distance(enemy->getPosition(), player->getPosition()) <= enemy->getAggroRange() || enemy->isHit()) {
+				enemy->setAggro(true);
+			}
+
+			if (enemy->getDamageTimer() > 0.0f) {
+				enemy->setDamageTimer(enemy->getDamageTimer() - deltaTime);
+			} else if (enemy->getDamageTimer() <= 0.0f) {
+				enemy->setHit(false);
+				enemy->setDamageTimer(0.0f);
+			}
 			// Example: Simple bobbing motion
 			// float bobSpeed = 2.0f;
 			// float bobHeight = 0.05f;
@@ -2139,23 +2198,15 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			// enemy->setPosition(glm::vec3(currentPos.x, 0.8f + sin(glfwGetTime() * bobSpeed) * bobHeight, currentPos.z));
 			 // IMPORTANT: Update enemy AABB if it moves
 			 // enemy->updateAABB(); // Need to add AABB members and update method to Enemy/Entity class
-
-			 // Slowly move enemy towards player
-			// glm::vec3 enemyPos = enemy->getPosition();
-			// glm::vec3 playerPos = player->getPosition();
-			// glm::vec3 direction = glm::normalize(playerPos - enemyPos);
-			// float speed = 1.0f; // Adjust speed as needed
-			// enemy->setPosition(enemyPos + direction * speed * deltaTime);
-
 				// // Check for collision with player
 				// glm::vec3 enemyMin = enemy->getAABBMin();
 				// glm::vec3 enemyMax = enemy->getAABBMax();
 				// glm::vec3 playerMin = player->getAABBMin();
 				// glm::vec3 playerMax = player->getAABBMax();
 
-			#if ENEMY_MOVEMENT
-			enemy->moveTowardsPlayer(grid, pathfinder, player->getPosition(), deltaTime);
-			#endif
+			if (enemy->isAggro()) {
+				enemy->moveTowardsPlayer(grid, pathfinder, player->getPosition(), deltaTime);
+			}
 
 			static float lastDamageTime = 0.0f; // Track the last time damage was applied
 			if (distance(enemy->getPosition(), player->getPosition()) < 1.0f) {
@@ -2164,6 +2215,11 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 					player->takeDamage(10); // Apply damage to the player
 					lastDamageTime = currentTime; // Update the last damage time
 					std::cout << "Player took damage! Current HP: " << player->getHitpoints() << std::endl;
+
+
+					redFlashTimer = redFlashDuration; // Reset the red flash timer
+
+					
 				}
 			}
 
@@ -2979,6 +3035,26 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		}
 	}
 
+	void drawDamageIndicator(float alpha) {
+		int screenWidth, screenHeight;
+		glfwGetFramebufferSize(windowManager->getHandle(), &screenWidth, &screenHeight);  
+
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		// glDisable(GL_DEPTH_TEST); 
+		redFlashProg->bind();
+
+		glm::mat4 proj = glm::ortho(0.0f, (float)screenWidth, 0.0f, (float)screenHeight, -1.0f, 1.0f);
+		glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(0, 0, 0));
+		model = glm::scale(model, glm::vec3(screenWidth, screenHeight, 1.0f));
+		glUniformMatrix4fv(redFlashProg->getUniform("projection"), 1, GL_FALSE, value_ptr(proj));
+		glUniformMatrix4fv(redFlashProg->getUniform("model"), 1, GL_FALSE, value_ptr(model));
+		glUniform1f(redFlashProg->getUniform("alpha"), alpha); // Red color with alpha
+
+		healthBar->Draw(redFlashProg);
+		redFlashProg->unbind();
+	}
+
 	void render(float frametime, float animTime) {
 		// Get current frame buffer size.
 		int width, height;
@@ -3065,6 +3141,22 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			prog2->unbind();
 		}
 
+		if (prog2_enemy) {
+			prog2_enemy->bind();
+			glUniformMatrix4fv(prog2_enemy->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
+			glUniformMatrix4fv(prog2_enemy->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
+			glUniform1i(prog2_enemy->getUniform("numLights"), numActiveLights);
+			for (int i = 0; i < numActiveLights; ++i) {
+				string prefix = "lightPos[" + to_string(i) + "]";
+				glUniform3fv(prog2_enemy->getUniform(prefix), 1, value_ptr(lightPositions[i]));
+				prefix = "lightColor[" + to_string(i) + "]";
+				glUniform3fv(prog2_enemy->getUniform(prefix), 1, value_ptr(lightColors[i]));
+				prefix = "lightIntensity[" + to_string(i) + "]";
+				glUniform1f(prog2_enemy->getUniform(prefix), lightIntensities[i]);
+			}
+			prog2_enemy->unbind();
+		}
+
 		// Update assimptexProg (Textured/Animated Lighting)
 		if (assimptexProg) {
 			assimptexProg->bind();
@@ -3110,7 +3202,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		drawBooks(prog2, Model);
 
 		// 5. Draw Enemies
-		drawEnemies(prog2, Model);
+		drawEnemies(prog2_enemy, Model);
 
 		// 6. Draw Collectible Orbs
 		drawOrbs(prog2, Model);
@@ -3147,6 +3239,18 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		}
 		#endif
 
+		// red flash
+		if (redFlashTimer > 0.0f) {
+			redFlashTimer -= frametime;
+
+			float alpha = redFlashTimer / redFlashDuration;
+			// cout << "Red flash alpha: " << alpha << endl;
+			// glEnable(GL_DEPTH_TEST);
+
+			drawDamageIndicator(alpha);
+
+		}
+
 		/*MINI MAP*/
 		prog2->bind();
 			glClear( GL_DEPTH_BUFFER_BIT);
@@ -3159,7 +3263,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			// drawBorder(prog2, Model);
 			// drawDoor(prog2, Model);
 			drawBooks(prog2, Model);
-			drawEnemies(prog2, Model);
+			// drawEnemies(prog2, Model);
 			drawLibrary(prog2, Model, false);
 			drawBossRoom(prog2, Model, false);
 			drawBossEnemy(prog2, Model);
@@ -3170,8 +3274,16 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 			// if (SD)
 			// 	drawOccupied(prog2);
-
 		prog2->unbind();
+
+		prog2_enemy->bind();
+			glClear( GL_DEPTH_BUFFER_BIT);
+			glViewport(0, height-300, 300, 300);
+			SetOrthoMatrix(prog2_enemy);
+			SetTopView(prog2_enemy); /*MINI MAP*/
+			drawEnemies(prog2_enemy, Model);
+
+		prog2_enemy->unbind();
 
 		// --- Cleanup ---
 		Projection->popMatrix();
@@ -3218,11 +3330,13 @@ int main(int argc, char *argv[])
 	windowManager->setEventCallbacks(application);
 	application->windowManager = windowManager;
 
-	//PlaySound(TEXT("C:/Users/trigu/OneDrive/Desktop/476-project/resources/Breaking_Ground.wav"), NULL, SND_FILENAME|SND_ASYNC|SND_LOOP);
+	// PlaySound(TEXT("C:/Users/trigu/OneDrive/Desktop/476-project/resources/Breaking_Ground.wav"), NULL, SND_FILENAME|SND_ASYNC|SND_LOOP);
 
 	glfwSetInputMode(windowManager->getHandle(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 	glfwSetWindowUserPointer(windowManager->getHandle(), application);
 	glfwSetCursorPosCallback(windowManager->getHandle(), mouseMoveCallbackWrapper);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
 	// This is the code that will likely change program to program as you
 	// may need to initialize or set up different data and state
