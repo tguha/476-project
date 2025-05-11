@@ -751,6 +751,13 @@ public:
 				glUniform3f(curS->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f);
 				glUniform1f(curS->getUniform("MatShine"), 4.0f);
 			break;
+			case 7:
+			// lighter brown/grey
+				glUniform3f(curS->getUniform("MatAmb"), 0.70f, 0.68f, 0.55f);
+				glUniform3f(curS->getUniform("MatDif"), 0.6f, 0.3f, 0.1f);
+				glUniform3f(curS->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f);
+				glUniform1f(curS->getUniform("MatShine"), 4.0f);
+			break;
 		}
 	}
 
@@ -1005,7 +1012,7 @@ public:
 			Model->pushMatrix();
 			Model->loadIdentity();
 			setModel(shader, Model);
-			SetMaterialMan(shader, 6); // Brown material
+			SetMaterialMan(shader, 7); // Brown material
 			glDrawElements(GL_TRIANGLES, libGrnd.GiboLen, GL_UNSIGNED_SHORT, 0);
 			Model->popMatrix();
 
@@ -2402,7 +2409,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 	/* top down camera view  */
 	mat4 SetTopView(shared_ptr<Program> curShade) { /*MINI MAP*/
-		mat4 Cam = glm:: lookAt(eye + vec3(0, 9, 0), eye, lookAt - eye);
+		mat4 Cam = glm:: lookAt(eye + vec3(0, 12, 0), eye, lookAt - eye);
 		glUniformMatrix4fv(curShade->getUniform("V"), 1, GL_FALSE, value_ptr(Cam));
 		return Cam;
 	}
@@ -2751,7 +2758,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		/*MINI MAP*/
 		prog2->bind();
 			glClear( GL_DEPTH_BUFFER_BIT);
-			glViewport(0, height-300, 300, 300);
+			glViewport(0, height-350, 350, 350);
 			SetOrthoMatrix(prog2);
 			SetTopView(prog2); /*MINI MAP*/
 			SetMaterialMan(prog2,6 );
@@ -2763,9 +2770,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			drawLibrary(prog2, Model, false);
 			
 			// drawDoor(prog2, Model);
-			drawBooks(prog2, Model);
 			drawEnemies(prog2, Model);
-			//drawOrbs(prog2, Model);
 			drawMiniPlayer(prog2, Model);
 			drawBorderWalls(prog2, Model);
 			// SetMaterialMan(prog2,6 );
