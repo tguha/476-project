@@ -733,17 +733,17 @@ public:
 			break;
 			case 5:
 			//yellow
-			glUniform3f(curS->getUniform("MatAmb"), 0.95f , 0.78f , 0.14f );
-			glUniform3f(curS->getUniform("MatDif"), 0.95f, 0.78f, 0.14f);
-			glUniform3f(curS->getUniform("MatSpec"), 0.3f, 0.3f, 0.3f);
-			glUniform1f(curS->getUniform("MatShine"), 8.0f);
+				glUniform3f(curS->getUniform("MatAmb"), 0.95f , 0.78f , 0.14f );
+				glUniform3f(curS->getUniform("MatDif"), 0.95f, 0.78f, 0.14f);
+				glUniform3f(curS->getUniform("MatSpec"), 0.3f, 0.3f, 0.3f);
+				glUniform1f(curS->getUniform("MatShine"), 8.0f);
 			break;
 			case 6:
 			//brown
-			glUniform3f(shader->getUniform("MatAmb"), 0.15f, 0.08f, 0.03f);
-			glUniform3f(shader->getUniform("MatDif"), 0.6f, 0.3f, 0.1f);
-			glUniform3f(shader->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f);
-			glUniform1f(shader->getUniform("MatShine"), 4.0f);
+				glUniform3f(curS->getUniform("MatAmb"), 0.15f, 0.08f, 0.03f);
+				glUniform3f(curS->getUniform("MatDif"), 0.6f, 0.3f, 0.1f);
+				glUniform3f(curS->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f);
+				glUniform1f(curS->getUniform("MatShine"), 4.0f);
 			break;
 		}
 	}
@@ -855,9 +855,9 @@ public:
 		// Model->pushMatrix();
 		// Model->loadIdentity();
 		// Model->translate(libraryCenter); // Center the ground plane
-		// // No scaling needed if initGround used groundSize correctly relative to its vertices
+		// No scaling needed if initGround used groundSize correctly relative to its vertices
 		// setModel(shader, Model);
-		// SetMaterialMan(shader, 1); // Silver material
+		// SetMaterialMan(shader, 6); // brown material
 		// glDrawElements(GL_TRIANGLES, g_GiboLen, GL_UNSIGNED_SHORT, 0);
 		// Model->popMatrix();
 
@@ -999,7 +999,7 @@ public:
 			Model->pushMatrix();
 			Model->loadIdentity();
 			setModel(shader, Model);
-			SetMaterialMan(shader, 1); // Silver material
+			SetMaterialMan(shader, 6); // Brown material
 			glDrawElements(GL_TRIANGLES, libGrnd.GiboLen, GL_UNSIGNED_SHORT, 0);
 			Model->popMatrix();
 
@@ -2708,7 +2708,6 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			SetMaterialMan(prog2,6 );
 			//drawScene(prog2, CULL);
 			/* draws */
-			// drawGroundSections(prog2, Model);
 			// drawBorder(prog2, Model);
 			
 
@@ -2720,8 +2719,9 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			//drawOrbs(prog2, Model);
 			drawMiniPlayer(prog2, Model);
 			drawBorderWalls(prog2, Model);
+			// SetMaterialMan(prog2,6 );
 			drawLibGrnd(prog2, Model);
-			drawBossRoom(prog2, Model, false);
+			drawBossRoom(prog2, Model, false); //boss room not drawing
 
 			
 
