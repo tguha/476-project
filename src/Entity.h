@@ -9,10 +9,10 @@ class Entity {
         glm::vec3 position;
         glm::vec3 scale;
         glm::vec3 rotation;
-        float hitpoints;
+        
         float currentHitpoints;
         float moveSpeed;
-        bool alive;
+        // bool alive;
         float originalHitpoints; // Store original hitpoints for potential
 
         // --- Collision Data ---
@@ -20,6 +20,11 @@ class Entity {
         glm::vec3 aabbMax;
         glm::vec3 collisionScale;    // Scale applied to the collision model's AABB
         AssimpModel* collisionModel; // Pointer to the model used for collision bounds
+    
+    protected:
+        float hitpoints;
+        bool alive;
+    
     public:
         Entity(const glm::vec3& position, float hitpoints, float moveSpeed, AssimpModel* model, const glm::vec3& scale, const glm::vec3& rotation);
 

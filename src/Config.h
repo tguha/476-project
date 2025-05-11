@@ -29,6 +29,14 @@ namespace Config {
     constexpr float PLAYER_HP_MIN = 0.0f;
     constexpr float PLAYER_MOVE_SPEED = 0.045f;
 
+    // Enemy settings
+    // constexpr float ENEMY_HP_MAX = 200.0f;
+    // constexpr float ENEMY_HP_MIN = 0.0f;
+    // constexpr float ENEMY_MOVE_SPEED = 0.02f;
+    constexpr float ENEMY_ATTACK_DAMAGE = 10.0f;
+    constexpr float ENEMY_HIT_DURATION = 0.5f; // Duration of hit effect
+    constexpr float ENEMY_HIT_COOLDOWN = 1.0f; // Cooldown before enemy can be hit again
+
     // Camera settings
     constexpr float CAMERA_DEFAULT_RADIUS = 5.0f;
     constexpr float CAMERA_DEFAULT_THETA_DEGREES = 0.0f;
