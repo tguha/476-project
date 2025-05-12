@@ -675,7 +675,7 @@ public:
 		key = new AssimpModel(resourceDirectory + "/Key_and_Lock/key.obj");
 
 		//lock
-		//lock = new AssimpModel(resourceDirectory + "/Key_and_Lock/lock.obj");
+		lock = new AssimpModel(resourceDirectory + "/Key_and_Lock/lockCopy.obj");
 
 		baseSphereLocalAABBMin = sphere->getBoundingBoxMin();
 		baseSphereLocalAABBMax = sphere->getBoundingBoxMax();
@@ -2563,14 +2563,43 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		shader->bind();
 
 
+		//top lock
 		Model->pushMatrix();
 			Model->loadIdentity();
-			//Model->translate(doorPosition + ...);
-			//Model->scale();
+			Model->translate(vec3(0.0f, 2.5f, 38.5f));  //doorPosition
+			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			Model->scale(0.1f);
 			SetMaterialMan(shader, 5); //gold
 			setModel(shader, Model);
-			//lock->Draw(shader);
+			lock->Draw(shader);
 		Model->popMatrix();
+
+		//middle lock
+		Model->pushMatrix();
+			Model->loadIdentity();
+			Model->translate(vec3(0.0f, 1.5f, 38.5f));  //doorPosition
+			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			Model->scale(0.1f);
+			SetMaterialMan(shader, 5); //gold
+			setModel(shader, Model);
+			lock->Draw(shader);
+		Model->popMatrix();
+
+		//lower lock
+		Model->pushMatrix();
+			Model->loadIdentity();
+			Model->translate(vec3(0.0f, 0.5f, 38.5f));  //doorPosition
+			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			Model->scale(0.1f);
+			SetMaterialMan(shader, 5); //gold
+			setModel(shader, Model);
+			lock->Draw(shader);
+		Model->popMatrix();
+
+
+
+
+
 		shader->unbind();
 
 
@@ -2588,10 +2617,10 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		Model->pushMatrix();
 			Model->loadIdentity();
 			//Model->translate(last enemy pos));
-			//Model->scale();
+			// Model->scale(0.5f);
 			SetMaterialMan(shader, 5); //gold
 			setModel(shader, Model);
-			//lock->Draw(shader);
+			key->Draw(shader);
 		Model->popMatrix();
 		shader->unbind();
 	}
@@ -2747,8 +2776,8 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		drawBossRoom(assimptexProg, Model, true); // Draw the boss room
 
 		//testing drawing lock and key
-		// drawLock(prog2, Model);
-		// drawKey(prog2, Model);
+		drawLock(prog2, Model);
+		//drawKey(prog2, Model);
 
 		#if SHOW_HEALTHBAR
 		drawHealthBar();
