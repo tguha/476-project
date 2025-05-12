@@ -141,6 +141,10 @@ public:
 
 	AssimpModel *border, *lock, *lockHandle, *key;
 
+	//key collectibles
+	std::vector<Collectible> keyCollectibles;
+	int keysCollectedCount = 0;
+
 	//  vector of books
 	vector<Book> books;
 
@@ -2659,36 +2663,106 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			setModel(shader, Model);
 			lock->Draw(shader);
 			Model->pushMatrix();
-				
 				SetMaterialMan(shader, 6); //brown
 				//not rotating
-				Model->rotate( glm::radians(-90.0f) , vec3(0.0f, 1.0f, 0.0f)); //max -30?
+				// cout << "rotating????: " << lTheta << endl;
+				Model->rotate( glm::radians(lTheta) , vec3(0.0f, 0.0f, 1.0f)); //max -30?
+				setModel(shader, Model);
 				lockHandle->Draw(shader);
 			Model->popMatrix();
 		Model->popMatrix();
 
+		// Model->pushMatrix();
+		// 	Model->loadIdentity();
+		// 	Model->translate(vec3(0.0f, 0.5f, 38.5f));  //doorPosition
+		// 	Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+		// 	Model->rotate( glm::radians(lTheta) , vec3(0.0f, 1.0f, 0.0f)); //max -30?
+		// 	Model->scale(0.1f);
+		// 	SetMaterialMan(shader, 6); //brown
+		// 	setModel(shader, Model);
+		// 	lockHandle->Draw(shader);
+		// Model->popMatrix();
+
+
 		shader->unbind();
 
 		// if(lTheta < 90){
-			lTheta+= 0.1;
+			// lTheta+= 0.1;
+			lTheta = sin(glfwGetTime());
 		// }
 	}
 
 	void drawKey(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model){
+
+		// --- Collision Check Logic ---
+		for (auto& key : keyCollectibles) {
+			// Perform collision check ONLY if not collected AND in the IDLE state
+			if (!key.collected && key.state == OrbState::IDLE && // <<<--- ADD STATE CHECK
+				checkAABBCollision(manAABBmin, manAABBmax, key.AABBmin, key.AABBmax)) {
+				key.collected = true;
+				// key.state = OrbState::COLLECTED; // Optionally set state
+				keysCollectedCount++;
+				std::cout << "Collected a key! (" << keysCollectedCount << ")\n";
+			}
+		}
 		//need models
 		shader->bind();
 
+				int collectedOrbDrawIndex = 0;
 
-		Model->pushMatrix();
+		for (auto& orb : orbCollectibles) {
+
+			glm::vec3 currentDrawPosition;
+			float currentDrawScale = orb.scale; // Use base scale
+
+			if (orb.collected) {
+				// Calculate position behind the player (same logic as before)
+				float backOffset = 0.4f;
+				float upOffsetBase = 0.6f;
+				float stackOffset = orb.scale * 2.5f;
+				float sideOffset = 0.15f;
+				glm::vec3 playerForward = normalize(manMoveDir);
+				glm::vec3 playerUp = glm::vec3(0.0f, 1.0f, 0.0f);
+				glm::vec3 playerRight = normalize(cross(playerForward, playerUp));
+				float currentUpOffset = upOffsetBase + (collectedOrbDrawIndex * stackOffset);
+				float currentSideOffset = (collectedOrbDrawIndex % 2 == 0 ? -sideOffset : sideOffset);
+				currentDrawPosition = charMove() - playerForward * backOffset
+					+ playerUp * currentUpOffset
+					+ playerRight * currentSideOffset;
+				collectedOrbDrawIndex++;
+				// currentDrawScale = orb.scale * 0.8f; // Optional: shrink collected orbs
+			}
+			else {
+				// Use the orb's current position (potentially animated by updateOrbs)
+				currentDrawPosition = orb.position;
+			}
+
+			// --- Set up transformations ---
+			Model->pushMatrix();
 			Model->loadIdentity();
-			
 			Model->translate(vec3(0.0f, 0.5f, 0.5f)); //last enemy pos
 			Model->scale(2.0f);
 			Model->rotate(glm::radians(90.0f), vec3(1.0f, 0.0f, 0.0f));
 			Model->rotate(glm::radians(-90.0f), vec3(0.0f, 1.0f, 0.0f));
+			
+
+			// --- Set Material & Draw ---
+			// (Material setting code remains the same)
 			SetMaterialMan(shader, 5); //gold
+
 			setModel(shader, Model);
-			key->Draw(shader);
+			//orb.model->Draw(simpleShader);
+			key.model->Draw(shader);
+
+			Model->popMatrix();
+		} // End drawing loop
+
+
+
+		
+			
+			
+			
 		Model->popMatrix();
 		shader->unbind();
 	}
