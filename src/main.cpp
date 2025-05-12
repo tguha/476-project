@@ -2616,8 +2616,11 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 		Model->pushMatrix();
 			Model->loadIdentity();
-			//Model->translate(last enemy pos));
-			// Model->scale(0.5f);
+			
+			Model->translate(vec3(0.0f, 0.5f, 0.5f)); //last enemy pos
+			Model->scale(2.0f);
+			Model->rotate(glm::radians(90.0f), vec3(1.0f, 0.0f, 0.0f));
+			Model->rotate(glm::radians(-90.0f), vec3(0.0f, 1.0f, 0.0f));
 			SetMaterialMan(shader, 5); //gold
 			setModel(shader, Model);
 			key->Draw(shader);
@@ -2777,7 +2780,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 		//testing drawing lock and key
 		drawLock(prog2, Model);
-		//drawKey(prog2, Model);
+		drawKey(prog2, Model);
 
 		#if SHOW_HEALTHBAR
 		drawHealthBar();
