@@ -139,7 +139,7 @@ public:
 
 	AssimpModel *sky_sphere;
 
-	AssimpModel *border, *lock, *key;
+	AssimpModel *border, *lock, *lockHandle, *key;
 
 	//  vector of books
 	vector<Book> books;
@@ -193,6 +193,10 @@ public:
 	bool movingBackward = false;
 	bool movingLeft = false;
 	bool movingRight = false;
+
+	//unlock bool
+	bool unlock = false;
+	float lTheta = 0;
 
 	float characterRotation = 0.0f;
 
@@ -299,7 +303,7 @@ public:
 		}
 		if (key == GLFW_KEY_F && action == GLFW_PRESS) { // Interaction Key
 			interactWithBooks();
-    }
+    	}
 		if (key == GLFW_KEY_L && action == GLFW_PRESS){
 			cursor_visable = !cursor_visable;
 			if (cursor_visable) {
@@ -308,6 +312,9 @@ public:
 			else {
 				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
 			}
+		}
+		if(key == GLFW_KEY_U && action == GLFW_PRESS){
+			unlock = true;
 		}
 	}
 
@@ -676,6 +683,7 @@ public:
 
 		//lock
 		lock = new AssimpModel(resourceDirectory + "/Key_and_Lock/lockCopy.obj");
+		lockHandle = new AssimpModel(resourceDirectory + "/Key_and_Lock/lockHandle.obj");
 
 		baseSphereLocalAABBMin = sphere->getBoundingBoxMin();
 		baseSphereLocalAABBMax = sphere->getBoundingBoxMax();
@@ -2564,6 +2572,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 
 		//top lock
+		
 		Model->pushMatrix();
 			Model->loadIdentity();
 			Model->translate(vec3(0.0f, 2.5f, 38.5f));  //doorPosition
@@ -2572,6 +2581,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			SetMaterialMan(shader, 5); //gold
 			setModel(shader, Model);
 			lock->Draw(shader);
+			lockHandle->Draw(shader);
 		Model->popMatrix();
 
 		//middle lock
@@ -2583,6 +2593,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			SetMaterialMan(shader, 5); //gold
 			setModel(shader, Model);
 			lock->Draw(shader);
+			lockHandle->Draw(shader);
 		Model->popMatrix();
 
 		//lower lock
@@ -2594,19 +2605,73 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			SetMaterialMan(shader, 5); //gold
 			setModel(shader, Model);
 			lock->Draw(shader);
+			lockHandle->Draw(shader);
 		Model->popMatrix();
-
-
-
-
 
 		shader->unbind();
 
 
 	}
 
-	void updateLock(){
+	void updateLock(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model){
 		//unlock one of the locks if have a key
+		//for now unlock all
+
+		shader->bind();
+
+
+		//top lock
+		Model->pushMatrix();
+			Model->loadIdentity();
+			Model->translate(vec3(0.0f, 2.5f, 38.5f));  //doorPosition
+			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			
+			Model->scale(0.1f);
+			SetMaterialMan(shader, 5); //gold
+			setModel(shader, Model);
+			lock->Draw(shader);
+			Model->pushMatrix();
+				Model->rotate( -1*lTheta , vec3(0.0f, 0.0f, 1.0f)); //max -30?
+				SetMaterialMan(shader, 6); //gold
+				lockHandle->Draw(shader);
+			Model->popMatrix();
+		Model->popMatrix();
+
+		//middle lock
+		Model->pushMatrix();
+			Model->loadIdentity();
+			Model->translate(vec3(0.0f, 1.5f, 38.5f));  //doorPosition
+			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			Model->scale(0.1f);
+			SetMaterialMan(shader, 5); //gold
+			setModel(shader, Model);
+			lock->Draw(shader);
+			lockHandle->Draw(shader);
+		Model->popMatrix();
+
+		// lower lock
+		Model->pushMatrix();
+			Model->loadIdentity();
+			Model->translate(vec3(0.0f, 0.5f, 38.5f));  //doorPosition
+			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			Model->scale(0.1f);
+			SetMaterialMan(shader, 5); //gold
+			setModel(shader, Model);
+			lock->Draw(shader);
+			Model->pushMatrix();
+				
+				SetMaterialMan(shader, 6); //brown
+				//not rotating
+				Model->rotate( glm::radians(-90.0f) , vec3(0.0f, 1.0f, 0.0f)); //max -30?
+				lockHandle->Draw(shader);
+			Model->popMatrix();
+		Model->popMatrix();
+
+		shader->unbind();
+
+		// if(lTheta < 90){
+			lTheta+= 0.1;
+		// }
 	}
 
 	void drawKey(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model){
@@ -2779,7 +2844,13 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		drawBossRoom(assimptexProg, Model, true); // Draw the boss room
 
 		//testing drawing lock and key
-		drawLock(prog2, Model);
+		if(unlock){
+			updateLock(prog2, Model);
+		}
+		else{
+			drawLock(prog2, Model);
+		}
+		
 		drawKey(prog2, Model);
 
 		#if SHOW_HEALTHBAR
