@@ -875,7 +875,7 @@ public:
 		cout << "Initializing enemies..." << endl;
 		// Use the scale factor used in drawEnemies
 		// Body scale was (0.5f, bodyBaseScaleY * 1.6f, 0.5f) where bodyBaseScaleY = 0.8f => (0.5, 1.28, 0.5)
-		glm::vec3 enemyCollisionScale = glm::vec3(0.5f, 1.28f, 0.5f); // Define the scale
+		// glm::vec3 enemyCollisionScale = glm::vec3(0.5f, 1.28f, 0.5f); // Define the scale
 		// glm::vec3 enemyCollisionScale = glm::vec3(1.0f, 1.0f, 1.0f);
 		vec3 bossSpawnPos = bossRoom->getWorldOrigin();
 
@@ -885,11 +885,12 @@ public:
 			// cout << " Enemy placed at boss area: (" << bossSpawnPos.x << ", " << bossSpawnPos.y << ", " << bossSpawnPos.z << ")" << endl;
 			// enemies.push_back(new Enemy(libraryCenter + vec3(-5.0f, 0.8f, 8.0f), ENEMY_HP_MAX / 2, 2.0f, sphere, enemyCollisionScale, vec3(0.0f))); // <<-- Pass sphere and scale
 
-			std::vector<vec3> enemySpawnPositions = library->getEnemySpawnPositions();
-			for (const auto& spawnPos : enemySpawnPositions) {
-				enemies.push_back(new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.z), ENEMY_HP_MAX, 2.0f, iceElemental, enemyCollisionScale, vec3(0.0f)));
-				// cout << " Enemy placed at: (" << spawnPos.x << ", " << spawnPos.y << ", " << spawnPos.z << ")" << endl;
-			}
+			// std::vector<vec3> enemySpawnPositions = library->getEnemySpawnPositions();
+			// for (const auto& spawnPos : enemySpawnPositions) {
+			// 	enemies.push_back(new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.z), ENEMY_HP_MAX, 2.0f, iceElemental, enemyCollisionScale, vec3(0.0f)));
+			// 	// cout << " Enemy placed at: (" << spawnPos.x << ", " << spawnPos.y << ", " << spawnPos.z << ")" << endl;
+			// }
+			initEnemies();
 
 			bossEnemy = new BossEnemy(bossSpawnPos, BOSS_HP_MAX, sphere, vec3(1.0f), vec3(0, 1, 0), BOSS_SPECIAL_ATTACK_COOLDOWN);
 		}
@@ -1316,6 +1317,21 @@ public:
 		borderWallKeys.insert(posKey); // Add key to set to avoid duplicates
 	}
 
+	void initEnemies() {
+		if (enemies.size() == 0) {
+			std::vector<vec3> enemySpawnPositions = library->getEnemySpawnPositions();
+			
+			for (auto e = enemies.begin(); e != enemies.end(); ++e) {
+				enemies.erase(e);
+			}
+
+			for (const auto& spawnPos : enemySpawnPositions) {
+				enemies.push_back(new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.z), ENEMY_HP_MAX, 2.0f, iceElemental, vec3(1.0f), vec3(0.0f)));
+				// cout << " Enemy placed at: (" << spawnPos.x << ", " << spawnPos.y << ", " << spawnPos.z << ")" << endl;
+			}
+		}
+	}
+
 	void drawBorderWalls(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		if (!shader || !Model) {
 			cerr << "Error: Null pointer in drawBorderWalls." << endl;
@@ -1638,7 +1654,6 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			canFightboss = false; // Reset boss fight flag
 			allEnemiesDead = false; // Reset enemy status
 			player->setPosition(vec3(0.0f, 0.0f, 0.0f)); // Reset player position
-			enemies.clear();
 			books.clear();
 			libraryGrounds.clear();
 			libraryGroundKeys.clear();
@@ -1656,8 +1671,9 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			}
 			bossEnemy->setAlive(); // Reset boss status to alive
 			initMapGen();
+			initEnemies(); // Reinitialize enemies
 			bossActiveSpells.clear();
-			enemies.push_back(new Enemy(libraryCenter + vec3(-5.0f, 0.8f, 8.0f), 50.0f, 2.0f, sphere, glm::vec3(0.5f, 1.28f, 0.5f), vec3(0.0f))); // <<-- Pass sphere and scale
+			// enemies.push_back(new Enemy(libraryCenter + vec3(-5.0f, 0.8f, 8.0f), 50.0f, 2.0f, sphere, glm::vec3(0.5f, 1.28f, 0.5f), vec3(0.0f))); // <<-- Pass sphere and scale
 			activeSpells.clear(); // Clear active spells
 		}
 	}
