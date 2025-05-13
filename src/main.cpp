@@ -430,10 +430,10 @@ public:
 		// 3. Adjust radius if needed
 		float desiredRadius = Config::CAMERA_DEFAULT_RADIUS;
 		float minRadius = 0.5f;
-		float step = 0.1f;
+		float step = 0.45f;
 		float testRadius = desiredRadius;
 		float finalRadius = radius;
-		const float cooldownTime = 1.0f; // Cooldown time in seconds
+		const float cooldownTime = 0.45f; // Cooldown time in seconds
 		cameraVisibleCooldown -= AnimDeltaTime;
 
 		// if (visible == 0) {
@@ -465,49 +465,6 @@ public:
 
 		manMoveDir = vec3(sin(player->getRotY()), 0, cos(player->getRotY()));
 		right = normalize(cross(manMoveDir, up));
-	}
-
-	bool checkCameraOcclusion(const glm::vec3& from, const glm::vec3& to) {
-		const float stepSize = 0.10f; // Smaller = more precise but more expensive
-		glm::vec3 dir = glm::normalize(to - from);
-		float distance = glm::length(to - from);
-
-		for (float t = 0.0f; t <= distance; t += stepSize) {
-			glm::vec3 point = from + dir * t;
-
-			// Check Library Grid
-			int gx = library->mapXtoGridX(point.x);
-			int gz = library->mapZtoGridY(point.z);
-
-			glm::ivec2 gridPos(gx, gz);
-
-			float gridposX = library->mapGridXtoWorldX(gx);
-			float gridposZ = library->mapGridYtoWorldZ(gz);
-
-			if (grid.inBounds(gridPos)) {
-				if (grid[gridPos].type == LibraryGen::CellType::CLUSTER ||
-					grid[gridPos].type == LibraryGen::CellType::BORDER) {
-						glm::vec3 pos = glm::vec3(gridposX, 0.0f, gridposZ);
-						if (checkSphereCollision(pos, 5.0f, glm::vec3(to.x - 1.0f, from.y - 1.0f, to.z - 1.0f), glm::vec3(to.x + 1.0f, from.y + 1.0f, to.z + 1.0f))) {
-							return true; // Occlusion detected
-						}
-					}
-			}
-
-			gx = bossRoom->mapXtoGridX(point.x);
-			gz = bossRoom->mapZtoGridY(point.z);
-			gridPos = glm::ivec2(gx, gz);
-
-			if (bossGrid.inBounds(gridPos)) {
-				if (bossGrid[gridPos].type == BossRoomGen::CellType::BORDER ||
-					bossGrid[gridPos].type == BossRoomGen::CellType::ENTRANCE ||
-					bossGrid[gridPos].type == BossRoomGen::CellType::EXIT) {
-						return true;
-					}
-			}
-		}
-
-		return false; // No occlusion detected
 	}
 
 	void mouseCallback(GLFWwindow *window, int button, int action, int mods)
@@ -2407,7 +2364,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			if (bossGrid[gridPos].borderType == BossRoomGen::BorderType::ENTRANCE_SIDE) {
 				glm::vec3 pos = glm::vec3(gridtoworldX, libraryCenter.y, gridtoworldZ); // Base position on ground
 
-				if (checkSphereCollision(pos, 2.0f, playerWorldMin, playerWorldMax)) {
+				if (checkSphereCollision(pos, 1.5f, playerWorldMin, playerWorldMax)) {
 					std::cout << "[DEBUG] Collision DETECTED with shelf at grid (" << gridX << "," << gridZ << ")" << std::endl;
 					return true; // Collision found
 				}
