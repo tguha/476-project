@@ -3161,15 +3161,22 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			SetMaterialMan(shader, 5); //gold
 			setModel(shader, Model);
 			lock->Draw(shader);
-			Model->pushMatrix();
+			
+		Model->popMatrix();
+
+		Model->pushMatrix();
+		Model->loadIdentity();
+			Model->translate(vec3(0.0f, 0.5f, 38.5f));  //doorPosition
+			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			Model->rotate( -1* glm::radians(10.0) , vec3(0.0f, 0.0f, 1.0f)); //max -30?
+			Model->scale(0.1f);
+				
 				SetMaterialMan(shader, 6); //brown
-				//not rotating
-				// cout << "rotating????: " << lTheta << endl;
-				Model->rotate( glm::radians(lTheta) , vec3(0.0f, 0.0f, 1.0f)); //max -30?
 				setModel(shader, Model);
 				lockHandle->Draw(shader);
 			Model->popMatrix();
-		Model->popMatrix();
+
+
 
 		// Model->pushMatrix();
 		// 	Model->loadIdentity();
@@ -3187,7 +3194,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 		// if(lTheta < 90){
 			// lTheta+= 0.1;
-			lTheta = sin(glfwGetTime());
+			// lTheta = sin(glfwGetTime());
 		// }
 	}
 
