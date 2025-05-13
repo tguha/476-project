@@ -2269,30 +2269,6 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		// TODO: Add enemy movement, AI, attack logic later
 		for (auto* enemy : enemies) {
 			enemy->update(player.get(), deltaTime);
-
-			// static float lastDamageTime = 0.0f; // Track the last time damage was applied
-
-			// glm::vec3 enemyPosXZ = glm::vec3(enemy->getPosition().x, 0.0f, enemy->getPosition().z);
-			// if (distance(enemyPosXZ, player->getPosition()) < 1.0f) {
-			// 	float currentTime = glfwGetTime();
-			// 	if (currentTime - lastDamageTime >= 1.0f) { // Check if 1 second has passed
-			// 		player->takeDamage(10); // Apply damage to the player
-			// 		lastDamageTime = currentTime; // Update the last damage time
-			// 		std::cout << "Player took damage! Current HP: " << player->getHitpoints() << std::endl;
-
-
-			// 		// redFlashTimer = redFlashDuration; // Reset the red flash timer
-			// 		player->setDamageTimer(Config::PLAYER_HIT_DURATION);
-
-					
-			// 	}
-			// }
-
-				// if (checkAABBCollision(enemyMin, enemyMax, playerMin, playerMax)) {
-				// 	// Handle collision with player
-				// 	cout << "Enemy collided with player!" << endl;
-				// 	player->takeDamage(10);
-				// }
 		}
 	}
 
