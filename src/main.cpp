@@ -164,7 +164,7 @@ public:
 
 	AssimpModel *sky_sphere;
 
-	AssimpModel *border, *lock, *lockHandle, *key;  
+	AssimpModel *border, *lock, *lockHandle, *key;
 
 	//key collectibles
 	std::vector<Collectible> keyCollectibles;
@@ -233,7 +233,7 @@ public:
 
 	float characterRotation = 0.0f;
 
-	//Debug Camera 
+	//Debug Camera
 	bool debugCamera = false;
 	vec3 debugEye = vec3(0.0f, 0.0f, 0.0f);
 	float debugMovementSpeed = 0.2f;
@@ -258,6 +258,15 @@ public:
 	bool restartGen = false;
 	bool bossfightstarted = false;
 	bool bossfightended = false;
+
+	// -- Camera Occlusion Query --
+	GLuint occlusionQueryID = 0; // Occlusion query ID
+	GLuint visible = 0;
+	GLuint occlusionBoxVAO = 0;
+	GLuint occlusionBoxVBO = 0;
+
+	float cameraVisibleCooldown = 0.0f; // Cooldown for camera visibility check
+	bool wasVisibleLastFrame = true;
 
 	void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods)
 	{
@@ -416,26 +425,75 @@ public:
 	void updateCameraVectors() {
 		if (!debugCamera) {
 			//Activate Player Camera
-			vec3 front;
-			front.x = radius * cos(phi) * cos(theta);
-			front.y = radius * sin(phi);
-			front.z = radius * cos(phi) * cos((pi<float>() / 2) - theta);
+			// vec3 front;
+			// front.x = radius * cos(phi) * cos(theta);
+			// front.y = radius * sin(phi);
+			// front.z = radius * cos(phi) * cos((pi<float>()/2) - theta);
 
-			eye = player->getPosition() - front;
-			lookAt = player->getPosition();
+			// eye = player->getPosition() - front;
+			// lookAt = player->getPosition();
 
-			// manRot.y = theta + radians(-90.0f);
-			// manRot.y = - manRot.y;
-			// manRot.x = phi;
+			// // manRot.y = theta + radians(-90.0f);
+			// // manRot.y = - manRot.y;
+			// // manRot.x = phi;
 
+			// player->setRotY(-(theta + radians(-90.0f)));
+			// player->setRotX(phi);
+
+			// // cout << "Theta: " << theta << " Phi: " << phi << endl;
+			// manMoveDir = vec3(sin(player->getRotY()), 0, cos(player->getRotY()));
+			// right = normalize(cross(manMoveDir, up));
+			// 1. Compute the desired front vector
+			glm::vec3 front;
+			front.x = cos(phi) * cos(theta);
+			front.y = sin(phi);
+			front.z = cos(phi) * cos((pi<float>() / 2) - theta);
+
+			// 2. Store current desired eye (before occlusion check)
+			glm::vec3 playerPos = glm::vec3(player->getPosition().x, player->getPosition().y + 1.0f, player->getPosition().z);
+			glm::vec3 desiredEye = playerPos - front * radius;
+
+
+			// 3. Adjust radius if needed
+			float desiredRadius = Config::CAMERA_DEFAULT_RADIUS;
+			float minRadius = 0.5f;
+			float step = 0.45f;
+			float testRadius = desiredRadius;
+			float finalRadius = radius;
+			const float cooldownTime = 0.45f; // Cooldown time in seconds
+			cameraVisibleCooldown -= AnimDeltaTime;
+
+			// if (visible == 0) {
+			// 	// std::cout << "Camera Occluded" << std::endl;
+			// 	radius = glm::max(minRadius, radius - step);
+			// } else {
+			// 	radius = glm::min(desiredRadius, radius + step);
+			// }
+
+			if (visible == 0) {
+				radius = glm::max(minRadius, radius - step);
+				cameraVisibleCooldown = cooldownTime; // Reset cooldown
+				wasVisibleLastFrame = false; // Mark as not visible
+			} else if (cameraVisibleCooldown <= 0.0f) {
+				// Only expand if cooldown is over
+				radius = glm::min(desiredRadius, radius + step);
+				wasVisibleLastFrame = true; // Mark as visible
+			}
+
+			radius = glm::mix(radius, finalRadius, 0.5f); // Smoothly interpolate radius
+
+			// 4. Recalculate final eye based on adjusted radius
+			eye = playerPos - front * radius;
+			lookAt = playerPos;
+
+			// 5. Update player rotation
 			player->setRotY(-(theta + radians(-90.0f)));
 			player->setRotX(phi);
 
-			// cout << "Theta: " << theta << " Phi: " << phi << endl;
-			manMoveDir = vec3(sin(player->getRotY()), 0, cos(player->getRotY()));
+		manMoveDir = vec3(sin(player->getRotY()), 0, cos(player->getRotY()));
 			right = normalize(cross(manMoveDir, up));
 
-			// lookAt = eye + front;
+				// lookAt = eye + front;
 		}
 		else {
 			//Activate Debug Camera
@@ -446,7 +504,7 @@ public:
 			// Defined above Globally- eyePos = vec3(0.0, 0.0, 0.0);
 			vec3 targetPos = vec3(x, y, z);
 			vec3 viewVec = normalize(targetPos);
-			
+
 			if (movingForward) {
 				debugEye += debugMovementSpeed * viewVec;
 			}
@@ -1148,8 +1206,10 @@ public:
 		for (const auto& libGrnd : libraryGrounds) {
 			glBindVertexArray(libGrnd.VAO); // Bind each library ground VAO
 
-			libGrnd.texture->bind(shader->getUniform("texture_diffuse1")); // Bind the texture
-			glUniform1i(shader->getUniform("hasTexture"), 1); // Set texture uniform
+			if (shader == assimptexProg) {
+				libGrnd.texture->bind(shader->getUniform("texture_diffuse1")); // Bind the texture
+				glUniform1i(shader->getUniform("hasTexture"), 1); // Set texture uniform
+			}
 
 			Model->pushMatrix();
 			Model->loadIdentity();
@@ -1158,7 +1218,9 @@ public:
 			glDrawElements(GL_TRIANGLES, libGrnd.GiboLen, GL_UNSIGNED_SHORT, 0);
 			Model->popMatrix();
 
-			libGrnd.texture->unbind(); // Unbind the texture after drawing each library ground
+			if (shader == assimptexProg) {
+				libGrnd.texture->unbind(); // Unbind the texture after drawing each library ground
+			}
 		}
 
 		glBindVertexArray(0); // Unbind VAO after drawing all library grounds
@@ -1265,8 +1327,10 @@ public:
 		for (const auto& border : borderWalls) {
 			glBindVertexArray(border.WallVAID); // Bind each border VAO
 
-			border.texture->bind(shader->getUniform("texture_diffuse1")); // Bind the texture
-			glUniform1i(shader->getUniform("hasTexture"), 1); // Set texture uniform
+			if (shader == assimptexProg) {
+				border.texture->bind(shader->getUniform("texture_diffuse1")); // Bind the texture
+				glUniform1i(shader->getUniform("hasTexture"), 1); // Set texture uniform
+			}
 
 			Model->pushMatrix();
 			Model->loadIdentity();
@@ -1275,7 +1339,9 @@ public:
 			glDrawElements(GL_TRIANGLES, border.GiboLen, GL_UNSIGNED_SHORT, 0);
 			Model->popMatrix();
 
-			border.texture->unbind(); // Unbind the texture after drawing each border
+			if (shader == assimptexProg) {
+				border.texture->unbind(); // Unbind the texture after drawing each border
+			}
 		}
 
 		glBindVertexArray(0); // Unbind VAO after drawing all borders
@@ -2989,7 +3055,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 			shader->unbind();
 			particleAlphaTex->unbind();
-			
+
 
 		Model->popMatrix();
 	}
@@ -3051,7 +3117,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 
 		//top lock
-		
+
 		Model->pushMatrix();
 			Model->loadIdentity();
 			Model->translate(vec3(0.0f, 2.5f, 38.5f));  //doorPosition
@@ -3104,7 +3170,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			Model->loadIdentity();
 			Model->translate(vec3(0.0f, 2.5f, 38.5f));  //doorPosition
 			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
-			
+
 			Model->scale(0.1f);
 			SetMaterialMan(shader, 5); //gold
 			setModel(shader, Model);
@@ -3170,7 +3236,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 	/* keyCollect */
 	void drawKey(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model){
 
-		/* 
+		/*
 
 		// --- Collision Check Logic ---
 		for (auto& key : keyCollectibles) {
@@ -3222,7 +3288,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			Model->scale(2.0f);
 			Model->rotate(glm::radians(90.0f), vec3(1.0f, 0.0f, 0.0f));
 			Model->rotate(glm::radians(-90.0f), vec3(0.0f, 1.0f, 0.0f));
-			
+
 
 			// --- Set Material & Draw ---
 			// (Material setting code remains the same)
@@ -3234,7 +3300,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 			Model->popMatrix();
 		} // End drawing loop
-			
+
 		Model->popMatrix();
 		shader->unbind();
 
@@ -3248,7 +3314,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		Model->scale(2.0f);
 		Model->rotate(glm::radians(90.0f), vec3(1.0f, 0.0f, 0.0f));
 		Model->rotate(glm::radians(-90.0f), vec3(0.0f, 1.0f, 0.0f));
-		
+
 
 		// --- Set Material & Draw ---
 		// (Material setting code remains the same)
@@ -3318,11 +3384,11 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 	void drawDamageIndicator(float alpha) {
 		int screenWidth, screenHeight;
-		glfwGetFramebufferSize(windowManager->getHandle(), &screenWidth, &screenHeight);  
+		glfwGetFramebufferSize(windowManager->getHandle(), &screenWidth, &screenHeight);
 
 		glEnable(GL_BLEND);
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-		// glDisable(GL_DEPTH_TEST); 
+		// glDisable(GL_DEPTH_TEST);
 		redFlashProg->bind();
 
 		glm::mat4 proj = glm::ortho(0.0f, (float)screenWidth, 0.0f, (float)screenHeight, -1.0f, 1.0f);
@@ -3334,6 +3400,23 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 		healthBar->Draw(redFlashProg);
 		redFlashProg->unbind();
+	}
+
+	void drawOcclusionBoxAtPlayer(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
+		if (!shader || !Model || !sphere) return; // Need shader, stack, model
+
+		shader->bind();
+		Model->pushMatrix();
+		Model->loadIdentity(); // Start from identity for projectile
+
+		Model->translate(player->getPosition() + glm::vec3(0, 1.0f, 0));
+		Model->scale(0.25f);
+
+		setModel(shader, Model);
+		sphere->Draw(shader); // Draw the sphere model
+
+		Model->popMatrix();
+		shader->unbind();
 	}
 
 	void render(float frametime, float animTime) {
@@ -3463,6 +3546,37 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			//particleAlphaTex->bind(particleProg->getUniform("alphaTexture"));
 			particleProg->unbind();
 		}
+		 // these four, walls, ground, library and boss room need to be called before Occlusion Query
+		drawBorderWalls(assimptexProg, Model); // Draw the borders
+
+		drawLibGrnd(assimptexProg, Model); // Draw the library ground
+
+
+		// 2. Draw the Static Library Shelves
+		drawLibrary(assimptexProg, Model, true);
+
+		drawBossRoom(assimptexProg, Model, true); // Draw the boss room
+
+		// disable color writes
+		glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+		// disable depth writes
+		glDepthMask(GL_FALSE);
+
+		// begin occlusion query
+		glBeginQuery(GL_ANY_SAMPLES_PASSED, occlusionQueryID);
+
+		// Draw a small sphere at the player's position
+		drawOcclusionBoxAtPlayer(prog2, Model);
+
+		glEndQuery(GL_ANY_SAMPLES_PASSED);
+
+		GLuint resultofQuery = 0;
+		glGetQueryObjectuiv(occlusionQueryID, GL_QUERY_RESULT, &resultofQuery);
+		visible = resultofQuery;
+
+		// re-enable color writes and depth writes
+		glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+		glDepthMask(GL_TRUE);
 
 		// --- Draw Scene Elements ---
 		// ORDER MATTERS for transparency, but with opaque objects and depth testing, it's less critical.
@@ -3472,9 +3586,6 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		// drawGroundSections(prog2, Model);
 
 		// drawBorder(prog2, Model);
-
-		// 2. Draw the Static Library Shelves
-		drawLibrary(assimptexProg, Model, true);
 
 		// 3. Draw the Door
 		// drawDoor(prog2, Model);
@@ -3502,12 +3613,6 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 		// drawSkybox(assimptexProg, Model); // Draw the skybox last
 
-		drawBorderWalls(assimptexProg, Model); // Draw the borders
-
-		drawLibGrnd(assimptexProg, Model); // Draw the library ground
-
-		drawBossRoom(assimptexProg, Model, true); // Draw the boss room
-
 		//testing drawing lock and key
 		if(unlock){
 			updateLock(prog2, Model);
@@ -3515,7 +3620,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		else{
 			drawLock(prog2, Model);
 		}
-		
+
 		drawKey(prog2, Model);
 		drawBossEnemy(prog2, Model); // Draw the boss enemy
 
@@ -3586,7 +3691,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			drawLibGrnd(prog2, Model);
 			drawBossRoom(prog2, Model, false); //boss room not drawing
 
-			
+
 
 			//stripped down player draw
 
@@ -3664,6 +3769,7 @@ int main(int argc, char *argv[])
 	application->initMapGen();
 	application->initGeom(resourceDir);
 	application->initGround();
+	glGenQueries(1, &application->occlusionQueryID);
 
 	auto lastTime = chrono::high_resolution_clock::now();
 
