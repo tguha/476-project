@@ -57,11 +57,11 @@ public:
 
 	// Shadows
 	GLuint depthMapFBO;
-	const GLuint S_WIDTH = 1024, S_HEIGHT = 1024;
+	const GLuint S_WIDTH = 2048, S_HEIGHT = 2048;
 	GLuint depthMap;
 
 	// Light
-	vec3 g_light = vec3(3, 20, 3);
+	vec3 g_light = vec3(10, 10, 10);
 
 	// PLayer
 	std::shared_ptr<Player> player;
@@ -624,24 +624,33 @@ public:
 	}
 
 	void setProgFlags(shared_ptr<Program> shader, bool hasMat, bool hasBones) {
-		if (hasMat) {
+		//shader->bind();
+		if (hasMat && shader->hasUniform("hasMaterial")) {
 			glUniform1i(shader->getUniform("hasMaterial"), 1);
 		}
-		else {
+		else if (shader->hasUniform("hasMaterial")) {
 			glUniform1i(shader->getUniform("hasMaterial"), 0);
 		}
 
-		if (hasBones) {
+		if (hasBones && shader->hasUniform("hasBones")) {
 			glUniform1i(shader->getUniform("hasBones"), 1);
 		}
-		else {
+		else if (shader->hasUniform("hasBones")) {
 			glUniform1i(shader->getUniform("hasBones"), 0);
 		}
 	}
 
 	void clearProgFlags(shared_ptr<Program> shader) {
-		glUniform1i(shader->getUniform("hasMaterial"), 0);
-		glUniform1i(shader->getUniform("hasBones"), 0);
+		//shader->bind();
+		if (shader->hasUniform("hasTexDif")) glUniform1i(shader->getUniform("hasTexDif"), 0);
+		if (shader->hasUniform("hasTexSpec")) glUniform1i(shader->getUniform("hasTexSpec"), 0);
+		if (shader->hasUniform("hasTexRough")) glUniform1i(shader->getUniform("hasTexRough"), 0);
+		if (shader->hasUniform("hasTexMet")) glUniform1i(shader->getUniform("hasTexMet"), 0);
+		if (shader->hasUniform("hasTexNor")) glUniform1i(shader->getUniform("hasTexNor"), 0);
+		if (shader->hasUniform("hasTexEmit")) glUniform1i(shader->getUniform("hasTexEmit"), 0);
+		if (shader->hasUniform("hasMaterial")) glUniform1i(shader->getUniform("hasMaterial"), 0);
+		if (shader->hasUniform("hasBones")) glUniform1i(shader->getUniform("hasBones"), 0);
+		//shader->unbind();
 	}
 
 	/* helper for sending top of the matrix strack to GPU */
@@ -855,12 +864,15 @@ public:
 
 		bool isShadowShader = (shader == ShadowProg);
 
-		if (isShadowShader) setProgFlags(shader, false, false); // material, no bones
+		if (isShadowShader) setProgFlags(shader, false, false); // materials, no bones
 
 		for (const auto& libGrnd : libraryGrounds) {
 			glBindVertexArray(libGrnd.VAO); // Bind each library ground VAO
 
-			if (isShadowShader) libGrnd.texture->bind(shader->getUniform("TexDif")); // Bind the texture
+			if (isShadowShader) {
+				libGrnd.texture->bind(shader->getUniform("TexDif")); // Bind the texture
+				glUniform1i(shader->getUniform("hasTexDif"), 1); // Set texture uniform
+			}
 
 			Model->pushMatrix();
 			Model->loadIdentity();
@@ -1139,19 +1151,19 @@ public:
 		shader->unbind();
 	}
 
-	void drawSkybox(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
-		shader->bind();
+	//void drawSkybox(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
+	//	shader->bind();
 
-		Model->pushMatrix();
-			Model->loadIdentity();
-			Model->translate(vec3(bossAreaCenter.x, bossAreaCenter.y, bossAreaCenter.z - 20)); // Center the sky sphere at the player position
-			Model->scale(vec3(5.0f)); // Scale up the sky sphere to cover the scene
+	//	Model->pushMatrix();
+	//		Model->loadIdentity();
+	//		Model->translate(vec3(bossAreaCenter.x, bossAreaCenter.y, bossAreaCenter.z - 20)); // Center the sky sphere at the player position
+	//		Model->scale(vec3(5.0f)); // Scale up the sky sphere to cover the scene
 
-			setModel(shader, Model);
-			sky_sphere->Draw(shader);
-		Model->popMatrix();
-		shader->unbind();
-    }
+	//		setModel(shader, Model);
+	//		sky_sphere->Draw(shader);
+	//	Model->popMatrix();
+	//	shader->unbind();
+ //   }
 
 void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		// --- Collision Check Logic ---
@@ -1347,7 +1359,7 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 					Model->translate(glm::vec3(0, 0, whiteScale * 0.5f + pupilOffsetForward));
 					Model->scale(glm::vec3(pupilScale));
 
-					if (isShadowShader) SetMaterial(shader, Material::pupil_white);
+					if (isShadowShader) SetMaterial(shader, Material::black);
 
 					setModel(shader, Model);
 					sphere->Draw(shader);
@@ -2367,7 +2379,10 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 
 			if (isShadowShader) setProgFlags(shader, false, false); // no material, no bones
 
-			if (isShadowShader) particleAlphaTex->bind(particleProg->getUniform("alphaTexture"));
+			if (isShadowShader) {
+				particleAlphaTex->bind(particleProg->getUniform("alphaTexture"));
+				glUniform1i(particleProg->getUniform("hasTexDif"), 1);
+			}
 
 			// Enable blending for transparency
 			glEnable(GL_BLEND);
@@ -2561,7 +2576,7 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 	}
 
 	void updateLight() {
-		g_light = player->getPosition() + vec3(0, 2, 0); // Update light position based on player
+		g_light = player->getPosition() + vec3(3, 10, 3); // Update light position based on player
 	}
 
 	void render(float frametime, float animTime) {
@@ -2589,10 +2604,10 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		vec3 lightUp = vec3(0, 1, 0);
 		mat4 LO, LV, LSpace;*/
 
-		vec3 lightPos = vec3(0, 50, 0); // Fixed light position above the scene
+		vec3 lightPos = g_light; // Fixed light position above the scene
 		vec3 lightTarget = libraryCenter; // Light looks at library center
 		vec3 lightDir = normalize(lightPos - lightTarget); // Light direction
-		vec3 lightUp = vec3(0, 0, 1); // Use a different up vector to avoid gimbal lock
+		vec3 lightUp = vec3(0, 1, 0); // Use a different up vector to avoid gimbal lock
 		mat4 LO, LV, LSpace;
 		
 		// ========================================================================
