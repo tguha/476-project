@@ -279,66 +279,68 @@ public:
 			}
 		}
 
-		if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_W) != GLFW_RELEASE) {
-			manState = Man_State::WALKING;
+		if (player->isAlive() || debugCamera) {
+			if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_W) != GLFW_RELEASE) {
+				manState = Man_State::WALKING;
 
-			//Movement Variable
-			movingForward = true;
-			if (debug_pos) {
-				cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
-				cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
+				//Movement Variable
+				movingForward = true;
+				if (debug_pos) {
+					cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
+					cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
+				}
+			} else if (key == GLFW_KEY_W && action == GLFW_RELEASE) {
+				manState = Man_State::STANDING;
+				//Movement Variable
+				movingForward = false;
 			}
-		} else if (key == GLFW_KEY_W && action == GLFW_RELEASE) {
-			manState = Man_State::STANDING;
-			//Movement Variable
-			movingForward = false;
-		}
-		if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_S) != GLFW_RELEASE) {
-			manState = Man_State::WALKING;
+			if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_S) != GLFW_RELEASE) {
+				manState = Man_State::WALKING;
 
-			//Movement Variable
-			movingBackward = true;
+				//Movement Variable
+				movingBackward = true;
 
-			if (debug_pos) {
-				cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
-				cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
+				if (debug_pos) {
+					cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
+					cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
+				}
+
+			} else if (key == GLFW_KEY_S && action == GLFW_RELEASE) {
+				manState = Man_State::STANDING;
+				//Movement Variable
+				movingBackward = false;
 			}
+			if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_A) != GLFW_RELEASE) {
+				manState = Man_State::WALKING;
 
-		} else if (key == GLFW_KEY_S && action == GLFW_RELEASE) {
-			manState = Man_State::STANDING;
-			//Movement Variable
-			movingBackward = false;
-		}
-		if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_A) != GLFW_RELEASE) {
-			manState = Man_State::WALKING;
+				//Movement Variable
+				movingLeft = true;
 
-			//Movement Variable
-			movingLeft = true;
+				if (debug_pos) {
+					cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
+					cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
+				}
 
-			if (debug_pos) {
-				cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
-				cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
+			} else if (key == GLFW_KEY_A && action == GLFW_RELEASE) {
+				manState = Man_State::STANDING;
+				//Movement Variable
+				movingLeft = false;
 			}
+			if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_D) != GLFW_RELEASE) {
+				manState = Man_State::WALKING;
 
-		} else if (key == GLFW_KEY_A && action == GLFW_RELEASE) {
-			manState = Man_State::STANDING;
-			//Movement Variable
-			movingLeft = false;
-		}
-		if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_D) != GLFW_RELEASE) {
-			manState = Man_State::WALKING;
+				//Movement Variable
+				movingRight = true;
 
-			//Movement Variable
-			movingRight = true;
-
-			if (debug_pos) {
-				cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
-				cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
+				if (debug_pos) {
+					cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
+					cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
+				}
+			} else if (key == GLFW_KEY_D && action == GLFW_RELEASE) {
+				manState = Man_State::STANDING;
+				//Movement Variable
+				movingRight = false;
 			}
-		} else if (key == GLFW_KEY_D && action == GLFW_RELEASE) {
-			manState = Man_State::STANDING;
-			//Movement Variable
-			movingRight = false;
 		}
 		if (key == GLFW_KEY_Z && action == GLFW_PRESS) {
 			glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
@@ -364,7 +366,9 @@ public:
 		if (key == GLFW_KEY_K && action == GLFW_PRESS) {
 			debugCamera = !debugCamera;
 		}
-		
+		if (!player->isAlive() && key == GLFW_KEY_SPACE && action == GLFW_PRESS) {
+			restartGen = true;
+		}
 	}
 
 	void scrollCallback(GLFWwindow *window, double deltaX, double deltaY)
@@ -1575,8 +1579,15 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			borderWalls.clear();
 			borderWallKeys.clear();
 			orbCollectibles.clear();
-			player->resetHitpoints();
-			player->setAlive(); // Reset player status to alive
+			if (!player->isAlive()) {
+				player->resetHitpoints();
+				player->setAlive(); // Reset player status to alive if had died
+				canFightboss = false; // Flag to check if the player can fight the boss
+				allEnemiesDead = false; // Flag to check if all enemies are dead
+				restartGen = false;
+				bossfightstarted = false;
+				bossfightended = false;
+			}
 			bossEnemy->setAlive(); // Reset boss status to alive
 			initMapGen();
 			bossActiveSpells.clear();
@@ -3528,6 +3539,27 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			// glEnable(GL_DEPTH_TEST);
 
 			drawDamageIndicator(alpha);
+    }
+// =======
+// 		if (player->isAlive()) {
+// 			// red flash
+// 			if (redFlashTimer > 0.0f) {
+// 				redFlashTimer -= frametime;
+
+// 				float alpha = redFlashTimer / redFlashDuration;
+// 				// cout << "Red flash alpha: " << alpha << endl;
+// 				// glEnable(GL_DEPTH_TEST);
+
+// 				drawDamageIndicator(alpha);
+// 			}
+// 		}
+		else if (!player->isAlive() && !debugCamera) {
+			// If player is dead, show red flash
+			movingForward = false;
+			movingBackward = false;
+			movingLeft = false;
+			movingRight = false;
+			drawDamageIndicator(1.0f);
 		}
 
 		/*MINI MAP*/
