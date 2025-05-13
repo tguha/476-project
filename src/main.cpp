@@ -163,7 +163,7 @@ public:
 
 	AssimpModel *sky_sphere;
 
-	AssimpModel *border, *lock, *lockHandle, *key;  
+	AssimpModel *border, *lock, *lockHandle, *key;
 
 	//key collectibles
 	std::vector<Collectible> keyCollectibles;
@@ -230,7 +230,7 @@ public:
 
 	float characterRotation = 0.0f;
 
-	//Debug Camera 
+	//Debug Camera
 	bool debugCamera = false;
 	vec3 debugEye = vec3(0.0f, 0.0f, 0.0f);
 	float debugMovementSpeed = 0.2f;
@@ -375,7 +375,7 @@ public:
 		if (key == GLFW_KEY_K && action == GLFW_PRESS) {
 			debugCamera = !debugCamera;
 		}
-		
+
 	}
 
 	void scrollCallback(GLFWwindow *window, double deltaX, double deltaY)
@@ -487,7 +487,7 @@ public:
 		// 5. Update player rotation
 		player->setRotY(-(theta + radians(-90.0f)));
 		player->setRotX(phi);
-      
+
     manMoveDir = vec3(sin(player->getRotY()), 0, cos(player->getRotY()));
 		right = normalize(cross(manMoveDir, up));
 
@@ -502,7 +502,7 @@ public:
 			// Defined above Globally- eyePos = vec3(0.0, 0.0, 0.0);
 			vec3 targetPos = vec3(x, y, z);
 			vec3 viewVec = normalize(targetPos);
-			
+
 			if (movingForward) {
 				debugEye += debugMovementSpeed * viewVec;
 			}
@@ -1193,8 +1193,10 @@ public:
 		for (const auto& libGrnd : libraryGrounds) {
 			glBindVertexArray(libGrnd.VAO); // Bind each library ground VAO
 
-			libGrnd.texture->bind(shader->getUniform("texture_diffuse1")); // Bind the texture
-			glUniform1i(shader->getUniform("hasTexture"), 1); // Set texture uniform
+			if (shader == assimptexProg) {
+				libGrnd.texture->bind(shader->getUniform("texture_diffuse1")); // Bind the texture
+				glUniform1i(shader->getUniform("hasTexture"), 1); // Set texture uniform
+			}
 
 			Model->pushMatrix();
 			Model->loadIdentity();
@@ -1203,7 +1205,9 @@ public:
 			glDrawElements(GL_TRIANGLES, libGrnd.GiboLen, GL_UNSIGNED_SHORT, 0);
 			Model->popMatrix();
 
-			libGrnd.texture->unbind(); // Unbind the texture after drawing each library ground
+			if (shader == assimptexProg) {
+				libGrnd.texture->unbind(); // Unbind the texture after drawing each library ground
+			}
 		}
 
 		glBindVertexArray(0); // Unbind VAO after drawing all library grounds
@@ -1310,8 +1314,10 @@ public:
 		for (const auto& border : borderWalls) {
 			glBindVertexArray(border.WallVAID); // Bind each border VAO
 
-			border.texture->bind(shader->getUniform("texture_diffuse1")); // Bind the texture
-			glUniform1i(shader->getUniform("hasTexture"), 1); // Set texture uniform
+			if (shader == assimptexProg) {
+				border.texture->bind(shader->getUniform("texture_diffuse1")); // Bind the texture
+				glUniform1i(shader->getUniform("hasTexture"), 1); // Set texture uniform
+			}
 
 			Model->pushMatrix();
 			Model->loadIdentity();
@@ -1320,7 +1326,9 @@ public:
 			glDrawElements(GL_TRIANGLES, border.GiboLen, GL_UNSIGNED_SHORT, 0);
 			Model->popMatrix();
 
-			border.texture->unbind(); // Unbind the texture after drawing each border
+			if (shader == assimptexProg) {
+				border.texture->unbind(); // Unbind the texture after drawing each border
+			}
 		}
 
 		glBindVertexArray(0); // Unbind VAO after drawing all borders
@@ -2355,7 +2363,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 					redFlashTimer = redFlashDuration; // Reset the red flash timer
 
-					
+
 				}
 			}
 
@@ -3134,7 +3142,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 
 		//top lock
-		
+
 		Model->pushMatrix();
 			Model->loadIdentity();
 			Model->translate(vec3(0.0f, 2.5f, 38.5f));  //doorPosition
@@ -3187,7 +3195,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			Model->loadIdentity();
 			Model->translate(vec3(0.0f, 2.5f, 38.5f));  //doorPosition
 			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
-			
+
 			Model->scale(0.1f);
 			SetMaterialMan(shader, 5); //gold
 			setModel(shader, Model);
@@ -3253,7 +3261,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 	/* keyCollect */
 	void drawKey(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model){
 
-		/* 
+		/*
 
 		// --- Collision Check Logic ---
 		for (auto& key : keyCollectibles) {
@@ -3305,7 +3313,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			Model->scale(2.0f);
 			Model->rotate(glm::radians(90.0f), vec3(1.0f, 0.0f, 0.0f));
 			Model->rotate(glm::radians(-90.0f), vec3(0.0f, 1.0f, 0.0f));
-			
+
 
 			// --- Set Material & Draw ---
 			// (Material setting code remains the same)
@@ -3317,7 +3325,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 			Model->popMatrix();
 		} // End drawing loop
-			
+
 		Model->popMatrix();
 		shader->unbind();
 
@@ -3331,7 +3339,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		Model->scale(2.0f);
 		Model->rotate(glm::radians(90.0f), vec3(1.0f, 0.0f, 0.0f));
 		Model->rotate(glm::radians(-90.0f), vec3(0.0f, 1.0f, 0.0f));
-		
+
 
 		// --- Set Material & Draw ---
 		// (Material setting code remains the same)
@@ -3419,11 +3427,11 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 	void drawDamageIndicator(float alpha) {
 		int screenWidth, screenHeight;
-		glfwGetFramebufferSize(windowManager->getHandle(), &screenWidth, &screenHeight);  
+		glfwGetFramebufferSize(windowManager->getHandle(), &screenWidth, &screenHeight);
 
 		glEnable(GL_BLEND);
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-		// glDisable(GL_DEPTH_TEST); 
+		// glDisable(GL_DEPTH_TEST);
 		redFlashProg->bind();
 
 		glm::mat4 proj = glm::ortho(0.0f, (float)screenWidth, 0.0f, (float)screenHeight, -1.0f, 1.0f);
@@ -3641,7 +3649,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		else{
 			drawLock(prog2, Model);
 		}
-		
+
 		drawKey(prog2, Model);
 		drawBossEnemy(prog2, Model); // Draw the boss enemy
 
@@ -3692,7 +3700,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			drawLibGrnd(prog2, Model);
 			drawBossRoom(prog2, Model, false); //boss room not drawing
 
-			
+
 
 			//stripped down player draw
 
