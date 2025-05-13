@@ -221,6 +221,11 @@ public:
 
 	float characterRotation = 0.0f;
 
+	//Debug Camera 
+	bool debugCamera = false;
+	vec3 debugEye = vec3(0.0f, 0.0f, 0.0f);
+	float debugMovementSpeed = 0.2f;
+
 	Man_State manState = Man_State::STANDING;
 
 	LibraryGen *library = new LibraryGen();
@@ -345,6 +350,10 @@ public:
 				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
 			}
 		}
+		if (key == GLFW_KEY_K && action == GLFW_PRESS) {
+			debugCamera = !debugCamera;
+		}
+		
 	}
 
 	void scrollCallback(GLFWwindow *window, double deltaX, double deltaY)
@@ -390,27 +399,55 @@ public:
 	}
 
 	void updateCameraVectors() {
-		vec3 front;
-		front.x = radius * cos(phi) * cos(theta);
-		front.y = radius * sin(phi);
-		front.z = radius * cos(phi) * cos((pi<float>()/2) - theta);
+		if (!debugCamera) {
+			//Activate Player Camera
+			vec3 front;
+			front.x = radius * cos(phi) * cos(theta);
+			front.y = radius * sin(phi);
+			front.z = radius * cos(phi) * cos((pi<float>() / 2) - theta);
 
-		eye = player->getPosition() - front;
-		lookAt = player->getPosition();
+			eye = player->getPosition() - front;
+			lookAt = player->getPosition();
 
-		// manRot.y = theta + radians(-90.0f);
-		// manRot.y = - manRot.y;
-		// manRot.x = phi;
+			// manRot.y = theta + radians(-90.0f);
+			// manRot.y = - manRot.y;
+			// manRot.x = phi;
 
-		player->setRotY(-(theta + radians(-90.0f)));
-		player->setRotX(phi);
+			player->setRotY(-(theta + radians(-90.0f)));
+			player->setRotX(phi);
 
-		// cout << "Theta: " << theta << " Phi: " << phi << endl;
-		manMoveDir = vec3(sin(player->getRotY()), 0, cos(player->getRotY()));
-		right = normalize(cross(manMoveDir, up));
+			// cout << "Theta: " << theta << " Phi: " << phi << endl;
+			manMoveDir = vec3(sin(player->getRotY()), 0, cos(player->getRotY()));
+			right = normalize(cross(manMoveDir, up));
 
-		// lookAt = eye + front;
+			// lookAt = eye + front;
+		}
+		else {
+			//Activate Debug Camera
+			float radius = 1.0;
+			float x = radius * cos(phi) * cos(theta);
+			float y = radius * sin(phi);
+			float z = radius * cos(phi) * sin(theta);
+			// Defined above Globally- eyePos = vec3(0.0, 0.0, 0.0);
+			vec3 targetPos = vec3(x, y, z);
+			vec3 viewVec = normalize(targetPos);
+			
+			if (movingForward) {
+				debugEye += debugMovementSpeed * viewVec;
+			}
+			if (movingBackward) {
+				debugEye -= debugMovementSpeed * viewVec;
+			}
+			if (movingLeft) {
+				debugEye -= debugMovementSpeed * normalize(cross(targetPos, up));
+			}
+			if (movingRight) {
+				debugEye += debugMovementSpeed * normalize(cross(targetPos, up));
+			}
 
+			eye = debugEye;
+			lookAt = debugEye + targetPos;
+		}
 
 	}
 
