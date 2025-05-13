@@ -9,10 +9,16 @@
 #include <random>
 #include <iostream>
 #include <map>
+#include "Enemy.h"
+#include "Config.h"
 
 class LibraryGen {
     public:
         LibraryGen() : grid(glm::ivec2(1, 1), Cell(CellType::NONE)) {}
+
+        std::vector<glm::vec3> getEnemySpawnPositions() const {
+            return enemySpawnPositions;
+        }
 
         // enum CellType {NONE, SHELF, PATH, SPAWN, BOSS_ENTRANCE, TOP_BORDER, BOTTOM_BORDER, LEFT_BORDER, RIGHT_BORDER};
 
@@ -23,6 +29,7 @@ class LibraryGen {
             SPAWN,
             BOSS_ENTRANCE,
             BORDER,
+            ENEMY_SPAWN,
         };
 
         inline const char* toString(CellType type) {
@@ -142,6 +149,8 @@ class LibraryGen {
     private:
         Grid<Cell> grid; // Grid of CellType
         std::vector<glm::vec2> clusterCenters;
+        // std::vector<Enemy> libraryEnemies;
+        std::vector<glm::vec3> enemySpawnPositions;
         std::mt19937 seedGen;
         glm::vec2 spawnPosinGrid;
         glm::vec2 bossEntranceDir;
@@ -221,6 +230,7 @@ class LibraryGen {
         std::vector<std::pair<glm::ivec2, glm::ivec2>> selectedEdges;
 
         void placeClusters(int count);
+        void placeEnemies(int numEnemies);
         void triangulateClusters();
         void generatePaths();
         void addShelfWalls();

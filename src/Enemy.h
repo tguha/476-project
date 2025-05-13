@@ -5,6 +5,8 @@
 #include "LibraryGen.h"
 #include "Pathfinder.h"
 #include "Config.h"
+#include "Player.h"
+#include <GLFW/glfw3.h>
 
 #define ENEMY_HP_MAX 200.0f
 
@@ -20,7 +22,6 @@ class Enemy : public Entity {
 
         bool isHit() const;
         void setHit(bool hit);
-        void moveTowardsPlayer(const glm::vec3& playerPosition, float deltaTime);
         void attack(float damage, float deltaTime);
         void setAggro(bool aggro);
         bool isAggro() const;
@@ -28,9 +29,11 @@ class Enemy : public Entity {
         void setAggroRange(float range);
         float getDamageTimer() const;
         void setDamageTimer(float timer);
-
-
+        
     // --- Override virtual functions if needed ---
     // virtual void move(const glm::vec3& direction) override; // Example override
     void takeDamage(float damage) override; // Example override
+
+    virtual void moveTowardsPlayer(const glm::vec3& playerPosition, float deltaTime);
+    virtual void update(Player* player, float deltaTime);
 };

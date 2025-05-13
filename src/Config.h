@@ -30,12 +30,22 @@ namespace Config {
     constexpr float PLAYER_MOVE_SPEED = 0.045f;
 
     // Enemy settings
+    constexpr int NUM_ENEMIES = 3;
     // constexpr float ENEMY_HP_MAX = 200.0f;
     // constexpr float ENEMY_HP_MIN = 0.0f;
     // constexpr float ENEMY_MOVE_SPEED = 0.02f;
     constexpr float ENEMY_ATTACK_DAMAGE = 10.0f;
     constexpr float ENEMY_HIT_DURATION = 0.5f; // Duration of hit effect
     constexpr float ENEMY_HIT_COOLDOWN = 1.0f; // Cooldown before enemy can be hit again
+
+    // Ice Elemental settings
+    constexpr float ICE_ELEMENTAL_HP_MAX = 200.0f;
+    constexpr float ICE_ELEMENTAL_TRANS_Y = 2.0f;
+    constexpr float ICE_ELEMENTAL_MOVE_SPEED = 0.02f;
+    constexpr float ICE_ELEMENTAL_ROTATION_SPEED = 1.0f; // Radians per second
+
+    // Projectile settings
+    constexpr float PROJECTILE_DAMAGE = 25.0f;
 
     // Camera settings
     constexpr float CAMERA_DEFAULT_RADIUS = 5.0f;
