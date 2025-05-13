@@ -1,7 +1,11 @@
 #include "IceElemental.h"
 
 IceElemental::IceElemental(const glm::vec3& position, float hitpoints, float moveSpeed, AssimpModel* model, const glm::vec3& scale, const glm::vec3& rotation)
-    : Enemy(position, hitpoints, moveSpeed, model, scale, rotation) {}
+    : Enemy(position, hitpoints, moveSpeed, model, scale, rotation) {
+        meleeTimer = Config::ICE_ELEMENTAL_MELEE_SPEED; // Timer for melee attack cooldown
+        meleeRange = Config::ICE_ELEMENTAL_MELEE_RANGE; // Range for melee attack
+        meleeDamage = Config::ICE_ELEMENTAL_MELEE_DAMAGE; // Damage dealt by melee attack
+    }
 
 void IceElemental::moveTowardsPlayer(const glm::vec3& playerPosition, float deltaTime) {
     vec3 direction = glm::normalize(playerPosition - this->getPosition());

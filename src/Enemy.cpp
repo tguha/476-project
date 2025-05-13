@@ -79,10 +79,24 @@ void Enemy::update(Player* player, float deltaTime) {
         setAggro(true);
     }
 
+    if ((glm::distance(this->getPosition(), player->getPosition()) <= this->meleeRange) && this->isAggro()) {
+        this->meleeAttack(player, deltaTime);
+    }
+
     // Damage timer countdown
     if (this->getDamageTimer() > 0.0f) {
         this->setDamageTimer(this->getDamageTimer() - deltaTime);
     } else {
         this->setDamageTimer(0.0f);
+    }
+}
+
+void Enemy::meleeAttack(Player* player, float deltaTime) {
+    
+    if (this->meleeTimer <= 0.0f) {
+        player->takeDamage(this->meleeDamage);
+        this->meleeTimer = this->meleeSpeed;
+    } else {
+        this->meleeTimer -= deltaTime;
     }
 }

@@ -252,10 +252,6 @@ public:
 
 	glm::vec4 planes[6]; // Frustum planes
 
-	// red flash damage indicator
-	float redFlashTimer = 0.0f;
-	float redFlashDuration = 0.5f; // Duration of the red flash effect
-
 	// Flags for game state
 	bool canFightboss = false; // Flag to check if the player can fight the boss
 	bool allEnemiesDead = false; // Flag to check if all enemies are dead
@@ -2272,51 +2268,25 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		glfwGetFramebufferSize(windowManager->getHandle(), &screenWidth, &screenHeight);
 		// TODO: Add enemy movement, AI, attack logic later
 		for (auto* enemy : enemies) {
-			if (!enemy->isAlive()) enemy->setPosition(enemy->getPosition() - vec3(0.0f, 3.0f, 0.0f));
+			enemy->update(player.get(), deltaTime);
 
-			if (distance(enemy->getPosition(), player->getPosition()) <= enemy->getAggroRange() || enemy->isHit()) {
-				enemy->setAggro(true);
-			}
+			// static float lastDamageTime = 0.0f; // Track the last time damage was applied
 
-			if (enemy->getDamageTimer() > 0.0f) {
-				enemy->setDamageTimer(enemy->getDamageTimer() - deltaTime);
-			} else if (enemy->getDamageTimer() <= 0.0f) {
-				// enemy->setHit(false);
-				enemy->setDamageTimer(0.0f);
-			}
-			// Example: Simple bobbing motion
-			float bobSpeed = 1.75f;
-			float bobHeight = 0.20f;
-			glm::vec3 currentPos = enemy->getPosition();
-			enemy->setPosition(glm::vec3(currentPos.x, Config::ICE_ELEMENTAL_TRANS_Y + sin(glfwGetTime() * bobSpeed) * bobHeight, currentPos.z));
-			//  IMPORTANT: Update enemy AABB if it moves
-			//  enemy->updateAABB(); // Need to add AABB members and update method to Enemy/Entity class
-				// Check for collision with player
-				// glm::vec3 enemyMin = enemy->getAABBMin();
-				// glm::vec3 enemyMax = enemy->getAABBMax();
-				// glm::vec3 playerMin = player->getAABBMin();
-				// glm::vec3 playerMax = player->getAABBMax();
-
-			if (enemy->isAggro()) {
-				enemy->moveTowardsPlayer(player->getPosition(), deltaTime);
-			}
-
-			static float lastDamageTime = 0.0f; // Track the last time damage was applied
-
-			glm::vec3 enemyPosXZ = glm::vec3(enemy->getPosition().x, 0.0f, enemy->getPosition().z);
-			if (distance(enemyPosXZ, player->getPosition()) < 1.0f) {
-				float currentTime = glfwGetTime();
-				if (currentTime - lastDamageTime >= 1.0f) { // Check if 1 second has passed
-					player->takeDamage(10); // Apply damage to the player
-					lastDamageTime = currentTime; // Update the last damage time
-					std::cout << "Player took damage! Current HP: " << player->getHitpoints() << std::endl;
+			// glm::vec3 enemyPosXZ = glm::vec3(enemy->getPosition().x, 0.0f, enemy->getPosition().z);
+			// if (distance(enemyPosXZ, player->getPosition()) < 1.0f) {
+			// 	float currentTime = glfwGetTime();
+			// 	if (currentTime - lastDamageTime >= 1.0f) { // Check if 1 second has passed
+			// 		player->takeDamage(10); // Apply damage to the player
+			// 		lastDamageTime = currentTime; // Update the last damage time
+			// 		std::cout << "Player took damage! Current HP: " << player->getHitpoints() << std::endl;
 
 
-					redFlashTimer = redFlashDuration; // Reset the red flash timer
+			// 		// redFlashTimer = redFlashDuration; // Reset the red flash timer
+			// 		player->setDamageTimer(Config::PLAYER_HIT_DURATION);
 
 					
-				}
-			}
+			// 	}
+			// }
 
 				// if (checkAABBCollision(enemyMin, enemyMax, playerMin, playerMax)) {
 				// 	// Handle collision with player
@@ -3087,6 +3057,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 
 
+
 	void drawLock(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model){
 		//need models
 		shader->bind();
@@ -3573,15 +3544,14 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		#endif
 
 		// red flash
-		if (redFlashTimer > 0.0f) {
-			redFlashTimer -= frametime;
+		if (player->getDamageTimer() > 0.0f) {
+			player->setDamageTimer(player->getDamageTimer() - frametime);
 
-			float alpha = redFlashTimer / redFlashDuration;
+			float alpha = player->getDamageTimer() / Config::PLAYER_HIT_DURATION;
 			// cout << "Red flash alpha: " << alpha << endl;
 			// glEnable(GL_DEPTH_TEST);
 
 			drawDamageIndicator(alpha);
-
 		}
 
 		/*MINI MAP*/

@@ -14,8 +14,14 @@ class Enemy : public Entity {
     private:
         bool hit;
         bool aggro;
-        float aggroRange = 5.0f;
         float damageTimer = 0.0f;
+        
+    protected:
+        float meleeSpeed = 1.0f;
+        float meleeDamage = 10.0f;
+        float meleeTimer = 0.0f;
+        float meleeRange = 1.0f;
+        float aggroRange = 5.0f;
 
     public:
         Enemy(const glm::vec3& position, float hitpoints, float moveSpeed, AssimpModel* model, const glm::vec3& scale = glm::vec3(1.0f), const glm::vec3& rotation = glm::vec3(0.0f));
@@ -23,6 +29,7 @@ class Enemy : public Entity {
         bool isHit() const;
         void setHit(bool hit);
         void attack(float damage, float deltaTime);
+        void meleeAttack(Player* player, float deltaTime);
         void setAggro(bool aggro);
         bool isAggro() const;
         float getAggroRange() const;

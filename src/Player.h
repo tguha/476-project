@@ -35,6 +35,7 @@ class Player : public Entity {
         SpellSlot activeSpellSlot;
         bool sprintFlag;
         bool dodgeFlag;
+        float damageTimer = 0.0f;
 
     public:
         Player(const glm::vec3& position, float hitpoints, float moveSpeed, AssimpModel* model, const glm::vec3& scale, const glm::vec3& rotation);
@@ -48,6 +49,10 @@ class Player : public Entity {
         void setSprintFlag(bool flag);
         void dodge();
         bool isInventoryFull();
+        void setDamageTimer(float timer);
+        float getDamageTimer();
+
+        void takeDamage(float damage) override;
 };
 
 void initPlayer();
