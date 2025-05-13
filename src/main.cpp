@@ -6,7 +6,10 @@
 #include <glad/glad.h>
 #include <chrono>
 #include <thread>
+
+// #include <windows.h>
 // #include <mmsystem.h>
+#include <set>
 #pragma comment(lib, "winmm.lib")
 #include "GLSL.h"
 #include "Program.h"
@@ -24,15 +27,12 @@
 #include "Player.h"
 #include "BossRoomGen.h"
 #include "FrustumCulling.h"
+#include "BossEnemy.h"
 
 #include "Config.h"
 #include "GameObjectTypes.h"
 
 #include "../particles/particleGen.h"
-#ifdef WIN32
-// #include <mmsystem.h>
-#endif
-
 
 // value_ptr for glm
 #include <glm/gtc/type_ptr.hpp>
@@ -58,7 +58,7 @@ public:
 	int window_height = Config::DEFAULT_WINDOW_HEIGHT;
 
 	// Our shader programs
-	std::shared_ptr<Program> texProg, hudProg, prog2, assimptexProg;
+	std::shared_ptr<Program> texProg, hudProg, prog2, prog2_enemy, assimptexProg, redFlashProg;
 	std::shared_ptr<Program> particleProg; // Add particle program
 
 	// ground data - Reused for all flat ground planes
@@ -80,7 +80,17 @@ public:
 		int GiboLen;
 
 		shared_ptr<Texture> texture; // Texture for the wall
-		int id; // ID for the wall object
+	};
+
+	struct WallObjKey {
+		glm::vec3 position;
+		glm::vec3 direction;
+		float height;
+
+		bool operator<(const WallObjKey& other) const {
+			return std::tie(position.x, position.y, position.z, direction.x, direction.y, direction.z, height) <
+				std::tie(other.position.x, other.position.y, other.position.z, other.direction.x, other.direction.y, other.direction.z, other.height);
+		}
 	};
 
 	struct LibGrndObject {
@@ -94,16 +104,27 @@ public:
 		int GiboLen;
 
 		shared_ptr<Texture> texture; // Texture for the library
-		int id; // ID for the library ground object
+	};
+
+	struct LibGrndObjKey {
+		glm::vec3 center_pos;
+		float height;
+
+		bool operator<(const LibGrndObjKey& other) const {
+			return std::tie(center_pos.x, center_pos.y, center_pos.z, height) <
+				std::tie(other.center_pos.x, other.center_pos.y, other.center_pos.z, other.height);
+		}
 	};
 
 	vector<WallObject> borderWalls;
 	shared_ptr<Texture> borderWallTex;
-	std::unordered_set<int> borderWallIDs; // Set to track unique IDs
+	// std::unordered_set<int> borderWallIDs; // Set to track unique IDs
+	std::set<WallObjKey> borderWallKeys; // Set to track unique keys
 
 	vector<LibGrndObject> libraryGrounds;
 	shared_ptr<Texture> libraryGroundTex;
-	std::unordered_set<int> libraryGroundIDs; // Set to track unique IDs
+	// std::unordered_set<int> libraryGroundIDs; // Set to track unique IDs
+	std::set<LibGrndObjKey> libraryGroundKeys; // Set to track unique keys
 
 	shared_ptr<Texture> carpetTex;
 	shared_ptr<Texture> particleAlphaTex; // Add particle alpha texture
@@ -126,6 +147,9 @@ public:
 	glm::vec3 baseSphereLocalAABBMin; // Store base sphere AABB once
 	glm::vec3 baseSphereLocalAABBMax;
 	bool sphereAABBCalculated = false;
+
+	// -- Boss Enemy Spell Projectiles --
+	std::vector<SpellProjectile> bossActiveSpells;
 
 	// character bounding box
 	glm::vec3 manAABBmin, manAABBmax;
@@ -153,6 +177,8 @@ public:
 	Animator *stickfigure_animator;
 
 	AssimpModel *CatWizard;
+
+	BossEnemy *bossEnemy;
 
 	float AnimDeltaTime = 0.0f;
 	float AnimLastFrame = 0.0f;
@@ -204,6 +230,11 @@ public:
 
 	float characterRotation = 0.0f;
 
+	//Debug Camera 
+	bool debugCamera = false;
+	vec3 debugEye = vec3(0.0f, 0.0f, 0.0f);
+	float debugMovementSpeed = 0.2f;
+
 	Man_State manState = Man_State::STANDING;
 
 	LibraryGen *library = new LibraryGen();
@@ -217,6 +248,17 @@ public:
 	ivec2 bossEntranceDir = glm::ivec2(0, 1); // Direction of the boss entrance (relative to the library grid)
 
 	glm::vec4 planes[6]; // Frustum planes
+
+	// red flash damage indicator
+	float redFlashTimer = 0.0f;
+	float redFlashDuration = 0.5f; // Duration of the red flash effect
+
+	// Flags for game state
+	bool canFightboss = false; // Flag to check if the player can fight the boss
+	bool allEnemiesDead = false; // Flag to check if all enemies are dead
+	bool restartGen = false;
+	bool bossfightstarted = false;
+	bool bossfightended = false;
 
 	void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods)
 	{
@@ -320,6 +362,10 @@ public:
 		if(key == GLFW_KEY_U && action == GLFW_PRESS){
 			unlock = true;
 		}
+		if (key == GLFW_KEY_K && action == GLFW_PRESS) {
+			debugCamera = !debugCamera;
+		}
+		
 	}
 
 	void scrollCallback(GLFWwindow *window, double deltaX, double deltaY)
@@ -365,27 +411,55 @@ public:
 	}
 
 	void updateCameraVectors() {
-		vec3 front;
-		front.x = radius * cos(phi) * cos(theta);
-		front.y = radius * sin(phi);
-		front.z = radius * cos(phi) * cos((pi<float>()/2) - theta);
+		if (!debugCamera) {
+			//Activate Player Camera
+			vec3 front;
+			front.x = radius * cos(phi) * cos(theta);
+			front.y = radius * sin(phi);
+			front.z = radius * cos(phi) * cos((pi<float>() / 2) - theta);
 
-		eye = player->getPosition() - front;
-		lookAt = player->getPosition();
+			eye = player->getPosition() - front;
+			lookAt = player->getPosition();
 
-		// manRot.y = theta + radians(-90.0f);
-		// manRot.y = - manRot.y;
-		// manRot.x = phi;
+			// manRot.y = theta + radians(-90.0f);
+			// manRot.y = - manRot.y;
+			// manRot.x = phi;
 
-		player->setRotY(-(theta + radians(-90.0f)));
-		player->setRotX(phi);
+			player->setRotY(-(theta + radians(-90.0f)));
+			player->setRotX(phi);
 
-		// cout << "Theta: " << theta << " Phi: " << phi << endl;
-		manMoveDir = vec3(sin(player->getRotY()), 0, cos(player->getRotY()));
-		right = normalize(cross(manMoveDir, up));
+			// cout << "Theta: " << theta << " Phi: " << phi << endl;
+			manMoveDir = vec3(sin(player->getRotY()), 0, cos(player->getRotY()));
+			right = normalize(cross(manMoveDir, up));
 
-		// lookAt = eye + front;
+			// lookAt = eye + front;
+		}
+		else {
+			//Activate Debug Camera
+			float radius = 1.0;
+			float x = radius * cos(phi) * cos(theta);
+			float y = radius * sin(phi);
+			float z = radius * cos(phi) * sin(theta);
+			// Defined above Globally- eyePos = vec3(0.0, 0.0, 0.0);
+			vec3 targetPos = vec3(x, y, z);
+			vec3 viewVec = normalize(targetPos);
+			
+			if (movingForward) {
+				debugEye += debugMovementSpeed * viewVec;
+			}
+			if (movingBackward) {
+				debugEye -= debugMovementSpeed * viewVec;
+			}
+			if (movingLeft) {
+				debugEye -= debugMovementSpeed * normalize(cross(targetPos, up));
+			}
+			if (movingRight) {
+				debugEye += debugMovementSpeed * normalize(cross(targetPos, up));
+			}
 
+			eye = debugEye;
+			lookAt = debugEye + targetPos;
+		}
 
 	}
 
@@ -465,6 +539,36 @@ public:
 		prog2->addUniform("randFloat3");
 		prog2->addUniform("randFloat4");
 
+		prog2_enemy = make_shared<Program>();
+		prog2_enemy->setVerbose(true);
+		prog2_enemy->setShaderNames(resourceDirectory + "/simple_light_vert_enemy.glsl", resourceDirectory + "/simple_light_frag_enemy.glsl");
+		prog2_enemy->init();
+		prog2_enemy->addUniform("P");
+		prog2_enemy->addUniform("V");
+		prog2_enemy->addUniform("M");
+		prog2_enemy->addUniform("MatAmb");
+		prog2_enemy->addAttribute("vertPos");
+		prog2_enemy->addAttribute("vertNor");
+		prog2_enemy->addUniform("MatDif");
+		prog2_enemy->addUniform("MatSpec");
+		prog2_enemy->addUniform("MatShine");
+		for (int i = 0; i < Config::NUM_LIGHTS; i++) {
+			prog2_enemy->addUniform("lightPos[" + to_string(i) + "]");
+			prog2_enemy->addUniform("lightColor[" + to_string(i) + "]");
+			prog2_enemy->addUniform("lightIntensity[" + to_string(i) + "]");
+		}
+		prog2_enemy->addUniform("numLights");
+		prog2_enemy->addUniform("hasEmittance");
+		prog2_enemy->addUniform("MatEmitt");
+		prog2_enemy->addUniform("MatEmittIntensity");
+		prog2_enemy->addUniform("discardCounter");
+		prog2_enemy->addUniform("activateDiscard");
+		prog2_enemy->addUniform("randFloat1");
+		prog2_enemy->addUniform("randFloat2");
+		prog2_enemy->addUniform("randFloat3");
+		prog2_enemy->addUniform("randFloat4");
+		prog2_enemy->addUniform("alpha");
+
 		// Initialize the GLSL program that we will use for assimp models
 		assimptexProg = make_shared<Program>();
 		assimptexProg->setVerbose(true);
@@ -520,6 +624,15 @@ public:
 		particleProg->addAttribute("vertPos");
 		particleProg->addAttribute("vertColor");
 
+		redFlashProg = make_shared<Program>();
+		redFlashProg->setVerbose(true);
+		redFlashProg->setShaderNames(resourceDirectory + "/red_flash_vert.glsl", resourceDirectory + "/red_flash_frag.glsl");
+		redFlashProg->init();
+		redFlashProg->addUniform("projection");
+		redFlashProg->addUniform("model");
+		redFlashProg->addUniform("color");
+		redFlashProg->addUniform("alpha");
+
 		updateCameraVectors();
 
 		borderWallTex = make_shared<Texture>();
@@ -548,7 +661,7 @@ public:
 		particleAlphaTex->setWrapModes(GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE);
 
 		// Initialize particle system
-		particleSystem = make_shared<particleGen>(vec3(0.0f), 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.1f, 0.2f);
+		particleSystem = make_shared<particleGen>(vec3(0.0f), 0.0f, 0.2f, 0.6f, 0.8f, 0.8f, 1.0f, 0.1f, 0.2f);
 		particleSystem->gpuSetup();
 	}
 
@@ -558,36 +671,36 @@ public:
 		grid = library->getGrid();
 
 		if (bossEntranceDir.y > 0) {
-			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(0) + 2), vec3(-1, 0, 0), 10.0f, borderWallTex, 0);
-			addWall(gridSize.x - 3, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 10.0f, borderWallTex, 1);
-			addWall(gridSize.x - 3, vec3(library->mapGridXtoWorldX((gridSize.x - 1) / 2), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 10.0f, borderWallTex, 2);
-			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(0) + 2, 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex, 3);
-			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex, 4);
+			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(0) + 2), vec3(-1, 0, 0), 10.0f, borderWallTex);
+			addWall(gridSize.x - 3, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 10.0f, borderWallTex);
+			addWall(gridSize.x - 3, vec3(library->mapGridXtoWorldX((gridSize.x - 1) / 2), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 10.0f, borderWallTex);
+			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(0) + 2, 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
+			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
 		} else if (bossEntranceDir.y < 0) {
-			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 10.0f, borderWallTex, 0);
-			addWall(gridSize.x - 3, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(0) + 2), vec3(-1, 0, 0), 10.0f, borderWallTex, 1);
-			addWall(gridSize.x - 3, vec3(library->mapGridXtoWorldX((gridSize.x - 1) / 2), 0, library->mapGridYtoWorldZ(0) + 2), vec3(-1, 0, 0), 10.0f, borderWallTex, 2);
-			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(0) + 2, 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex, 3);
-			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex, 4);
+			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 10.0f, borderWallTex);
+			addWall(gridSize.x - 3, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(0) + 2), vec3(-1, 0, 0), 10.0f, borderWallTex);
+			addWall(gridSize.x - 3, vec3(library->mapGridXtoWorldX((gridSize.x - 1) / 2), 0, library->mapGridYtoWorldZ(0) + 2), vec3(-1, 0, 0), 10.0f, borderWallTex);
+			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(0) + 2, 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
+			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
 		} else if (bossEntranceDir.x > 0) {
-			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 10.0f, borderWallTex, 0);
-			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(0) + 2), vec3(-1, 0, 0), 10.0f, borderWallTex, 1);
-			addWall(gridSize.y - 3, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex, 2);
-			addWall(gridSize.y - 3, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ((gridSize.y - 1) / 2)), vec3(0, 0, -1), 10.0f, borderWallTex, 3);
-			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(0) + 2, 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex, 4);
+			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 10.0f, borderWallTex);
+			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(0) + 2), vec3(-1, 0, 0), 10.0f, borderWallTex);
+			addWall(gridSize.y - 3, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
+			addWall(gridSize.y - 3, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ((gridSize.y - 1) / 2)), vec3(0, 0, -1), 10.0f, borderWallTex);
+			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(0) + 2, 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
 		} else if (bossEntranceDir.x < 0) {
-			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1) + 2), vec3(-1, 0, 0), 10.0f, borderWallTex, 0);
-			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(0)), vec3(-1, 0, 0), 10.0f, borderWallTex, 1);
-			addWall(gridSize.y - 3, vec3(library->mapGridXtoWorldX(0) + 2, 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex, 2);
-			addWall(gridSize.y - 3, vec3(library->mapGridXtoWorldX(0) + 2, 0, library->mapGridYtoWorldZ((gridSize.y - 1) / 2)), vec3(0, 0, -1), 10.0f, borderWallTex, 3);
-			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex, 4);
+			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1) + 2), vec3(-1, 0, 0), 10.0f, borderWallTex);
+			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(0)), vec3(-1, 0, 0), 10.0f, borderWallTex);
+			addWall(gridSize.y - 3, vec3(library->mapGridXtoWorldX(0) + 2, 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
+			addWall(gridSize.y - 3, vec3(library->mapGridXtoWorldX(0) + 2, 0, library->mapGridYtoWorldZ((gridSize.y - 1) / 2)), vec3(0, 0, -1), 10.0f, borderWallTex);
+			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
 		}
 
-		addLibGrnd(gridSize.x * 2, gridSize.y * 2, 0.0f, vec3(0, 0, 0), libraryGroundTex, 0);
+		addLibGrnd(gridSize.x * 2, gridSize.y * 2, 0.0f, vec3(0, 0, 0), libraryGroundTex);
 
 		bossRoom->generate(bossGridSize, gridSize, glm::vec3(0, 0, 0), bossEntranceDir);
 		bossGrid = bossRoom->getGrid();
-		addLibGrnd(bossGridSize.x * 2, bossGridSize.y * 2, 0.0f, bossRoom->getWorldOrigin(), libraryGroundTex, 1);
+		addLibGrnd(bossGridSize.x * 2, bossGridSize.y * 2, 0.0f, bossRoom->getWorldOrigin(), libraryGroundTex);
 	}
 
 	void initGeom(const std::string& resourceDirectory)
@@ -699,13 +812,14 @@ public:
 		// Use the scale factor used in drawEnemies
 		// Body scale was (0.5f, bodyBaseScaleY * 1.6f, 0.5f) where bodyBaseScaleY = 0.8f => (0.5, 1.28, 0.5)
 		glm::vec3 enemyCollisionScale = glm::vec3(0.5f, 1.28f, 0.5f); // Define the scale
-		vec3 bossSpawnPos = bossAreaCenter + vec3(0.0f, 0.8f, 0.0f);
+		vec3 bossSpawnPos = bossRoom->getWorldOrigin();
 
 		// Check if sphere model is loaded before creating enemies that use it
 		if (sphere) {
 			// enemies.push_back(new Enemy(bossSpawnPos, 200.0f, 0.0f, sphere, enemyCollisionScale, vec3(0.0f))); // <<-- Pass sphere and scale
 			// cout << " Enemy placed at boss area: (" << bossSpawnPos.x << ", " << bossSpawnPos.y << ", " << bossSpawnPos.z << ")" << endl;
-			enemies.push_back(new Enemy(libraryCenter + vec3(-5.0f, 0.8f, 8.0f), 50.0f, 2.0f, sphere, enemyCollisionScale, vec3(0.0f))); // <<-- Pass sphere and scale
+			enemies.push_back(new Enemy(libraryCenter + vec3(-5.0f, 0.8f, 8.0f), ENEMY_HP_MAX / 2, 2.0f, sphere, enemyCollisionScale, vec3(0.0f))); // <<-- Pass sphere and scale
+			bossEnemy = new BossEnemy(bossSpawnPos, BOSS_HP_MAX, sphere, vec3(1.0f), vec3(0, 1, 0), BOSS_SPECIAL_ATTACK_COOLDOWN);
 		}
 		else {
 			cerr << "ERROR: Sphere model not loaded, cannot create enemies." << endl;
@@ -984,9 +1098,11 @@ public:
 		glBindVertexArray(0);
 	}
 
-	void addLibGrnd(float length, float width, float height, vec3 center_pos, shared_ptr<Texture> tex, int id) {
+	void addLibGrnd(float length, float width, float height, vec3 center_pos, shared_ptr<Texture> tex) {
+		LibGrndObjKey key{ center_pos, height };
+
 		// Check if already initialized
-		if (libraryGroundIDs.find(id) != libraryGroundIDs.end()) {
+		if (libraryGroundKeys.count(key)) {
 			return;
 		}
 
@@ -996,13 +1112,13 @@ public:
 		newLibGrnd.height = height;
 		newLibGrnd.center_pos = center_pos;
 		newLibGrnd.texture = tex;
-		newLibGrnd.id = id;
 
 		initLibGrnd(length, width, height, center_pos,
 			newLibGrnd.VAO, newLibGrnd.BuffObj, newLibGrnd.NorBuffObj,
 			newLibGrnd.IndxBuffObj, newLibGrnd.TexBuffObj, newLibGrnd.GiboLen);
 
 		libraryGrounds.push_back(newLibGrnd);
+		libraryGroundKeys.insert(key); // Add key to set to avoid duplicates
 	}
 
 	void drawLibGrnd(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
@@ -1102,9 +1218,9 @@ public:
 		glBindVertexArray(0);
 	}
 
-	void addWall(float length, vec3 pos, vec3 dir, float height, shared_ptr<Texture> tex, int id) {
-		// Check if already initialized
-		if (borderWallIDs.find(id) != borderWallIDs.end()) {
+	void addWall(float length, vec3 pos, vec3 dir, float height, shared_ptr<Texture> tex) {
+		WallObjKey posKey{ pos, dir, height };
+		if (borderWallKeys.count(posKey)) {
 			return;
 		}
 
@@ -1115,13 +1231,13 @@ public:
 		newBorder.direction = dir;
 		newBorder.height = height;
 		newBorder.texture = tex;
-		newBorder.id = id;
 
 		initWall(length, pos, dir, height,
 			newBorder.WallVAID, newBorder.BuffObj, newBorder.NorBuffObj,
 			newBorder.IndxBuffObj, newBorder.TexBuffObj, newBorder.GiboLen);
 
 		borderWalls.push_back(newBorder);
+		borderWallKeys.insert(posKey); // Add key to set to avoid duplicates
 	}
 
 	void drawBorderWalls(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
@@ -1316,7 +1432,7 @@ public:
 	// 	shader->unbind();
 	// }
 
-
+//TODO: Add particle effects to orbs
 void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		// --- Collision Check Logic ---
 		for (auto& orb : orbCollectibles) {
@@ -1404,6 +1520,61 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 	}
 
+	void checkAllEnemies() {
+		if (canFightboss) return; // Already set to true
+		allEnemiesDead = true; // Assume all are dead unless we find one alive
+		for (const auto* enemy : enemies) {
+			if (enemy && enemy->isAlive()) {
+				allEnemiesDead = false; // Found at least one alive enemy
+				break;
+			}
+		}
+		if (allEnemiesDead) {
+			canFightboss = true; // All enemies are dead, boss can be fought
+		}
+	}
+
+	void checkBossfight() {
+		if (canFightboss && !bossfightended && bossEnemy->isAlive()) {
+			int i = bossRoom->mapXtoGridX(player->getPosition().x);
+			int j = bossRoom->mapZtoGridY(player->getPosition().z);
+			if (bossGrid.inBounds(glm::ivec2(i, j))) {
+
+				if (bossRoom->isInsideBossArea(glm::ivec2(i, j))) {
+					bossfightstarted = true; // Player is in the boss area
+				}
+			}
+		} else if (canFightboss && bossfightstarted && !bossEnemy->isAlive()) {
+			bossfightstarted = false; // Player is no longer in the boss area
+			bossfightended = true; // Boss fight ended
+			bossActiveSpells.clear(); // Clear active spells
+			canFightboss = false; // Reset boss fight flag
+		}
+	}
+
+	void restartGeneration() {
+		if (restartGen) {
+			restartGen = false; // Reset flag after reinitialization
+			canFightboss = false; // Reset boss fight flag
+			allEnemiesDead = false; // Reset enemy status
+			player->setPosition(vec3(0.0f, 0.0f, 0.0f)); // Reset player position
+			enemies.clear();
+			books.clear();
+			libraryGrounds.clear();
+			libraryGroundKeys.clear();
+			borderWalls.clear();
+			borderWallKeys.clear();
+			orbCollectibles.clear();
+			player->resetHitpoints();
+			player->setAlive(); // Reset player status to alive
+			bossEnemy->setAlive(); // Reset boss status to alive
+			initMapGen();
+			bossActiveSpells.clear();
+			enemies.push_back(new Enemy(libraryCenter + vec3(-5.0f, 0.8f, 8.0f), 50.0f, 2.0f, sphere, glm::vec3(0.5f, 1.28f, 0.5f), vec3(0.0f))); // <<-- Pass sphere and scale
+			activeSpells.clear(); // Clear active spells
+		}
+	}
+
 	void drawEnemies(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		if (!sphere) return; // Need the sphere model
 
@@ -1432,6 +1603,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			Model->pushMatrix();
 			{
 				Model->translate(enemyPos);
+				Model->rotate(enemy->getRotY(), glm::vec3(0, 1, 0));
 				// Scale for pill shape ( taller in Y, squished in X/Z )
 				Model->scale(glm::vec3(0.5f, bodyBaseScaleY * 1.6f, 0.5f)); // Adjust scale factors as needed
 
@@ -1440,6 +1612,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 				glUniform3f(shader->getUniform("MatDif"), bodyColor.r, bodyColor.g, bodyColor.b);
 				glUniform3f(shader->getUniform("MatSpec"), 0.3f, 0.3f, 0.3f);
 				glUniform1f(shader->getUniform("MatShine"), 8.0f);
+				glUniform1f(shader->getUniform("alpha"), enemy->getDamageTimer() / Config::ENEMY_HIT_DURATION);
 
 				setModel(shader, Model);
 				sphere->Draw(shader); // Draw the scaled sphere as the body
@@ -1609,7 +1782,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 							table_chairs1->Draw(shader);
 							Model->popMatrix();
 
-							addLibGrnd(5.0f, 5.0f, 1.0f, vec3(i, libraryCenter.y + 0.1f, j), carpetTex, 2);
+							addLibGrnd(5.0f, 5.0f, 1.0f, vec3(i, libraryCenter.y + 0.1f, j), carpetTex);
 						} else if (grid[gridPos].clusterType == LibraryGen::ClusterType::ONLY_CLOCK) {
 							Model->pushMatrix();
 							Model->loadIdentity();
@@ -1645,7 +1818,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 								table_chairs1->Draw(shader);
 								Model->popMatrix();
 
-								addLibGrnd(5.0f, 5.0f, 1.0f, vec3(i, libraryCenter.y + 0.1f, j), carpetTex, 3);
+								addLibGrnd(5.0f, 5.0f, 1.0f, vec3(i, libraryCenter.y + 0.1f, j), carpetTex);
 
 							}else if (grid[gridPos].objectType == LibraryGen::CellObjType::TABLE_AND_CHAIR1) {
 								Model->pushMatrix();
@@ -1656,7 +1829,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 								table_chairs1->Draw(shader);
 								Model->popMatrix();
 
-								addLibGrnd(5.0f, 5.0f, 1.0f, vec3(i, libraryCenter.y + 0.1f, j), carpetTex, 4);
+								addLibGrnd(5.0f, 5.0f, 1.0f, vec3(i, libraryCenter.y + 0.1f, j), carpetTex);
 							} else if (grid[gridPos].objectType == LibraryGen::CellObjType::CANDELABRA) {
 								Model->pushMatrix();
 								Model->loadIdentity();
@@ -1814,6 +1987,145 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		shader->unbind();
 	}
 
+	void drawBossEnemy(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
+		if (!shader || !Model || !bossEnemy) return; // Need boss enemy model
+
+		shader->bind(); // Use prog2 for simple colored shapes
+
+		// --- Material Settings ---
+		glm::vec3 bodyColor = glm::vec3(0.6f, 0.2f, 0.8f); // Purple-ish body
+		glm::vec3 eyeWhiteColor = glm::vec3(1.0f, 1.0f, 1.0f);
+		glm::vec3 eyePupilColor = glm::vec3(0.1f, 0.1f, 0.1f);
+
+		// --- Common Eye Parameters ---
+		float bodyBaseScaleY = 0.8f; // Base height factor before pill stretch
+		glm::vec3 eyeOffsetBase = glm::vec3(0.0f, bodyBaseScaleY * 0.4f, 0.45f); // Y up, Z forward from body center
+		float eyeSeparation = 0.25f; // Distance between eye centers
+		float whiteScale = 0.18f;
+		float pupilScale = 0.1f;
+		float pupilOffsetForward = 0.02f; // Push pupil slightly in front of white
+
+		if (bossEnemy->isAlive()) {
+			bossEnemy->lookAtPlayer(player->getPosition()); // Make the boss look at the player
+			glm::vec3 bossPos = bossEnemy->getPosition() + glm::vec3(0, 0.8f, 0); // Position the boss slightly above the ground
+			glm::vec3 bossRotation = bossEnemy->getRotation(); // Get rotation from the enemy object
+			float bossRotY = bossEnemy->getRotY();
+
+			Model->pushMatrix();
+			{
+				Model->loadIdentity(); // Reset the model matrix
+				Model->translate(bossPos);
+				Model->rotate(bossRotY, bossRotation); // Rotate the body to match the boss's rotation
+				// --- Draw Main Body (Pill Shape) ---
+				Model->pushMatrix();
+				{
+					// Model->translate(bossPos);
+					// Scale for pill shape ( taller in Y, squished in X/Z )
+					Model->scale(glm::vec3(0.5f, bodyBaseScaleY * 1.6f, 0.5f)); // Adjust scale factors as needed
+
+					// Set body material
+					glUniform3f(shader->getUniform("MatAmb"), bodyColor.r * 0.3f, bodyColor.g * 0.3f, bodyColor.b * 0.3f);
+					glUniform3f(shader->getUniform("MatDif"), bodyColor.r, bodyColor.g, bodyColor.b);
+					glUniform3f(shader->getUniform("MatSpec"), 0.3f, 0.3f, 0.3f);
+					glUniform1f(shader->getUniform("MatShine"), 8.0f);
+
+					setModel(shader, Model);
+					sphere->Draw(shader); // Draw the scaled sphere as the body
+				}
+				Model->popMatrix();
+
+
+				// --- Draw Eyes (Relative to Enemy Center) ---
+
+				// Set Eye Materials Once
+				// White Material Setup (done inside loop per part for clarity now)
+				// Black Material Setup (done inside loop per part for clarity now)
+
+				// Left Eye
+				Model->pushMatrix();
+				{
+					// Go to enemy center, then offset to eye position
+					// Model->translate(bossPos);
+					Model->translate(eyeOffsetBase + glm::vec3(-eyeSeparation, 0, 0));
+
+					// White Part
+					Model->pushMatrix();
+					{
+						Model->scale(glm::vec3(whiteScale));
+						// Set white material
+						glUniform3f(shader->getUniform("MatAmb"), eyeWhiteColor.r * 0.3f, eyeWhiteColor.g * 0.3f, eyeWhiteColor.b * 0.3f);
+						glUniform3f(shader->getUniform("MatDif"), eyeWhiteColor.r, eyeWhiteColor.g, eyeWhiteColor.b);
+						glUniform3f(shader->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f);
+						glUniform1f(shader->getUniform("MatShine"), 4.0f);
+						setModel(shader, Model);
+						sphere->Draw(shader);
+					}
+					Model->popMatrix(); // Pop white scale
+
+					// Pupil Part
+					Model->pushMatrix();
+					{
+						// Move slightly forward from white surface and scale down
+						Model->translate(glm::vec3(0, 0, whiteScale * 0.5f + pupilOffsetForward)); // Offset relative to white scale
+						Model->scale(glm::vec3(pupilScale));
+						// Set black material
+						glUniform3f(shader->getUniform("MatAmb"), eyePupilColor.r * 0.3f, eyePupilColor.g * 0.3f, eyePupilColor.b * 0.3f);
+						glUniform3f(shader->getUniform("MatDif"), eyePupilColor.r, eyePupilColor.g, eyePupilColor.b);
+						glUniform3f(shader->getUniform("MatSpec"), 0.5f, 0.5f, 0.5f); // Some specular highlight
+						glUniform1f(shader->getUniform("MatShine"), 32.0f);
+						setModel(shader, Model);
+						sphere->Draw(shader);
+					}
+					Model->popMatrix(); // Pop pupil transform
+				}
+				Model->popMatrix(); // Pop left eye transform
+
+
+				// Right Eye (Similar to Left)
+				Model->pushMatrix();
+				{
+					// Model->translate(bossPos);
+					Model->translate(eyeOffsetBase + glm::vec3(+eyeSeparation, 0, 0)); // Offset to the right
+
+					// White Part
+					Model->pushMatrix();
+					{
+						Model->scale(glm::vec3(whiteScale));
+						// Set white material
+						glUniform3f(shader->getUniform("MatAmb"), eyeWhiteColor.r * 0.3f, eyeWhiteColor.g * 0.3f, eyeWhiteColor.b * 0.3f);
+						glUniform3f(shader->getUniform("MatDif"), eyeWhiteColor.r, eyeWhiteColor.g, eyeWhiteColor.b);
+						glUniform3f(shader->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f);
+						glUniform1f(shader->getUniform("MatShine"), 4.0f);
+						setModel(shader, Model);
+						sphere->Draw(shader);
+					}
+					Model->popMatrix();
+
+					// Pupil Part
+					Model->pushMatrix();
+					{
+						Model->translate(glm::vec3(0, 0, whiteScale * 0.5f + pupilOffsetForward));
+						Model->scale(glm::vec3(pupilScale));
+						// Set black material
+						glUniform3f(shader->getUniform("MatAmb"), eyePupilColor.r * 0.3f, eyePupilColor.g * 0.3f, eyePupilColor.b * 0.3f);
+						glUniform3f(shader->getUniform("MatDif"), eyePupilColor.r, eyePupilColor.g, eyePupilColor.b);
+						glUniform3f(shader->getUniform("MatSpec"), 0.5f, 0.5f, 0.5f);
+						glUniform1f(shader->getUniform("MatShine"), 32.0f);
+						setModel(shader, Model);
+						sphere->Draw(shader);
+					}
+					Model->popMatrix();
+				}
+				Model->popMatrix(); // Pop right eye transform
+			}
+			Model->popMatrix(); // Pop boss body transform
+		}
+
+		shader->unbind();
+
+
+	}
+
 	void drawDoor(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		if (!shader || !Model || !cube) return; // Need cube model
 
@@ -1940,9 +2252,22 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 	void updateEnemies(float deltaTime) {
 		static Pathfinder pathfinder(gridSize);
+		int screenWidth, screenHeight;
+		glfwGetFramebufferSize(windowManager->getHandle(), &screenWidth, &screenHeight);
 		// TODO: Add enemy movement, AI, attack logic later
 		for (auto* enemy : enemies) {
 			if (!enemy->isAlive()) enemy->setPosition(enemy->getPosition() - vec3(0.0f, 3.0f, 0.0f));
+
+			if (distance(enemy->getPosition(), player->getPosition()) <= enemy->getAggroRange() || enemy->isHit()) {
+				enemy->setAggro(true);
+			}
+
+			if (enemy->getDamageTimer() > 0.0f) {
+				enemy->setDamageTimer(enemy->getDamageTimer() - deltaTime);
+			} else if (enemy->getDamageTimer() <= 0.0f) {
+				enemy->setHit(false);
+				enemy->setDamageTimer(0.0f);
+			}
 			// Example: Simple bobbing motion
 			// float bobSpeed = 2.0f;
 			// float bobHeight = 0.05f;
@@ -1950,23 +2275,15 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			// enemy->setPosition(glm::vec3(currentPos.x, 0.8f + sin(glfwGetTime() * bobSpeed) * bobHeight, currentPos.z));
 			 // IMPORTANT: Update enemy AABB if it moves
 			 // enemy->updateAABB(); // Need to add AABB members and update method to Enemy/Entity class
-
-			 // Slowly move enemy towards player
-			// glm::vec3 enemyPos = enemy->getPosition();
-			// glm::vec3 playerPos = player->getPosition();
-			// glm::vec3 direction = glm::normalize(playerPos - enemyPos);
-			// float speed = 1.0f; // Adjust speed as needed
-			// enemy->setPosition(enemyPos + direction * speed * deltaTime);
-
 				// // Check for collision with player
 				// glm::vec3 enemyMin = enemy->getAABBMin();
 				// glm::vec3 enemyMax = enemy->getAABBMax();
 				// glm::vec3 playerMin = player->getAABBMin();
 				// glm::vec3 playerMax = player->getAABBMax();
 
-			#if ENEMY_MOVEMENT
-			enemy->moveTowardsPlayer(grid, pathfinder, player->getPosition(), deltaTime);
-			#endif
+			if (enemy->isAggro()) {
+				enemy->moveTowardsPlayer(player->getPosition(), deltaTime);
+			}
 
 			static float lastDamageTime = 0.0f; // Track the last time damage was applied
 			if (distance(enemy->getPosition(), player->getPosition()) < 1.0f) {
@@ -1975,6 +2292,11 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 					player->takeDamage(10); // Apply damage to the player
 					lastDamageTime = currentTime; // Update the last damage time
 					std::cout << "Player took damage! Current HP: " << player->getHitpoints() << std::endl;
+
+
+					redFlashTimer = redFlashDuration; // Reset the red flash timer
+
+					
 				}
 			}
 
@@ -2089,7 +2411,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 				// std::cout << "[DEBUG] Shelf World Max: (" << shelfWorldMax.x << "," << shelfWorldMax.y << "," << shelfWorldMax.z << ")" << std::endl;
 				glm::vec3 shelfPos = glm::vec3(gridtoworldX, libraryCenter.y, gridtoworldZ); // Base position on ground
 
-				if (checkSphereCollision(shelfPos, 1.0f, playerWorldMin, playerWorldMax)) {
+				if (checkSphereCollision(shelfPos, 1.5f, playerWorldMin, playerWorldMax)) {
 					std::cout << "[DEBUG] Collision DETECTED with shelf at grid (" << gridX << "," << gridZ << ")" << std::endl;
 					return true; // Collision found
 				}
@@ -2100,25 +2422,73 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 		// spatial detection for boss room grid
 
-		// gridX = bossRoom->mapXtoGridX(checkPos.x);
-		// gridZ = bossRoom->mapZtoGridY(checkPos.z);
+		gridX = bossRoom->mapXtoGridX(checkPos.x);
+		gridZ = bossRoom->mapZtoGridY(checkPos.z);
 
-		// gridPos = glm::ivec2(gridX, gridZ);
+		gridPos = glm::ivec2(gridX, gridZ);
 
-		// gridtoworldX = bossRoom->mapGridXtoWorldX(gridPos.x); // check back against the specific world position
-		// gridtoworldZ = bossRoom->mapGridYtoWorldZ(gridPos.y);
+		gridtoworldX = bossRoom->mapGridXtoWorldX(gridPos.x); // check back against the specific world position
+		gridtoworldZ = bossRoom->mapGridYtoWorldZ(gridPos.y);
 
-		// if (bossGrid.inBounds(glm::ivec2(gridX, gridZ))) {
-		// 	// std::cout << "[DEBUG] Player Position: (" << checkPos.x << "," << checkPos.y << "," << checkPos.z << ")" << std::endl;
-		// 	// std::cout << "[DEBUG] Grid Position: (" << gridX << "," << gridZ << ")" << std::endl;
-		// 	// std::cout << "[DEBUG] Grid to World Position: (" << gridtoworldX << "," << libraryCenter.y << "," << gridtoworldZ << ")" << std::endl;
-		// 	// std::cout << "Grid Cell Value: " << static_cast<int>(grid[gridPos].type) << std::endl;
+		if (bossGrid.inBounds(glm::ivec2(gridX, gridZ))) {
+			// std::cout << "[DEBUG] Player Position: (" << checkPos.x << "," << checkPos.y << "," << checkPos.z << ")" << std::endl;
+			// std::cout << "[DEBUG] Grid Position: (" << gridX << "," << gridZ << ")" << std::endl;
+			// std::cout << "[DEBUG] Grid to World Position: (" << gridtoworldX << "," << libraryCenter.y << "," << gridtoworldZ << ")" << std::endl;
+			// std::cout << "Grid Cell Value: " << static_cast<int>(grid[gridPos].type) << std::endl;
 
-		// 	if (bossGrid[gridPos].type == BossRoomGen::CellType::BORDER ||
-		// 		bossGrid[gridPos].borderType == BossRoomGen::BorderType::ENTRANCE_SIDE) {
-		// 		return true; // Collision found
-		// 	}
-		// }
+			if (bossGrid[gridPos].borderType == BossRoomGen::BorderType::ENTRANCE_SIDE) {
+				glm::vec3 pos = glm::vec3(gridtoworldX, libraryCenter.y, gridtoworldZ); // Base position on ground
+
+				if (checkSphereCollision(pos, 2.0f, playerWorldMin, playerWorldMax)) {
+					std::cout << "[DEBUG] Collision DETECTED with shelf at grid (" << gridX << "," << gridZ << ")" << std::endl;
+					return true; // Collision found
+				}
+			}
+		}
+
+		gridX = bossRoom->mapXtoGridX(checkPos.x);
+		gridZ = bossRoom->mapZtoGridY(checkPos.z);
+
+		gridPos = glm::ivec2(gridX, gridZ);
+
+		gridtoworldX = bossRoom->mapGridXtoWorldX(gridPos.x); // check back against the specific world position
+		gridtoworldZ = bossRoom->mapGridYtoWorldZ(gridPos.y);
+
+		if (bossGrid.inBounds(glm::ivec2(gridX, gridZ))) {
+			if (bossGrid[gridPos].borderType == BossRoomGen::BorderType::ENTRANCE_SIDE) {
+				glm::vec3 pos = glm::vec3(gridtoworldX, libraryCenter.y, gridtoworldZ); // Base position on ground
+
+				if (checkSphereCollision(pos, 3.0f, playerWorldMin, playerWorldMax)) {
+					std::cout << "[DEBUG] Collision DETECTED with shelf at grid (" << gridX << "," << gridZ << ")" << std::endl;
+					return true; // Collision found
+				}
+			}
+			// prevents entering the boss room
+			else if ((bossGrid[gridPos].borderType == BossRoomGen::BorderType::ENTRANCE_MIDDLE && !canFightboss)) {
+				glm::vec3 pos = glm::vec3(gridtoworldX, libraryCenter.y, gridtoworldZ); // Base position on ground
+				if (checkSphereCollision(pos, 2.0f, playerWorldMin, playerWorldMax)) {
+					std::cout << "[DEBUG] Collision DETECTED with shelf at grid (" << gridX << "," << gridZ << ")" << std::endl;
+					return true; // Collision found
+				}
+			}
+			else if (bossfightstarted && !bossRoom->isInsideBossArea(gridPos)) {
+				return true;
+			}
+			// else if (bossRoom->isInsideBossArea(gridPos) && canFightboss) {
+			// 	return true;
+			// }
+			// // prevents player from leaving the boss room
+			// else if ((canFightboss && bossEnemy->isAlive() && bossGrid[gridPos].borderType == BossRoomGen::BorderType::EXIT_MIDDLE) ||
+			// 	(bossRoom->isInsideBossArea(gridPos) && canFightboss && bossEnemy->isAlive() && bossGrid[gridPos].borderType == BossRoomGen::BorderType::ENTRANCE_MIDDLE)) {
+			// 	return true;
+			// }
+			// when boss is dead player is able to leave the boss room and will restart the generation
+			else if ((bossfightended && !bossEnemy->isAlive() && bossGrid[gridPos].borderType == BossRoomGen::BorderType::EXIT_MIDDLE)) {
+				bossfightended = false;
+				restartGen = true;
+				return true;
+			}
+		}
 
 		// for (int z = 0; z < grid.getSize().y; ++z) {
 		// 	for (int x = 0; x < grid.getSize().x; ++x) {
@@ -2358,13 +2728,29 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 				if (checkAABBCollision(proj.aabbMin, proj.aabbMax, enemy->getAABBMin(), enemy->getAABBMax())) {
 					cout << "[DEBUG] Spell HIT enemy!" << endl;
 
-					if (!enemy->isHit()) {
-						enemy->setHit(true); // Mark enemy as hit
-					}
+					// if (!enemy->isHit()) {
+					// 	enemy->setHit(true); // Mark enemy as hit
+					// }
 
 					enemy->takeDamage(damageAmount);
 					proj.active = false; // Deactivate projectile
 					break; // Hit one enemy
+				}
+			}
+
+			// for boss enemy
+			if (canFightboss && bossEnemy && bossEnemy->isAlive()) {
+				if (checkAABBCollision(proj.aabbMin, proj.aabbMax, bossEnemy->getAABBMin(), bossEnemy->getAABBMax())) {
+					cout << "[DEBUG] Spell HIT boss!" << endl;
+					damageAmount = 500.0f; // Boss takes more damage
+
+					// if (!bossEnemy->isHit()) {
+					// 	bossEnemy->setHit(true); // Mark enemy as hit
+					// }
+
+					bossEnemy->takeDamage(damageAmount);
+					proj.active = false; // Deactivate projectile
+					break; // Hit the boss
 				}
 			}
 		} // End loop
@@ -2417,7 +2803,118 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		shader->unbind();
 	}
 
+	/* boss projectiles */
+	void drawBossProjectiles(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
+		if (!shader || !Model || !sphere) return; // Need shader, stack, model
 
+		shader->bind();
+		// Set material for projectiles (e.g., bright yellow/white, maybe emissive if shader supports)
+		SetMaterialMan(shader, 0); // Gold material for now
+		glUniform3f(shader->getUniform("MatAmb"), 0.8f, 0.8f, 0.1f);
+		glUniform3f(shader->getUniform("MatDif"), 1.0f, 1.0f, 0.5f);
+		glUniform3f(shader->getUniform("MatSpec"), 1.0f, 1.0f, 1.0f);
+		glUniform1f(shader->getUniform("MatShine"), 64.0f);
+		// Optional: Emissive properties if shader supports them
+		// if(shader->hasUniform("hasEmittance")) glUniform1i(shader->getUniform("hasEmittance"), 1);
+		// if(shader->hasUniform("MatEmitt")) glUniform3f(shader->getUniform("MatEmitt"), 1.0f, 1.0f, 0.8f);
+
+		for (const auto& proj : bossActiveSpells) {
+			if (!proj.active) continue;
+
+			Model->pushMatrix();
+			Model->loadIdentity(); // Start from identity for projectile
+
+			// Use the pre-calculated transform from updateAABB
+			Model->multMatrix(proj.transform);
+
+			setModel(shader, Model);
+			proj.model->Draw(shader); // Draw the sphere model
+
+			Model->popMatrix();
+		}
+
+		shader->unbind();
+	}
+
+	void updateBossProjectiles(float deltaTime) {
+		if (!sphereAABBCalculated) return;
+
+		float damageAmount = 25.0f;
+
+		// Iterate using index for potential removal
+		for (int i = 0; i < bossActiveSpells.size(); ++i) {
+			if (!bossActiveSpells[i].active) continue;
+
+			SpellProjectile& proj = bossActiveSpells[i]; // Use reference
+
+			// Check lifetime
+			if (glfwGetTime() - proj.spawnTime > proj.lifetime) {
+				proj.active = false;
+				// cout << "[DEBUG] Spell lifetime expired." << endl;
+				continue;
+			}
+
+			// Update position
+			proj.position += proj.direction * proj.speed * deltaTime;
+
+			// Calculate transform HERE
+			glm::quat rotation = glm::rotation(glm::vec3(0.0f, 0.0f, 1.0f), proj.direction);
+			proj.transform = glm::translate(glm::mat4(1.0f), proj.position) * glm::mat4_cast(rotation) * glm::scale(glm::mat4(1.0f), proj.scale);
+
+			// Update AABB using Application's function
+			this->updateBoundingBox(baseSphereLocalAABBMin, baseSphereLocalAABBMax, proj.transform, proj.aabbMin, proj.aabbMax);
+
+			// Check collision with player
+			// if (checkAABBCollision(proj.aabbMin, proj.aabbMax, playerLocalAABBMin, playerLocalAABBMax)) {
+			// 	cout << "[DEBUG] Spell HIT player!" << endl;
+			// 	player->takeDamage(damageAmount);
+			// 	proj.active = false; // Deactivate projectile
+			// 	break; // Hit the player
+			// }
+			if (checkSphereCollision(player->getPosition(), 1.5f, proj.aabbMin, proj.aabbMax)) {
+				cout << "[DEBUG] Spell HIT player!" << endl;
+				player->takeDamage(damageAmount);
+				proj.active = false; // Deactivate projectile
+				break; // Hit the player
+			}
+		} // End loop
+
+		// Remove inactive projectiles
+		bossActiveSpells.erase(
+			std::remove_if(bossActiveSpells.begin(), bossActiveSpells.end(),
+				[](const SpellProjectile& p) { return !p.active; }),
+			bossActiveSpells.end()
+		);
+	}
+
+	void shootBossSpell() {
+		vec3 shootDir = bossEnemy->getBossDirection();
+
+		vec3 bossRight = normalize(cross(shootDir, vec3(0.0f, 1.0f, 0.0f)));
+
+		float forwardOffset = 0.5f; // How far in front of player center
+		float upOffset = 0.8f;      // Height relative to player base (groundY)
+		float rightOffset = 0.0f;   // Offset to the side (e.g., right hand)
+
+		vec3 spawnPos = bossEnemy->getPosition()
+			+ vec3(0.0f, upOffset, 0.0f) // Vertical offset from base
+			+ shootDir * forwardOffset   // Forward offset along character's facing direction
+			+ bossRight * rightOffset; // Sideways offset along character's right
+
+		// Create and add projectile
+		bossActiveSpells.emplace_back(spawnPos, shootDir, (float)glfwGetTime(), sphere);
+	}
+
+	void BossEnemyShoot(float deltaTime) {
+		if (bossEnemy && bossfightstarted && !bossfightended && bossEnemy->isAlive()) {
+			// increment every 2 seconds
+			if (glfwGetTime() - bossEnemy->getSpecialAttackCooldown() > 0.8f) {
+				bossEnemy->setSpecialAttackCooldown(glfwGetTime());
+				shootBossSpell();
+			}
+			updateBossProjectiles(deltaTime);
+		}
+	}
 
 	/* top down camera view  */
 	mat4 SetTopView(shared_ptr<Program> curShade) { /*MINI MAP*/
@@ -2514,9 +3011,10 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			//glDepthMask(GL_TRUE);
 			glDisable(GL_BLEND);
 
-			particleAlphaTex->unbind();
 
 			shader->unbind();
+			particleAlphaTex->unbind();
+			
 
 		Model->popMatrix();
 	}
@@ -2568,6 +3066,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			hudProg->unbind();
 		}
 	}
+
 
 
 	void drawLock(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model){
@@ -2796,6 +3295,71 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 	// 	}
 	// }
 
+	void drawBossHealthBar(glm::mat4 viewMatrix, glm::mat4 projMatrix) {
+		float healthBarWidth = 200.0f;
+		float healthBarHeight = 20.0f;
+		float healthBarOffsetY = 25.0f;  // Offset above enemy head
+
+		int screenWidth, screenHeight;
+		glfwGetFramebufferSize(windowManager->getHandle(), &screenWidth, &screenHeight);
+
+		glm::mat4 hudProjection = glm::ortho(0.0f, (float)screenWidth, 0.0f, (float)screenHeight, -1.0f, 1.0f);
+
+		if (bossEnemy && bossEnemy->isAlive()) {
+			glm::vec3 enemyWorldPos = bossEnemy->getAABBMax(); // Top position in world coordinates
+
+			// Transform enemy position to clip space
+			glm::vec4 clipSpacePos = projMatrix * viewMatrix * glm::vec4(enemyWorldPos, 1.0f);
+
+			// If enemy is behind camera, skip
+			if (clipSpacePos.w <= 0) return;
+
+			// Perspective divide (NDC)
+			glm::vec3 ndcPos = glm::vec3(clipSpacePos) / clipSpacePos.w;
+
+			// Convert NDC (-1 to 1) to screen coordinates
+			glm::vec2 screenPos;
+			screenPos.x = (ndcPos.x * 0.5f + 0.5f) * screenWidth;
+			screenPos.y = (ndcPos.y * 0.5f + 0.5f) * screenHeight;
+
+			// Offset above enemy's head
+			screenPos.y += healthBarOffsetY;
+
+			// Set HUD Model matrix
+			glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(screenPos.x - (healthBarWidth / 2.0f), screenPos.y, 0.0f));
+			model = glm::scale(model, glm::vec3(healthBarWidth, healthBarHeight, 1.0f));
+
+			hudProg->bind();
+			glUniformMatrix4fv(hudProg->getUniform("projection"), 1, GL_FALSE, glm::value_ptr(hudProjection));
+			glUniformMatrix4fv(hudProg->getUniform("model"), 1, GL_FALSE, glm::value_ptr(model));
+			glUniform1f(hudProg->getUniform("healthPercent"), bossEnemy->getHitpoints() / BOSS_HP_MAX);
+			glUniform1f(hudProg->getUniform("BarStartX"), screenPos.x - (healthBarWidth / 2.0f));
+			glUniform1f(hudProg->getUniform("BarWidth"), healthBarWidth);
+			healthBar->Draw(hudProg);
+			hudProg->unbind();
+		}
+	}
+
+	void drawDamageIndicator(float alpha) {
+		int screenWidth, screenHeight;
+		glfwGetFramebufferSize(windowManager->getHandle(), &screenWidth, &screenHeight);  
+
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		// glDisable(GL_DEPTH_TEST); 
+		redFlashProg->bind();
+
+		glm::mat4 proj = glm::ortho(0.0f, (float)screenWidth, 0.0f, (float)screenHeight, -1.0f, 1.0f);
+		glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(0, 0, 0));
+		model = glm::scale(model, glm::vec3(screenWidth, screenHeight, 1.0f));
+		glUniformMatrix4fv(redFlashProg->getUniform("projection"), 1, GL_FALSE, value_ptr(proj));
+		glUniformMatrix4fv(redFlashProg->getUniform("model"), 1, GL_FALSE, value_ptr(model));
+		glUniform1f(redFlashProg->getUniform("alpha"), alpha); // Red color with alpha
+
+		healthBar->Draw(redFlashProg);
+		redFlashProg->unbind();
+	}
+
 	void render(float frametime, float animTime) {
 		// Get current frame buffer size.
 		int width, height;
@@ -2820,6 +3384,10 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		updateEnemies(frametime);
 		updateProjectiles(frametime);
 		particleSystem->update(frametime); // Update particles
+		checkAllEnemies();
+		checkBossfight();
+		BossEnemyShoot(frametime);
+		restartGeneration();
 
 		// --- Setup Camera ---
 		Projection->pushMatrix();
@@ -2878,6 +3446,22 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			prog2->unbind();
 		}
 
+		if (prog2_enemy) {
+			prog2_enemy->bind();
+			glUniformMatrix4fv(prog2_enemy->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
+			glUniformMatrix4fv(prog2_enemy->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
+			glUniform1i(prog2_enemy->getUniform("numLights"), numActiveLights);
+			for (int i = 0; i < numActiveLights; ++i) {
+				string prefix = "lightPos[" + to_string(i) + "]";
+				glUniform3fv(prog2_enemy->getUniform(prefix), 1, value_ptr(lightPositions[i]));
+				prefix = "lightColor[" + to_string(i) + "]";
+				glUniform3fv(prog2_enemy->getUniform(prefix), 1, value_ptr(lightColors[i]));
+				prefix = "lightIntensity[" + to_string(i) + "]";
+				glUniform1f(prog2_enemy->getUniform(prefix), lightIntensities[i]);
+			}
+			prog2_enemy->unbind();
+		}
+
 		// Update assimptexProg (Textured/Animated Lighting)
 		if (assimptexProg) {
 			assimptexProg->bind();
@@ -2894,13 +3478,13 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			}
 			assimptexProg->unbind();
 		}
-
+		//TODO: sort them by z value
 		if (particleProg) {
 			particleProg->bind();
 			glPointSize(10.0f);
 			glUniformMatrix4fv(particleProg->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
 			glUniformMatrix4fv(particleProg->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
-			// particleAlphaTex->bind(particleProg->getUniform("alphaTexture"));
+			//particleAlphaTex->bind(particleProg->getUniform("alphaTexture"));
 			particleProg->unbind();
 		}
 
@@ -2923,12 +3507,14 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		drawBooks(prog2, Model);
 
 		// 5. Draw Enemies
-		drawEnemies(prog2, Model);
+		drawEnemies(prog2_enemy, Model);
 
 		// 6. Draw Collectible Orbs
 		drawOrbs(prog2, Model);
 
 		drawProjectiles(prog2, Model);
+
+		drawBossProjectiles(prog2, Model);
 
 		// 7. Draw Player (often drawn last or near last)
 		drawPlayer(assimptexProg, Model, animTime);
@@ -2955,11 +3541,30 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		}
 		
 		drawKey(prog2, Model);
+		drawBossEnemy(prog2, Model); // Draw the boss enemy
+
+
 
 		#if SHOW_HEALTHBAR
 		drawHealthBar();
 		drawEnemyHealthBars(View->topMatrix(), Projection->topMatrix());
+
+		if (bossfightstarted && !bossfightended) {
+			drawBossHealthBar(View->topMatrix(), Projection->topMatrix());
+		}
 		#endif
+
+		// red flash
+		if (redFlashTimer > 0.0f) {
+			redFlashTimer -= frametime;
+
+			float alpha = redFlashTimer / redFlashDuration;
+			// cout << "Red flash alpha: " << alpha << endl;
+			// glEnable(GL_DEPTH_TEST);
+
+			drawDamageIndicator(alpha);
+
+		}
 
 		/*MINI MAP*/
 		prog2->bind();
@@ -2971,12 +3576,14 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			//drawScene(prog2, CULL);
 			/* draws */
 			// drawBorder(prog2, Model);
-			
 
-			drawLibrary(prog2, Model, false);
-			
 			// drawDoor(prog2, Model);
-			drawEnemies(prog2, Model);
+			drawBooks(prog2, Model);
+			// drawEnemies(prog2, Model);
+			drawLibrary(prog2, Model, false);
+			drawBossRoom(prog2, Model, false);
+			drawBossEnemy(prog2, Model);
+			drawOrbs(prog2, Model);
 			drawMiniPlayer(prog2, Model);
 			drawBorderWalls(prog2, Model);
 			// SetMaterialMan(prog2,6 );
@@ -2989,8 +3596,16 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 			// if (SD)
 			// 	drawOccupied(prog2);
-
 		prog2->unbind();
+
+		prog2_enemy->bind();
+			glClear( GL_DEPTH_BUFFER_BIT);
+			glViewport(0, height-300, 300, 300);
+			SetOrthoMatrix(prog2_enemy);
+			SetTopView(prog2_enemy); /*MINI MAP*/
+			drawEnemies(prog2_enemy, Model);
+
+		prog2_enemy->unbind();
 
 		// --- Cleanup ---
 		Projection->popMatrix();
@@ -3037,11 +3652,14 @@ int main(int argc, char *argv[])
 	windowManager->setEventCallbacks(application);
 	application->windowManager = windowManager;
 
-	//ound(TEXT("C:/Users/trigu/OneDrive/Desktop/476-project/resources/Breaking_Ground.wav"), NULL, SND_FILENAME|SND_ASYNC|SND_LOOP);
+
+	// PlaySound(TEXT("C:/Users/trigu/OneDrive/Desktop/476-project/resources/Breaking_Ground.wav"), NULL, SND_FILENAME|SND_ASYNC|SND_LOOP);
 
 	glfwSetInputMode(windowManager->getHandle(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 	glfwSetWindowUserPointer(windowManager->getHandle(), application);
 	glfwSetCursorPosCallback(windowManager->getHandle(), mouseMoveCallbackWrapper);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
 	// This is the code that will likely change program to program as you
 	// may need to initialize or set up different data and state

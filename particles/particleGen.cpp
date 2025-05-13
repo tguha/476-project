@@ -81,31 +81,44 @@ void particleGen::reSet() {
 }
 
 void particleGen::drawMe(std::shared_ptr<Program> prog) {
-	glBindVertexArray(vertArrObj);
+    // Enable blending for transparent particles
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    
+    // Enable depth testing but don't write to depth buffer
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
 
-	// COLOR BUF
-	int h_col = prog->getAttribute("vertColor");
-	GLSL::enableVertexAttribArray(h_col);
-	glBindBuffer(GL_ARRAY_BUFFER, colorBuffObj);
-	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 0, 0);   // 1: location in shader // 4: refers to vec4
+    glBindVertexArray(vertArrObj);
 
-	// POS BUF
-	int h_pos = prog->getAttribute("vertPos");
-	GLSL::enableVertexAttribArray(h_pos);
-	glBindBuffer(GL_ARRAY_BUFFER, vertBuffObj);
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0); // 1 : location in shader // 3 : refers to vec3
-	glVertexAttribDivisor(0, 1);
-	glVertexAttribDivisor(1, 1);
+    // COLOR BUF
+    int h_col = prog->getAttribute("vertColor");
+    GLSL::enableVertexAttribArray(h_col);
+    glBindBuffer(GL_ARRAY_BUFFER, colorBuffObj);
+    glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 0, 0);
 
-	// Draw the points !
-	glDrawArraysInstanced(GL_POINTS, 0, 1, numP);
-	glVertexAttribDivisor(0, 0);
-	glVertexAttribDivisor(1, 0);
-	glDisableVertexAttribArray(0);
+    // POS BUF
+    int h_pos = prog->getAttribute("vertPos");
+    GLSL::enableVertexAttribArray(h_pos);
+    glBindBuffer(GL_ARRAY_BUFFER, vertBuffObj);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+    glVertexAttribDivisor(0, 1);
+    glVertexAttribDivisor(1, 1);
+
+    // Draw the points!
+    glDrawArraysInstanced(GL_POINTS, 0, 1, numP);
+    
+    glVertexAttribDivisor(0, 0);
+    glVertexAttribDivisor(1, 0);
+    glDisableVertexAttribArray(0);
+    glDisableVertexAttribArray(1);
+
+    // Reset state
+    glDepthMask(GL_TRUE);
+    glDisable(GL_BLEND);
 }
 
 void particleGen::update(float frameTime) {
-
   vec3 pos;
   vec4 col;
 
@@ -115,48 +128,41 @@ void particleGen::update(float frameTime) {
   }
   t += h;
 
- 
-  // Sort the particles by Z
-  //temp->rotate(camRot, vec3(0, 1, 0));
-  //be sure that camera matrix is updated prior to this update
-  vec3 s, t, sk;
-  vec4 p;
-  quat r;
-  glm::decompose(theCamera, s, r, t, sk, p);
+  // Calculate camera space positions for all particles
   for (int i = 0; i < numP; i++) {
-	  particles[i]->calcCamDist(theCamera);
-	  particles[i]->resize();
+      particles[i]->calcCamDist(theCamera);
+      particles[i]->resize();
   }
 
-  sorter.C = glm::toMat4(r); 
+  // Sort particles by depth (farther particles first)
+  sorter.C = theCamera;
   sort(particles.begin(), particles.end(), sorter);
 
   //go through all the particles and update the CPU buffer
-   for (int i = 0; i < numP; i++) {
-        pos = particles[i]->getPosition();
-        col = particles[i]->getColor();
-        points[i*3+0] =pos.x; 
-        points[i*3+1] =pos.y; 
-        points[i*3+2] =pos.z; 
+  for (int i = 0; i < numP; i++) {
+      pos = particles[i]->getPosition();
+      col = particles[i]->getColor();
+      points[i*3+0] = pos.x; 
+      points[i*3+1] = pos.y; 
+      points[i*3+2] = pos.z; 
 
-		// Set color array based on particle.update()
-        pointColors[i*4+0] = col.r; 
-        pointColors[i*4+1] = col.g; 
-        pointColors[i*4+2] = col.b;
-        pointColors[i*4+3] = col.a;
+      // Set color array based on particle.update()
+      pointColors[i*4+0] = col.r; 
+      pointColors[i*4+1] = col.g; 
+      pointColors[i*4+2] = col.b;
+      pointColors[i*4+3] = col.a;
   }
 
-	//update the GPU data
-	glBindBuffer(GL_ARRAY_BUFFER, vertBuffObj);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(points), NULL, GL_STREAM_DRAW);
-	glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(float)*numP*3, points);      // THIS LINE AND ONE BELOW ARE IMPORTANT
+  //update the GPU data
+  glBindBuffer(GL_ARRAY_BUFFER, vertBuffObj);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(points), NULL, GL_STREAM_DRAW);
+  glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(float)*numP*3, points);
 
-	glBindBuffer(GL_ARRAY_BUFFER, colorBuffObj);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(pointColors), NULL, GL_STREAM_DRAW);
-	glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(float)*numP*4, pointColors);
+  glBindBuffer(GL_ARRAY_BUFFER, colorBuffObj);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(pointColors), NULL, GL_STREAM_DRAW);
+  glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(float)*numP*4, pointColors);
 
-
-	glBindBuffer(GL_ARRAY_BUFFER, 0);
+  glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
 
 void particleGen::initParticleGroup(int PARTICLES_PER_SPRAY, vec3 playerPos, Entity* Ent) {
