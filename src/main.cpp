@@ -6,6 +6,7 @@
 #include <glad/glad.h>
 #include <chrono>
 #include <thread>
+
 // #include <windows.h>
 // #include <mmsystem.h>
 #include <set>
@@ -162,7 +163,11 @@ public:
 
 	AssimpModel *sky_sphere;
 
-	AssimpModel *border;
+	AssimpModel *border, *lock, *lockHandle, *key;  
+
+	//key collectibles
+	std::vector<Collectible> keyCollectibles;
+	int keysCollectedCount = 0;
 
 	//  vector of books
 	vector<Book> books;
@@ -218,6 +223,10 @@ public:
 	bool movingBackward = false;
 	bool movingLeft = false;
 	bool movingRight = false;
+
+	//unlock bool
+	bool unlock = false;
+	float lTheta = 0;
 
 	float characterRotation = 0.0f;
 
@@ -340,7 +349,7 @@ public:
 		}
 		if (key == GLFW_KEY_F && action == GLFW_PRESS) { // Interaction Key
 			interactWithBooks();
-    }
+    	}
 		if (key == GLFW_KEY_L && action == GLFW_PRESS){
 			cursor_visable = !cursor_visable;
 			if (cursor_visable) {
@@ -349,6 +358,9 @@ public:
 			else {
 				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
 			}
+		}
+		if(key == GLFW_KEY_U && action == GLFW_PRESS){
+			unlock = true;
 		}
 		if (key == GLFW_KEY_K && action == GLFW_PRESS) {
 			debugCamera = !debugCamera;
@@ -783,6 +795,13 @@ public:
 		healthBar = new AssimpModel(resourceDirectory + "/Quad/hud_quad.obj");
 		healthBar->assignTexture("texture_diffuse1", resourceDirectory + "/healthbar.bmp");
 
+		//key
+		key = new AssimpModel(resourceDirectory + "/Key_and_Lock/key.obj");
+
+		//lock
+		lock = new AssimpModel(resourceDirectory + "/Key_and_Lock/lockCopy.obj");
+		lockHandle = new AssimpModel(resourceDirectory + "/Key_and_Lock/lockHandle.obj");
+
 		baseSphereLocalAABBMin = sphere->getBoundingBoxMin();
 		baseSphereLocalAABBMax = sphere->getBoundingBoxMax();
 		sphereAABBCalculated = true;
@@ -843,6 +862,27 @@ public:
 				glUniform3f(curS->getUniform("MatDif"), 0.5f, 0.5f, 0.5f);
 				glUniform3f(curS->getUniform("MatSpec"), 0.7f, 0.7f, 0.7f);
 				glUniform1f(curS->getUniform("MatShine"), 10.0f);
+			break;
+			case 5:
+			//yellow
+				glUniform3f(curS->getUniform("MatAmb"), 0.95f , 0.78f , 0.14f );
+				glUniform3f(curS->getUniform("MatDif"), 0.95f, 0.78f, 0.14f);
+				glUniform3f(curS->getUniform("MatSpec"), 0.3f, 0.3f, 0.3f);
+				glUniform1f(curS->getUniform("MatShine"), 8.0f);
+			break;
+			case 6:
+			//brown
+				glUniform3f(curS->getUniform("MatAmb"), 0.15f, 0.08f, 0.03f);
+				glUniform3f(curS->getUniform("MatDif"), 0.6f, 0.3f, 0.1f);
+				glUniform3f(curS->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f);
+				glUniform1f(curS->getUniform("MatShine"), 4.0f);
+			break;
+			case 7:
+			// lighter brown/grey
+				glUniform3f(curS->getUniform("MatAmb"), 0.70f, 0.68f, 0.55f);
+				glUniform3f(curS->getUniform("MatDif"), 0.6f, 0.3f, 0.1f);
+				glUniform3f(curS->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f);
+				glUniform1f(curS->getUniform("MatShine"), 4.0f);
 			break;
 		}
 	}
@@ -954,9 +994,9 @@ public:
 		// Model->pushMatrix();
 		// Model->loadIdentity();
 		// Model->translate(libraryCenter); // Center the ground plane
-		// // No scaling needed if initGround used groundSize correctly relative to its vertices
+		// No scaling needed if initGround used groundSize correctly relative to its vertices
 		// setModel(shader, Model);
-		// SetMaterialMan(shader, 1); // Silver material
+		// SetMaterialMan(shader, 6); // brown material
 		// glDrawElements(GL_TRIANGLES, g_GiboLen, GL_UNSIGNED_SHORT, 0);
 		// Model->popMatrix();
 
@@ -1100,7 +1140,7 @@ public:
 			Model->pushMatrix();
 			Model->loadIdentity();
 			setModel(shader, Model);
-			SetMaterialMan(shader, 1); // Silver material
+			SetMaterialMan(shader, 7); // Brown material
 			glDrawElements(GL_TRIANGLES, libGrnd.GiboLen, GL_UNSIGNED_SHORT, 0);
 			Model->popMatrix();
 
@@ -2878,7 +2918,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 	/* top down camera view  */
 	mat4 SetTopView(shared_ptr<Program> curShade) { /*MINI MAP*/
-		mat4 Cam = glm:: lookAt(eye + vec3(0, 9, 0), eye, lookAt - eye);
+		mat4 Cam = glm:: lookAt(eye + vec3(0, 12, 0), eye, lookAt - eye);
 		glUniformMatrix4fv(curShade->getUniform("V"), 1, GL_FALSE, value_ptr(Cam));
 		return Cam;
 	}
@@ -3026,6 +3066,234 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			hudProg->unbind();
 		}
 	}
+
+
+
+	void drawLock(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model){
+		//need models
+		shader->bind();
+
+
+		//top lock
+		
+		Model->pushMatrix();
+			Model->loadIdentity();
+			Model->translate(vec3(0.0f, 2.5f, 38.5f));  //doorPosition
+			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			Model->scale(0.1f);
+			SetMaterialMan(shader, 5); //gold
+			setModel(shader, Model);
+			lock->Draw(shader);
+			lockHandle->Draw(shader);
+		Model->popMatrix();
+
+		//middle lock
+		Model->pushMatrix();
+			Model->loadIdentity();
+			Model->translate(vec3(0.0f, 1.5f, 38.5f));  //doorPosition
+			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			Model->scale(0.1f);
+			SetMaterialMan(shader, 5); //gold
+			setModel(shader, Model);
+			lock->Draw(shader);
+			lockHandle->Draw(shader);
+		Model->popMatrix();
+
+		//lower lock
+		Model->pushMatrix();
+			Model->loadIdentity();
+			Model->translate(vec3(0.0f, 0.5f, 38.5f));  //doorPosition
+			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			Model->scale(0.1f);
+			SetMaterialMan(shader, 5); //gold
+			setModel(shader, Model);
+			lock->Draw(shader);
+			lockHandle->Draw(shader);
+		Model->popMatrix();
+
+		shader->unbind();
+
+
+	}
+
+	void updateLock(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model){
+		//unlock one of the locks if have a key
+		//for now unlock all
+
+		shader->bind();
+
+
+		//top lock
+		Model->pushMatrix();
+			Model->loadIdentity();
+			Model->translate(vec3(0.0f, 2.5f, 38.5f));  //doorPosition
+			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			
+			Model->scale(0.1f);
+			SetMaterialMan(shader, 5); //gold
+			setModel(shader, Model);
+			lock->Draw(shader);
+			Model->pushMatrix();
+				Model->rotate( -1*lTheta , vec3(0.0f, 0.0f, 1.0f)); //max -30?
+				SetMaterialMan(shader, 6); //gold
+				lockHandle->Draw(shader);
+			Model->popMatrix();
+		Model->popMatrix();
+
+		//middle lock
+		Model->pushMatrix();
+			Model->loadIdentity();
+			Model->translate(vec3(0.0f, 1.5f, 38.5f));  //doorPosition
+			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			Model->scale(0.1f);
+			SetMaterialMan(shader, 5); //gold
+			setModel(shader, Model);
+			lock->Draw(shader);
+			lockHandle->Draw(shader);
+		Model->popMatrix();
+
+		// lower lock
+		Model->pushMatrix();
+			Model->loadIdentity();
+			Model->translate(vec3(0.0f, 0.5f, 38.5f));  //doorPosition
+			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			Model->scale(0.1f);
+			SetMaterialMan(shader, 5); //gold
+			setModel(shader, Model);
+			lock->Draw(shader);
+			Model->pushMatrix();
+				SetMaterialMan(shader, 6); //brown
+				//not rotating
+				// cout << "rotating????: " << lTheta << endl;
+				Model->rotate( glm::radians(lTheta) , vec3(0.0f, 0.0f, 1.0f)); //max -30?
+				setModel(shader, Model);
+				lockHandle->Draw(shader);
+			Model->popMatrix();
+		Model->popMatrix();
+
+		// Model->pushMatrix();
+		// 	Model->loadIdentity();
+		// 	Model->translate(vec3(0.0f, 0.5f, 38.5f));  //doorPosition
+		// 	Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+		// 	Model->rotate( glm::radians(lTheta) , vec3(0.0f, 1.0f, 0.0f)); //max -30?
+		// 	Model->scale(0.1f);
+		// 	SetMaterialMan(shader, 6); //brown
+		// 	setModel(shader, Model);
+		// 	lockHandle->Draw(shader);
+		// Model->popMatrix();
+
+
+		shader->unbind();
+
+		// if(lTheta < 90){
+			// lTheta+= 0.1;
+			lTheta = sin(glfwGetTime());
+		// }
+	}
+
+	/* keyCollect */
+	void drawKey(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model){
+
+		/* 
+
+		// --- Collision Check Logic ---
+		for (auto& key : keyCollectibles) {
+			// Perform collision check ONLY if not collected AND in the IDLE state
+			if (!key.collected && key.state == KeyState::IDLE && // <<<--- ADD STATE CHECK
+				checkAABBCollision(manAABBmin, manAABBmax, key.AABBmin, key.AABBmax)) {
+				key.collected = true;
+				// key.state = OrbState::COLLECTED; // Optionally set state
+				keysCollectedCount++;
+				std::cout << "Collected a key! (" << keysCollectedCount << ")\n";
+			}
+		}
+		//need models
+		shader->bind();
+
+				int collectedKeyDrawIndex = 0;
+
+		for (auto& key : keyCollectibles) {
+
+			glm::vec3 currentDrawPosition;
+			float currentDrawScale = key.scale; // Use base scale
+
+			if (key.collected) {
+				// Calculate position behind the player (same logic as before)
+				float backOffset = 0.4f;
+				float upOffsetBase = 0.6f;
+				float stackOffset = key.scale * 2.5f;
+				float sideOffset = 0.15f;
+				glm::vec3 playerForward = normalize(manMoveDir);
+				glm::vec3 playerUp = glm::vec3(0.0f, 1.0f, 0.0f);
+				glm::vec3 playerRight = normalize(cross(playerForward, playerUp));
+				float currentUpOffset = upOffsetBase + (collectedKeyDrawIndex * stackOffset);
+				float currentSideOffset = (collectedKeyDrawIndex % 2 == 0 ? -sideOffset : sideOffset);
+				currentDrawPosition = charMove() - playerForward * backOffset
+					+ playerUp * currentUpOffset
+					+ playerRight * currentSideOffset;
+				collectedKeyDrawIndex++;
+				// currentDrawScale = orb.scale * 0.8f; // Optional: shrink collected orbs
+			}
+			else {
+				// Use the orb's current position (potentially animated by updateOrbs)
+				currentDrawPosition = key.position;
+			}
+
+			// --- Set up transformations ---
+			Model->pushMatrix();
+			Model->loadIdentity();
+			Model->translate(vec3(0.0f, 0.5f, 0.5f)); //last enemy pos
+			Model->scale(2.0f);
+			Model->rotate(glm::radians(90.0f), vec3(1.0f, 0.0f, 0.0f));
+			Model->rotate(glm::radians(-90.0f), vec3(0.0f, 1.0f, 0.0f));
+			
+
+			// --- Set Material & Draw ---
+			// (Material setting code remains the same)
+			SetMaterialMan(shader, 5); //gold
+
+			setModel(shader, Model);
+			//orb.model->Draw(simpleShader);
+			key.model->Draw(shader);
+
+			Model->popMatrix();
+		} // End drawing loop
+			
+		Model->popMatrix();
+		shader->unbind();
+
+		*/
+		shader->bind();
+
+		// --- Set up transformations ---
+		Model->pushMatrix();
+		Model->loadIdentity();
+		Model->translate(vec3(0.0f, 0.5f, 0.5f)); //last enemy pos
+		Model->scale(2.0f);
+		Model->rotate(glm::radians(90.0f), vec3(1.0f, 0.0f, 0.0f));
+		Model->rotate(glm::radians(-90.0f), vec3(0.0f, 1.0f, 0.0f));
+		
+
+		// --- Set Material & Draw ---
+		// (Material setting code remains the same)
+		SetMaterialMan(shader, 5); //gold
+
+		setModel(shader, Model);
+		//orb.model->Draw(simpleShader);
+		key->Draw(shader);
+
+		Model->popMatrix();
+		shader->unbind();
+	}
+
+	// 	void updateKeys(float currentTime) {
+	// 	for (auto& orb : orbCollectibles) {
+	// 		// Update levitation only if not already collected
+	// 		if (!orb.collected) {
+	// 			orb.updateLevitation(currentTime);
+	// 		}
+	// 	}
+	// }
 
 	void drawBossHealthBar(glm::mat4 viewMatrix, glm::mat4 projMatrix) {
 		float healthBarWidth = 200.0f;
@@ -3264,7 +3532,17 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 		drawBossRoom(assimptexProg, Model, true); // Draw the boss room
 
+		//testing drawing lock and key
+		if(unlock){
+			updateLock(prog2, Model);
+		}
+		else{
+			drawLock(prog2, Model);
+		}
+		
+		drawKey(prog2, Model);
 		drawBossEnemy(prog2, Model); // Draw the boss enemy
+
 
 
 		#if SHOW_HEALTHBAR
@@ -3291,13 +3569,14 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		/*MINI MAP*/
 		prog2->bind();
 			glClear( GL_DEPTH_BUFFER_BIT);
-			glViewport(0, height-300, 300, 300);
+			glViewport(0, height-350, 350, 350);
 			SetOrthoMatrix(prog2);
 			SetTopView(prog2); /*MINI MAP*/
+			SetMaterialMan(prog2,6 );
 			//drawScene(prog2, CULL);
 			/* draws */
-			// drawGroundSections(prog2, Model);
 			// drawBorder(prog2, Model);
+
 			// drawDoor(prog2, Model);
 			drawBooks(prog2, Model);
 			// drawEnemies(prog2, Model);
@@ -3306,6 +3585,12 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			drawBossEnemy(prog2, Model);
 			drawOrbs(prog2, Model);
 			drawMiniPlayer(prog2, Model);
+			drawBorderWalls(prog2, Model);
+			// SetMaterialMan(prog2,6 );
+			drawLibGrnd(prog2, Model);
+			drawBossRoom(prog2, Model, false); //boss room not drawing
+
+			
 
 			//stripped down player draw
 
@@ -3366,6 +3651,7 @@ int main(int argc, char *argv[])
 	windowManager->init(640, 480);
 	windowManager->setEventCallbacks(application);
 	application->windowManager = windowManager;
+
 
 	// PlaySound(TEXT("C:/Users/trigu/OneDrive/Desktop/476-project/resources/Breaking_Ground.wav"), NULL, SND_FILENAME|SND_ASYNC|SND_LOOP);
 
