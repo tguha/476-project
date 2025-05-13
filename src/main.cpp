@@ -3689,6 +3689,10 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		}
 		else if (!player->isAlive() && !debugCamera) {
 			// If player is dead, show red flash
+			movingForward = false;
+			movingBackward = false;
+			movingLeft = false;
+			movingRight = false;
 			drawDamageIndicator(1.0f);
 		}
 
