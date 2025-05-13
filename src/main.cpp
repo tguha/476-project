@@ -241,6 +241,16 @@ public:
 	bool bossfightstarted = false;
 	bool bossfightended = false;
 
+	// -- Camera Occlusion Query --
+	GLuint occlusionQueryID = 0; // Occlusion query ID
+	GLuint visible = 0;
+	GLuint occlusionBoxVAO = 0;
+	GLuint occlusionBoxVBO = 0;
+
+	float cameraVisibleCooldown = 0.0f; // Cooldown for camera visibility check
+	bool wasVisibleLastFrame = true;
+
+
 	void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods)
 	{
 		if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
@@ -385,28 +395,119 @@ public:
 	}
 
 	void updateCameraVectors() {
-		vec3 front;
-		front.x = radius * cos(phi) * cos(theta);
-		front.y = radius * sin(phi);
-		front.z = radius * cos(phi) * cos((pi<float>()/2) - theta);
+		// vec3 front;
+		// front.x = radius * cos(phi) * cos(theta);
+		// front.y = radius * sin(phi);
+		// front.z = radius * cos(phi) * cos((pi<float>()/2) - theta);
 
-		eye = player->getPosition() - front;
-		lookAt = player->getPosition();
+		// eye = player->getPosition() - front;
+		// lookAt = player->getPosition();
 
-		// manRot.y = theta + radians(-90.0f);
-		// manRot.y = - manRot.y;
-		// manRot.x = phi;
+		// // manRot.y = theta + radians(-90.0f);
+		// // manRot.y = - manRot.y;
+		// // manRot.x = phi;
 
-		player->setRotY(-(theta + radians(-90.0f)));
-		player->setRotX(phi);
+		// player->setRotY(-(theta + radians(-90.0f)));
+		// player->setRotX(phi);
 
-		// cout << "Theta: " << theta << " Phi: " << phi << endl;
-		manMoveDir = vec3(sin(player->getRotY()), 0, cos(player->getRotY()));
-		right = normalize(cross(manMoveDir, up));
+		// // cout << "Theta: " << theta << " Phi: " << phi << endl;
+		// manMoveDir = vec3(sin(player->getRotY()), 0, cos(player->getRotY()));
+		// right = normalize(cross(manMoveDir, up));
 
 		// lookAt = eye + front;
 
+		// 1. Compute the desired front vector
+		glm::vec3 front;
+		front.x = cos(phi) * cos(theta);
+		front.y = sin(phi);
+		front.z = cos(phi) * cos((pi<float>() / 2) - theta);
 
+		// 2. Store current desired eye (before occlusion check)
+		glm::vec3 playerPos = glm::vec3(player->getPosition().x, player->getPosition().y + 1.0f, player->getPosition().z);
+		glm::vec3 desiredEye = playerPos - front * radius;
+
+
+		// 3. Adjust radius if needed
+		float desiredRadius = Config::CAMERA_DEFAULT_RADIUS;
+		float minRadius = 0.5f;
+		float step = 0.1f;
+		float testRadius = desiredRadius;
+		float finalRadius = radius;
+		const float cooldownTime = 1.0f; // Cooldown time in seconds
+		cameraVisibleCooldown -= AnimDeltaTime;
+
+		// if (visible == 0) {
+		// 	// std::cout << "Camera Occluded" << std::endl;
+		// 	radius = glm::max(minRadius, radius - step);
+		// } else {
+		// 	radius = glm::min(desiredRadius, radius + step);
+		// }
+
+		if (visible == 0) {
+			radius = glm::max(minRadius, radius - step);
+			cameraVisibleCooldown = cooldownTime; // Reset cooldown
+			wasVisibleLastFrame = false; // Mark as not visible
+		} else if (cameraVisibleCooldown <= 0.0f) {
+			// Only expand if cooldown is over
+			radius = glm::min(desiredRadius, radius + step);
+			wasVisibleLastFrame = true; // Mark as visible
+		}
+
+		radius = glm::mix(radius, finalRadius, 0.5f); // Smoothly interpolate radius
+
+		// 4. Recalculate final eye based on adjusted radius
+		eye = playerPos - front * radius;
+		lookAt = playerPos;
+
+		// 5. Update player rotation
+		player->setRotY(-(theta + radians(-90.0f)));
+		player->setRotX(phi);
+
+		manMoveDir = vec3(sin(player->getRotY()), 0, cos(player->getRotY()));
+		right = normalize(cross(manMoveDir, up));
+	}
+
+	bool checkCameraOcclusion(const glm::vec3& from, const glm::vec3& to) {
+		const float stepSize = 0.10f; // Smaller = more precise but more expensive
+		glm::vec3 dir = glm::normalize(to - from);
+		float distance = glm::length(to - from);
+
+		for (float t = 0.0f; t <= distance; t += stepSize) {
+			glm::vec3 point = from + dir * t;
+
+			// Check Library Grid
+			int gx = library->mapXtoGridX(point.x);
+			int gz = library->mapZtoGridY(point.z);
+
+			glm::ivec2 gridPos(gx, gz);
+
+			float gridposX = library->mapGridXtoWorldX(gx);
+			float gridposZ = library->mapGridYtoWorldZ(gz);
+
+			if (grid.inBounds(gridPos)) {
+				if (grid[gridPos].type == LibraryGen::CellType::CLUSTER ||
+					grid[gridPos].type == LibraryGen::CellType::BORDER) {
+						glm::vec3 pos = glm::vec3(gridposX, 0.0f, gridposZ);
+						if (checkSphereCollision(pos, 5.0f, glm::vec3(to.x - 1.0f, from.y - 1.0f, to.z - 1.0f), glm::vec3(to.x + 1.0f, from.y + 1.0f, to.z + 1.0f))) {
+							return true; // Occlusion detected
+						}
+					}
+			}
+
+			gx = bossRoom->mapXtoGridX(point.x);
+			gz = bossRoom->mapZtoGridY(point.z);
+			gridPos = glm::ivec2(gx, gz);
+
+			if (bossGrid.inBounds(gridPos)) {
+				if (bossGrid[gridPos].type == BossRoomGen::CellType::BORDER ||
+					bossGrid[gridPos].type == BossRoomGen::CellType::ENTRANCE ||
+					bossGrid[gridPos].type == BossRoomGen::CellType::EXIT) {
+						return true;
+					}
+			}
+		}
+
+		return false; // No occlusion detected
 	}
 
 	void mouseCallback(GLFWwindow *window, int button, int action, int mods)
@@ -2260,7 +2361,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			// std::cout << "[DEBUG] Player Position: (" << checkPos.x << "," << checkPos.y << "," << checkPos.z << ")" << std::endl;
 			// std::cout << "[DEBUG] Grid Position: (" << gridX << "," << gridZ << ")" << std::endl;
 			// std::cout << "[DEBUG] Grid to World Position: (" << gridtoworldX << "," << libraryCenter.y << "," << gridtoworldZ << ")" << std::endl;
-			// std::cout << "Grid Cell Value: " << static_cast<int>(grid[gridPos].type) << std::endl;
+			// std::cout << "Grid Cell Value: " << library->toString(grid[gridPos].type) << std::endl;
 			if (grid[gridPos].type == LibraryGen::CellType::CLUSTER) {
 				// std::cout << "[DEBUG] Collision DETECTED with OBSTACLE at grid (" << gridX << "," << gridZ << ")" << std::endl;
 				// // return true; // No collision with walls
@@ -2278,7 +2379,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 				// std::cout << "[DEBUG] Shelf World Max: (" << shelfWorldMax.x << "," << shelfWorldMax.y << "," << shelfWorldMax.z << ")" << std::endl;
 				glm::vec3 shelfPos = glm::vec3(gridtoworldX, libraryCenter.y, gridtoworldZ); // Base position on ground
 
-				if (checkSphereCollision(shelfPos, 1.5f, playerWorldMin, playerWorldMax)) {
+				if (checkSphereCollision(shelfPos, 2.0f, playerWorldMin, playerWorldMax)) {
 					std::cout << "[DEBUG] Collision DETECTED with shelf at grid (" << gridX << "," << gridZ << ")" << std::endl;
 					return true; // Collision found
 				}
@@ -2881,7 +2982,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 			shader->unbind();
 			particleAlphaTex->unbind();
-			
+
 
 		Model->popMatrix();
 	}
@@ -2977,6 +3078,23 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			healthBar->Draw(hudProg);
 			hudProg->unbind();
 		}
+	}
+
+	void drawOcclusionBoxAtPlayer(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
+		if (!shader || !Model || !sphere) return; // Need shader, stack, model
+
+		shader->bind();
+		Model->pushMatrix();
+		Model->loadIdentity(); // Start from identity for projectile
+
+		Model->translate(player->getPosition() + glm::vec3(0, 1.0f, 0));
+		Model->scale(0.25f);
+
+		setModel(shader, Model);
+		sphere->Draw(shader); // Draw the sphere model
+
+		Model->popMatrix();
+		shader->unbind();
 	}
 
 	void render(float frametime, float animTime) {
@@ -3091,6 +3209,37 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			particleProg->unbind();
 		}
 
+		drawBorderWalls(assimptexProg, Model); // Draw the borders
+
+		drawLibGrnd(assimptexProg, Model); // Draw the library ground
+
+
+		// 2. Draw the Static Library Shelves
+		drawLibrary(assimptexProg, Model, true);
+
+		drawBossRoom(assimptexProg, Model, true); // Draw the boss room
+
+		// disable color writes
+		glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+		// disable depth writes
+		glDepthMask(GL_FALSE);
+
+		// begin occlusion query
+		glBeginQuery(GL_ANY_SAMPLES_PASSED, occlusionQueryID);
+
+		// Draw a small sphere at the player's position
+		drawOcclusionBoxAtPlayer(prog2, Model);
+
+		glEndQuery(GL_ANY_SAMPLES_PASSED);
+
+		GLuint resultofQuery = 0;
+		glGetQueryObjectuiv(occlusionQueryID, GL_QUERY_RESULT, &resultofQuery);
+		visible = resultofQuery;
+
+		// re-enable color writes and depth writes
+		glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+		glDepthMask(GL_TRUE);
+
 		// --- Draw Scene Elements ---
 		// ORDER MATTERS for transparency, but with opaque objects and depth testing, it's less critical.
 		// Drawing grounds first is logical.
@@ -3099,9 +3248,6 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		// drawGroundSections(prog2, Model);
 
 		// drawBorder(prog2, Model);
-
-		// 2. Draw the Static Library Shelves
-		drawLibrary(assimptexProg, Model, true);
 
 		// 3. Draw the Door
 		// drawDoor(prog2, Model);
@@ -3128,12 +3274,6 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		*/
 
 		// drawSkybox(assimptexProg, Model); // Draw the skybox last
-
-		drawBorderWalls(assimptexProg, Model); // Draw the borders
-
-		drawLibGrnd(assimptexProg, Model); // Draw the library ground
-
-		drawBossRoom(assimptexProg, Model, true); // Draw the boss room
 
 		drawBossEnemy(prog2, Model); // Draw the boss enemy
 
@@ -3231,6 +3371,7 @@ int main(int argc, char *argv[])
 	application->initMapGen();
 	application->initGeom(resourceDir);
 	application->initGround();
+	glGenQueries(1, &application->occlusionQueryID);
 
 	auto lastTime = chrono::high_resolution_clock::now();
 

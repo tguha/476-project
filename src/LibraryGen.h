@@ -25,6 +25,18 @@ class LibraryGen {
             BORDER,
         };
 
+        inline const char* toString(CellType type) {
+            switch (type) {
+                case CellType::NONE: return "NONE";
+                case CellType::CLUSTER: return "CLUSTER";
+                case CellType::PATH: return "PATH";
+                case CellType::SPAWN: return "SPAWN";
+                case CellType::BOSS_ENTRANCE: return "BOSS_ENTRANCE";
+                case CellType::BORDER: return "BORDER";
+                default: return "UNKNOWN";
+            }
+        };
+
         enum class ClusterType {
             NONE,
             SHELF1, // Cluster types for shelves maybe different layouts or different models
