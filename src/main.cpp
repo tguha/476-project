@@ -60,9 +60,6 @@ public:
 	const GLuint S_WIDTH = 2048, S_HEIGHT = 2048;
 	GLuint depthMap;
 
-	// Light
-	vec3 g_light = vec3(10, 10, 10);
-
 	// PLayer
 	std::shared_ptr<Player> player;
 
@@ -2494,15 +2491,9 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		drawBooks(prog, Model); // Books
 		drawEnemies(prog, Model); // Enemies
 		drawPlayer(prog, Model, 0); // Player
-
-		// Border walls
-		drawBorderWalls(prog, Model);
-
-		// Floor
-		drawLibGrnd(prog, Model);
-
-		// Boss room
-		drawBossRoom(prog, Model, false);
+		drawBorderWalls(prog, Model); // Border walls
+		drawLibGrnd(prog, Model); // Floor
+		drawBossRoom(prog, Model, false); // Boss room
 	}
 
 	// Function to draw the main scene with shadows
@@ -2514,38 +2505,19 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		if (isShadowShader) {
 			prog->bind();
 			setProgFlags(prog, true, false); // material, no bones
-
 			SetMaterial(prog, Material::defaultMaterial); // Set default material
-
 			prog->unbind();
 		}
 
-		// Draw Library
-		drawLibrary(prog, Model, true);
-
-		// Draw Books
-		drawBooks(prog, Model);
-
-		// Draw Enemies
-		drawEnemies(prog, Model);
-
-		// Draw Orbs
-		drawOrbs(prog, Model);
-
-		// Draw Projectiles
-		drawProjectiles(prog, Model);
-
-		// Draw Player (with animation)
-		drawPlayer(prog, Model, animTime);
-
-		// Draw Border Walls
-		drawBorderWalls(prog, Model);
-
-		// Draw Library Ground
-		drawLibGrnd(prog, Model);
-
-		// Draw Boss Room
-		drawBossRoom(prog, Model, true);
+		drawLibrary(prog, Model, true); // Draw Library
+		drawBooks(prog, Model); // Draw Books
+		drawEnemies(prog, Model); // Draw Enemies
+		drawOrbs(prog, Model); // Draw Orbs
+		drawProjectiles(prog, Model); // Draw Projectiles
+		drawPlayer(prog, Model, animTime); // Draw Player (with animation)
+		drawBorderWalls(prog, Model); // Draw Border Walls
+		drawLibGrnd(prog, Model); // Draw Library Ground
+		drawBossRoom(prog, Model, true); // Draw Boss Room
 
 		if (isShadowShader) {
 			prog->bind();
@@ -2575,17 +2547,12 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		prog->unbind();
 	}
 
-	void updateLight() {
-		g_light = player->getPosition() + vec3(3, 10, 3); // Update light position based on player
-	}
-
 	void render(float frametime, float animTime) {
 		int width, height;
 		glfwGetFramebufferSize(windowManager->getHandle(), &width, &height); // Get current frame buffer size
 		float aspect = width / (float)height;
 
 		// --- Update Game Logic ---
-		//updateLight();
 		charMove();
 		updateCameraVectors();
 		updateBooks(frametime);
@@ -2599,15 +2566,10 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		auto View = make_shared<MatrixStack>();
 		auto Model = make_shared<MatrixStack>();
 
-		// Shadow mapping parameters
-		/*vec3 lightLA = vec3(0.0);
-		vec3 lightUp = vec3(0, 1, 0);
-		mat4 LO, LV, LSpace;*/
-
-		vec3 lightPos = g_light; // Fixed light position above the scene
+		vec3 lightPos = vec3(10); // Fixed light position above the scene
 		vec3 lightTarget = libraryCenter; // Light looks at library center
 		vec3 lightDir = normalize(lightPos - lightTarget); // Light direction
-		vec3 lightUp = vec3(0, 1, 0); // Use a different up vector to avoid gimbal lock
+		vec3 lightUp = vec3(0, 1, 0);
 		mat4 LO, LV, LSpace;
 		
 		// ========================================================================
@@ -2620,8 +2582,6 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 			glCullFace(GL_FRONT); // Cull front faces for shadow map
 
 			DepthProg->bind(); // Setup shadow shader and draw the scene
-			/*LO = SetOrthoMatrix(DepthProg);
-			LV = SetLightView(DepthProg, g_light, lightLA, lightUp);*/
 
 			// Create a stable orthographic projection that covers the scene
 			float size = Config::ORTHO_SIZE;
@@ -2661,16 +2621,9 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		if (Config::DEBUG_LIGHTING) { // Debugging light view from lights perspective
 			if (Config::DEBUG_GEOM) {
 				DepthProgDebug->bind();
-				/*SetOrthoMatrix(DepthProgDebug);
-				SetLightView(DepthProgDebug, g_light, lightLA, lightUp);*/
 
-				// Create a stable orthographic projection that covers the scene
-				//float size = Config::ORTHO_SIZE;
-				//LO = glm::ortho(-size, size, -size, size, 1.0f, 100.0f);
 				glUniformMatrix4fv(DepthProg->getUniform("LP"), 1, GL_FALSE, value_ptr(LO));
 
-				// Create a stable light view matrix
-				//LV = glm::lookAt(lightPos, lightTarget, lightUp);
 				glUniformMatrix4fv(DepthProg->getUniform("LV"), 1, GL_FALSE, value_ptr(LV));
 
 				drawSceneForShadowMap(DepthProgDebug); // Draw the scene from the lights perspective for debugging
@@ -2950,13 +2903,12 @@ int main(int argc, char *argv[]) {
 		float AnimcurrFrame = glfwGetTime();
 		application->AnimDeltaTime = AnimcurrFrame - application->AnimLastFrame;
 		application->AnimLastFrame = AnimcurrFrame;
-		// Render scene.
-		application->render(deltaTime, application->AnimDeltaTime);
+		
+		application->render(deltaTime, application->AnimDeltaTime); // Render scene
 
-		// Swap front and back buffers
-		glfwSwapBuffers(windowManager->getHandle());
-		// Poll for and process events
-		glfwPollEvents();
+		glfwSwapBuffers(windowManager->getHandle()); // Swap front and back buffers
+		
+		glfwPollEvents(); // Poll for and process events
 	}
 
 	// Quit program
