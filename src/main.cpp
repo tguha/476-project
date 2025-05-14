@@ -24,6 +24,7 @@
 #include "LibraryGen.h"
 // #include "Grid.h"
 #include "Enemy.h"
+#include "IceElemental.h"
 #include "Player.h"
 #include "BossRoomGen.h"
 #include "FrustumCulling.h"
@@ -163,7 +164,7 @@ public:
 
 	AssimpModel *sky_sphere;
 
-	AssimpModel *border, *lock, *lockHandle, *key;  
+	AssimpModel *border, *lock, *lockHandle, *key;
 
 	//key collectibles
 	std::vector<Collectible> keyCollectibles;
@@ -177,6 +178,8 @@ public:
 	Animator *stickfigure_animator;
 
 	AssimpModel *CatWizard;
+
+	AssimpModel *iceElemental;
 
 	BossEnemy *bossEnemy;
 
@@ -230,7 +233,7 @@ public:
 
 	float characterRotation = 0.0f;
 
-	//Debug Camera 
+	//Debug Camera
 	bool debugCamera = false;
 	vec3 debugEye = vec3(0.0f, 0.0f, 0.0f);
 	float debugMovementSpeed = 0.2f;
@@ -249,16 +252,21 @@ public:
 
 	glm::vec4 planes[6]; // Frustum planes
 
-	// red flash damage indicator
-	float redFlashTimer = 0.0f;
-	float redFlashDuration = 0.5f; // Duration of the red flash effect
-
 	// Flags for game state
 	bool canFightboss = false; // Flag to check if the player can fight the boss
 	bool allEnemiesDead = false; // Flag to check if all enemies are dead
 	bool restartGen = false;
 	bool bossfightstarted = false;
 	bool bossfightended = false;
+
+	// -- Camera Occlusion Query --
+	GLuint occlusionQueryID = 0; // Occlusion query ID
+	GLuint visible = 0;
+	GLuint occlusionBoxVAO = 0;
+	GLuint occlusionBoxVBO = 0;
+
+	float cameraVisibleCooldown = 0.0f; // Cooldown for camera visibility check
+	bool wasVisibleLastFrame = true;
 
 	void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods)
 	{
@@ -280,66 +288,68 @@ public:
 			}
 		}
 
-		if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_W) != GLFW_RELEASE) {
-			manState = Man_State::WALKING;
+		if (player->isAlive() || debugCamera) {
+			if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_W) != GLFW_RELEASE) {
+				manState = Man_State::WALKING;
 
-			//Movement Variable
-			movingForward = true;
-			if (debug_pos) {
-				cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
-				cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
+				//Movement Variable
+				movingForward = true;
+				if (debug_pos) {
+					cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
+					cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
+				}
+			} else if (key == GLFW_KEY_W && action == GLFW_RELEASE) {
+				manState = Man_State::STANDING;
+				//Movement Variable
+				movingForward = false;
 			}
-		} else if (key == GLFW_KEY_W && action == GLFW_RELEASE) {
-			manState = Man_State::STANDING;
-			//Movement Variable
-			movingForward = false;
-		}
-		if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_S) != GLFW_RELEASE) {
-			manState = Man_State::WALKING;
+			if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_S) != GLFW_RELEASE) {
+				manState = Man_State::WALKING;
 
-			//Movement Variable
-			movingBackward = true;
+				//Movement Variable
+				movingBackward = true;
 
-			if (debug_pos) {
-				cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
-				cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
+				if (debug_pos) {
+					cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
+					cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
+				}
+
+			} else if (key == GLFW_KEY_S && action == GLFW_RELEASE) {
+				manState = Man_State::STANDING;
+				//Movement Variable
+				movingBackward = false;
 			}
+			if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_A) != GLFW_RELEASE) {
+				manState = Man_State::WALKING;
 
-		} else if (key == GLFW_KEY_S && action == GLFW_RELEASE) {
-			manState = Man_State::STANDING;
-			//Movement Variable
-			movingBackward = false;
-		}
-		if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_A) != GLFW_RELEASE) {
-			manState = Man_State::WALKING;
+				//Movement Variable
+				movingLeft = true;
 
-			//Movement Variable
-			movingLeft = true;
+				if (debug_pos) {
+					cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
+					cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
+				}
 
-			if (debug_pos) {
-				cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
-				cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
+			} else if (key == GLFW_KEY_A && action == GLFW_RELEASE) {
+				manState = Man_State::STANDING;
+				//Movement Variable
+				movingLeft = false;
 			}
+			if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_D) != GLFW_RELEASE) {
+				manState = Man_State::WALKING;
 
-		} else if (key == GLFW_KEY_A && action == GLFW_RELEASE) {
-			manState = Man_State::STANDING;
-			//Movement Variable
-			movingLeft = false;
-		}
-		if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_D) != GLFW_RELEASE) {
-			manState = Man_State::WALKING;
+				//Movement Variable
+				movingRight = true;
 
-			//Movement Variable
-			movingRight = true;
-
-			if (debug_pos) {
-				cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
-				cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
+				if (debug_pos) {
+					cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
+					cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
+				}
+			} else if (key == GLFW_KEY_D && action == GLFW_RELEASE) {
+				manState = Man_State::STANDING;
+				//Movement Variable
+				movingRight = false;
 			}
-		} else if (key == GLFW_KEY_D && action == GLFW_RELEASE) {
-			manState = Man_State::STANDING;
-			//Movement Variable
-			movingRight = false;
 		}
 		if (key == GLFW_KEY_Z && action == GLFW_PRESS) {
 			glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
@@ -365,7 +375,9 @@ public:
 		if (key == GLFW_KEY_K && action == GLFW_PRESS) {
 			debugCamera = !debugCamera;
 		}
-		
+		if (!player->isAlive() && key == GLFW_KEY_SPACE && action == GLFW_PRESS) {
+			restartGen = true;
+		}
 	}
 
 	void scrollCallback(GLFWwindow *window, double deltaX, double deltaY)
@@ -413,26 +425,75 @@ public:
 	void updateCameraVectors() {
 		if (!debugCamera) {
 			//Activate Player Camera
-			vec3 front;
-			front.x = radius * cos(phi) * cos(theta);
-			front.y = radius * sin(phi);
-			front.z = radius * cos(phi) * cos((pi<float>() / 2) - theta);
+			// vec3 front;
+			// front.x = radius * cos(phi) * cos(theta);
+			// front.y = radius * sin(phi);
+			// front.z = radius * cos(phi) * cos((pi<float>()/2) - theta);
 
-			eye = player->getPosition() - front;
-			lookAt = player->getPosition();
+			// eye = player->getPosition() - front;
+			// lookAt = player->getPosition();
 
-			// manRot.y = theta + radians(-90.0f);
-			// manRot.y = - manRot.y;
-			// manRot.x = phi;
+			// // manRot.y = theta + radians(-90.0f);
+			// // manRot.y = - manRot.y;
+			// // manRot.x = phi;
 
+			// player->setRotY(-(theta + radians(-90.0f)));
+			// player->setRotX(phi);
+
+			// // cout << "Theta: " << theta << " Phi: " << phi << endl;
+			// manMoveDir = vec3(sin(player->getRotY()), 0, cos(player->getRotY()));
+			// right = normalize(cross(manMoveDir, up));
+			// 1. Compute the desired front vector
+			glm::vec3 front;
+			front.x = cos(phi) * cos(theta);
+			front.y = sin(phi);
+			front.z = cos(phi) * cos((pi<float>() / 2) - theta);
+
+			// 2. Store current desired eye (before occlusion check)
+			glm::vec3 playerPos = glm::vec3(player->getPosition().x, player->getPosition().y + 1.0f, player->getPosition().z);
+			glm::vec3 desiredEye = playerPos - front * radius;
+
+
+			// 3. Adjust radius if needed
+			float desiredRadius = Config::CAMERA_DEFAULT_RADIUS;
+			float minRadius = 0.5f;
+			float step = 0.45f;
+			float testRadius = desiredRadius;
+			float finalRadius = radius;
+			const float cooldownTime = 0.45f; // Cooldown time in seconds
+			cameraVisibleCooldown -= AnimDeltaTime;
+
+			// if (visible == 0) {
+			// 	// std::cout << "Camera Occluded" << std::endl;
+			// 	radius = glm::max(minRadius, radius - step);
+			// } else {
+			// 	radius = glm::min(desiredRadius, radius + step);
+			// }
+
+			if (visible == 0) {
+				radius = glm::max(minRadius, radius - step);
+				cameraVisibleCooldown = cooldownTime; // Reset cooldown
+				wasVisibleLastFrame = false; // Mark as not visible
+			} else if (cameraVisibleCooldown <= 0.0f) {
+				// Only expand if cooldown is over
+				radius = glm::min(desiredRadius, radius + step);
+				wasVisibleLastFrame = true; // Mark as visible
+			}
+
+			radius = glm::mix(radius, finalRadius, 0.5f); // Smoothly interpolate radius
+
+			// 4. Recalculate final eye based on adjusted radius
+			eye = playerPos - front * radius;
+			lookAt = playerPos;
+
+			// 5. Update player rotation
 			player->setRotY(-(theta + radians(-90.0f)));
 			player->setRotX(phi);
 
-			// cout << "Theta: " << theta << " Phi: " << phi << endl;
-			manMoveDir = vec3(sin(player->getRotY()), 0, cos(player->getRotY()));
+		manMoveDir = vec3(sin(player->getRotY()), 0, cos(player->getRotY()));
 			right = normalize(cross(manMoveDir, up));
 
-			// lookAt = eye + front;
+				// lookAt = eye + front;
 		}
 		else {
 			//Activate Debug Camera
@@ -443,7 +504,7 @@ public:
 			// Defined above Globally- eyePos = vec3(0.0, 0.0, 0.0);
 			vec3 targetPos = vec3(x, y, z);
 			vec3 viewVec = normalize(targetPos);
-			
+
 			if (movingForward) {
 				debugEye += debugMovementSpeed * viewVec;
 			}
@@ -791,6 +852,9 @@ public:
 		// load the sphere (spell)
 		sphere = new AssimpModel(resourceDirectory + "/SmoothSphere.obj");
 
+		// load enemies
+		iceElemental = new AssimpModel(resourceDirectory + "/IceElemental/IceElem.fbx");
+
 		// health bar
 		healthBar = new AssimpModel(resourceDirectory + "/Quad/hud_quad.obj");
 		healthBar->assignTexture("texture_diffuse1", resourceDirectory + "/healthbar.bmp");
@@ -811,14 +875,23 @@ public:
 		cout << "Initializing enemies..." << endl;
 		// Use the scale factor used in drawEnemies
 		// Body scale was (0.5f, bodyBaseScaleY * 1.6f, 0.5f) where bodyBaseScaleY = 0.8f => (0.5, 1.28, 0.5)
-		glm::vec3 enemyCollisionScale = glm::vec3(0.5f, 1.28f, 0.5f); // Define the scale
+		// glm::vec3 enemyCollisionScale = glm::vec3(0.5f, 1.28f, 0.5f); // Define the scale
+		// glm::vec3 enemyCollisionScale = glm::vec3(1.0f, 1.0f, 1.0f);
 		vec3 bossSpawnPos = bossRoom->getWorldOrigin();
 
 		// Check if sphere model is loaded before creating enemies that use it
 		if (sphere) {
 			// enemies.push_back(new Enemy(bossSpawnPos, 200.0f, 0.0f, sphere, enemyCollisionScale, vec3(0.0f))); // <<-- Pass sphere and scale
 			// cout << " Enemy placed at boss area: (" << bossSpawnPos.x << ", " << bossSpawnPos.y << ", " << bossSpawnPos.z << ")" << endl;
-			enemies.push_back(new Enemy(libraryCenter + vec3(-5.0f, 0.8f, 8.0f), ENEMY_HP_MAX / 2, 2.0f, sphere, enemyCollisionScale, vec3(0.0f))); // <<-- Pass sphere and scale
+			// enemies.push_back(new Enemy(libraryCenter + vec3(-5.0f, 0.8f, 8.0f), ENEMY_HP_MAX / 2, 2.0f, sphere, enemyCollisionScale, vec3(0.0f))); // <<-- Pass sphere and scale
+
+			// std::vector<vec3> enemySpawnPositions = library->getEnemySpawnPositions();
+			// for (const auto& spawnPos : enemySpawnPositions) {
+			// 	enemies.push_back(new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.z), ENEMY_HP_MAX, 2.0f, iceElemental, enemyCollisionScale, vec3(0.0f)));
+			// 	// cout << " Enemy placed at: (" << spawnPos.x << ", " << spawnPos.y << ", " << spawnPos.z << ")" << endl;
+			// }
+			initEnemies();
+
 			bossEnemy = new BossEnemy(bossSpawnPos, BOSS_HP_MAX, sphere, vec3(1.0f), vec3(0, 1, 0), BOSS_SPECIAL_ATTACK_COOLDOWN);
 		}
 		else {
@@ -1134,8 +1207,10 @@ public:
 		for (const auto& libGrnd : libraryGrounds) {
 			glBindVertexArray(libGrnd.VAO); // Bind each library ground VAO
 
-			libGrnd.texture->bind(shader->getUniform("texture_diffuse1")); // Bind the texture
-			glUniform1i(shader->getUniform("hasTexture"), 1); // Set texture uniform
+			if (shader == assimptexProg) {
+				libGrnd.texture->bind(shader->getUniform("texture_diffuse1")); // Bind the texture
+				glUniform1i(shader->getUniform("hasTexture"), 1); // Set texture uniform
+			}
 
 			Model->pushMatrix();
 			Model->loadIdentity();
@@ -1144,7 +1219,9 @@ public:
 			glDrawElements(GL_TRIANGLES, libGrnd.GiboLen, GL_UNSIGNED_SHORT, 0);
 			Model->popMatrix();
 
-			libGrnd.texture->unbind(); // Unbind the texture after drawing each library ground
+			if (shader == assimptexProg) {
+				libGrnd.texture->unbind(); // Unbind the texture after drawing each library ground
+			}
 		}
 
 		glBindVertexArray(0); // Unbind VAO after drawing all library grounds
@@ -1240,6 +1317,21 @@ public:
 		borderWallKeys.insert(posKey); // Add key to set to avoid duplicates
 	}
 
+	void initEnemies() {
+		if (enemies.size() == 0) {
+			std::vector<vec3> enemySpawnPositions = library->getEnemySpawnPositions();
+			
+			for (auto e = enemies.begin(); e != enemies.end(); ++e) {
+				enemies.erase(e);
+			}
+
+			for (const auto& spawnPos : enemySpawnPositions) {
+				enemies.push_back(new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.z), ENEMY_HP_MAX, 2.0f, iceElemental, vec3(1.0f), vec3(0.0f)));
+				// cout << " Enemy placed at: (" << spawnPos.x << ", " << spawnPos.y << ", " << spawnPos.z << ")" << endl;
+			}
+		}
+	}
+
 	void drawBorderWalls(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		if (!shader || !Model) {
 			cerr << "Error: Null pointer in drawBorderWalls." << endl;
@@ -1251,8 +1343,10 @@ public:
 		for (const auto& border : borderWalls) {
 			glBindVertexArray(border.WallVAID); // Bind each border VAO
 
-			border.texture->bind(shader->getUniform("texture_diffuse1")); // Bind the texture
-			glUniform1i(shader->getUniform("hasTexture"), 1); // Set texture uniform
+			if (shader == assimptexProg) {
+				border.texture->bind(shader->getUniform("texture_diffuse1")); // Bind the texture
+				glUniform1i(shader->getUniform("hasTexture"), 1); // Set texture uniform
+			}
 
 			Model->pushMatrix();
 			Model->loadIdentity();
@@ -1261,7 +1355,9 @@ public:
 			glDrawElements(GL_TRIANGLES, border.GiboLen, GL_UNSIGNED_SHORT, 0);
 			Model->popMatrix();
 
-			border.texture->unbind(); // Unbind the texture after drawing each border
+			if (shader == assimptexProg) {
+				border.texture->unbind(); // Unbind the texture after drawing each border
+			}
 		}
 
 		glBindVertexArray(0); // Unbind VAO after drawing all borders
@@ -1558,7 +1654,6 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			canFightboss = false; // Reset boss fight flag
 			allEnemiesDead = false; // Reset enemy status
 			player->setPosition(vec3(0.0f, 0.0f, 0.0f)); // Reset player position
-			enemies.clear();
 			books.clear();
 			libraryGrounds.clear();
 			libraryGroundKeys.clear();
@@ -1566,12 +1661,21 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			borderWallKeys.clear();
 			orbCollectibles.clear();
 			keyCollectibles.clear();
-			player->resetHitpoints();
-			player->setAlive(); // Reset player status to alive
+			if (!player->isAlive()) {
+				player->resetHitpoints();
+				player->setAlive(); // Reset player status to alive if had died
+				canFightboss = false; // Flag to check if the player can fight the boss
+				allEnemiesDead = false; // Flag to check if all enemies are dead
+				restartGen = false;
+				bossfightstarted = false;
+				bossfightended = false;
+			}
+
 			bossEnemy->setAlive(); // Reset boss status to alive
 			initMapGen();
+			initEnemies(); // Reinitialize enemies
 			bossActiveSpells.clear();
-			enemies.push_back(new Enemy(libraryCenter + vec3(-5.0f, 0.8f, 8.0f), 50.0f, 2.0f, sphere, glm::vec3(0.5f, 1.28f, 0.5f), vec3(0.0f))); // <<-- Pass sphere and scale
+			// enemies.push_back(new Enemy(libraryCenter + vec3(-5.0f, 0.8f, 8.0f), 50.0f, 2.0f, sphere, glm::vec3(0.5f, 1.28f, 0.5f), vec3(0.0f))); // <<-- Pass sphere and scale
 			activeSpells.clear(); // Clear active spells
 		}
 	}
@@ -1582,7 +1686,8 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		shader->bind(); // Use prog2 for simple colored shapes
 
 		// --- Material Settings ---
-		glm::vec3 bodyColor = glm::vec3(0.6f, 0.2f, 0.8f); // Purple-ish body
+		// glm::vec3 bodyColor = glm::vec3(0.6f, 0.2f, 0.8f); // Purple-ish body
+		glm::vec3 bodyColor = glm::vec3(0.35f, 0.4f, 0.914f); // Blue body
 		glm::vec3 eyeWhiteColor = glm::vec3(1.0f, 1.0f, 1.0f);
 		glm::vec3 eyePupilColor = glm::vec3(0.1f, 0.1f, 0.1f);
 
@@ -1609,9 +1714,11 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			Model->pushMatrix();
 			{
 				Model->translate(enemyPos);
-				Model->rotate(enemy->getRotY(), glm::vec3(0, 1, 0));
 				// Scale for pill shape ( taller in Y, squished in X/Z )
-				Model->scale(glm::vec3(0.5f, bodyBaseScaleY * 1.6f, 0.5f)); // Adjust scale factors as needed
+				Model->scale(glm::vec3(1.0f, 1.0f, 1.0f));
+				Model->rotate(enemy->getRotY(), glm::vec3(0, 1, 0));
+				// rotate 90 around z
+				Model->rotate(glm::radians(-90.0f), glm::vec3(1, 0, 0));
 
 				// Set body material
 				glUniform3f(shader->getUniform("MatAmb"), bodyColor.r * 0.3f, bodyColor.g * 0.3f, bodyColor.b * 0.3f);
@@ -1621,7 +1728,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 				glUniform1f(shader->getUniform("alpha"), enemy->getDamageTimer() / Config::ENEMY_HIT_DURATION);
 
 				setModel(shader, Model);
-				sphere->Draw(shader); // Draw the scaled sphere as the body
+				iceElemental->Draw(shader); // Draw the scaled sphere as the body
 			}
 			Model->popMatrix();
 
@@ -1633,81 +1740,81 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			// Black Material Setup (done inside loop per part for clarity now)
 
 			// Left Eye
-			Model->pushMatrix();
-			{
-				// Go to enemy center, then offset to eye position
-				Model->translate(enemyPos);
-				Model->translate(eyeOffsetBase + glm::vec3(-eyeSeparation, 0, 0));
+			// Model->pushMatrix();
+			// {
+			// 	// Go to enemy center, then offset to eye position
+			// 	Model->translate(enemyPos);
+			// 	Model->translate(eyeOffsetBase + glm::vec3(-eyeSeparation, 0, 0));
 
-				// White Part
-				Model->pushMatrix();
-				{
-					Model->scale(glm::vec3(whiteScale));
-					// Set white material
-					glUniform3f(shader->getUniform("MatAmb"), eyeWhiteColor.r * 0.3f, eyeWhiteColor.g * 0.3f, eyeWhiteColor.b * 0.3f);
-					glUniform3f(shader->getUniform("MatDif"), eyeWhiteColor.r, eyeWhiteColor.g, eyeWhiteColor.b);
-					glUniform3f(shader->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f);
-					glUniform1f(shader->getUniform("MatShine"), 4.0f);
-					setModel(shader, Model);
-					sphere->Draw(shader);
-				}
-				Model->popMatrix(); // Pop white scale
+			// 	// White Part
+			// 	Model->pushMatrix();
+			// 	{
+			// 		Model->scale(glm::vec3(whiteScale));
+			// 		// Set white material
+			// 		glUniform3f(shader->getUniform("MatAmb"), eyeWhiteColor.r * 0.3f, eyeWhiteColor.g * 0.3f, eyeWhiteColor.b * 0.3f);
+			// 		glUniform3f(shader->getUniform("MatDif"), eyeWhiteColor.r, eyeWhiteColor.g, eyeWhiteColor.b);
+			// 		glUniform3f(shader->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f);
+			// 		glUniform1f(shader->getUniform("MatShine"), 4.0f);
+			// 		setModel(shader, Model);
+			// 		sphere->Draw(shader);
+			// 	}
+			// 	Model->popMatrix(); // Pop white scale
 
-				// Pupil Part
-				Model->pushMatrix();
-				{
-					// Move slightly forward from white surface and scale down
-					Model->translate(glm::vec3(0, 0, whiteScale * 0.5f + pupilOffsetForward)); // Offset relative to white scale
-					Model->scale(glm::vec3(pupilScale));
-					// Set black material
-					glUniform3f(shader->getUniform("MatAmb"), eyePupilColor.r * 0.3f, eyePupilColor.g * 0.3f, eyePupilColor.b * 0.3f);
-					glUniform3f(shader->getUniform("MatDif"), eyePupilColor.r, eyePupilColor.g, eyePupilColor.b);
-					glUniform3f(shader->getUniform("MatSpec"), 0.5f, 0.5f, 0.5f); // Some specular highlight
-					glUniform1f(shader->getUniform("MatShine"), 32.0f);
-					setModel(shader, Model);
-					sphere->Draw(shader);
-				}
-				Model->popMatrix(); // Pop pupil transform
-			}
-			Model->popMatrix(); // Pop left eye transform
+			// 	// Pupil Part
+			// 	Model->pushMatrix();
+			// 	{
+			// 		// Move slightly forward from white surface and scale down
+			// 		Model->translate(glm::vec3(0, 0, whiteScale * 0.5f + pupilOffsetForward)); // Offset relative to white scale
+			// 		Model->scale(glm::vec3(pupilScale));
+			// 		// Set black material
+			// 		glUniform3f(shader->getUniform("MatAmb"), eyePupilColor.r * 0.3f, eyePupilColor.g * 0.3f, eyePupilColor.b * 0.3f);
+			// 		glUniform3f(shader->getUniform("MatDif"), eyePupilColor.r, eyePupilColor.g, eyePupilColor.b);
+			// 		glUniform3f(shader->getUniform("MatSpec"), 0.5f, 0.5f, 0.5f); // Some specular highlight
+			// 		glUniform1f(shader->getUniform("MatShine"), 32.0f);
+			// 		setModel(shader, Model);
+			// 		sphere->Draw(shader);
+			// 	}
+			// 	Model->popMatrix(); // Pop pupil transform
+			// }
+			// Model->popMatrix(); // Pop left eye transform
 
 
-			// Right Eye (Similar to Left)
-			Model->pushMatrix();
-			{
-				Model->translate(enemyPos);
-				Model->translate(eyeOffsetBase + glm::vec3(+eyeSeparation, 0, 0)); // Offset to the right
+			// // Right Eye (Similar to Left)
+			// Model->pushMatrix();
+			// {
+			// 	Model->translate(enemyPos);
+			// 	Model->translate(eyeOffsetBase + glm::vec3(+eyeSeparation, 0, 0)); // Offset to the right
 
-				// White Part
-				Model->pushMatrix();
-				{
-					Model->scale(glm::vec3(whiteScale));
-					// Set white material
-					glUniform3f(shader->getUniform("MatAmb"), eyeWhiteColor.r * 0.3f, eyeWhiteColor.g * 0.3f, eyeWhiteColor.b * 0.3f);
-					glUniform3f(shader->getUniform("MatDif"), eyeWhiteColor.r, eyeWhiteColor.g, eyeWhiteColor.b);
-					glUniform3f(shader->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f);
-					glUniform1f(shader->getUniform("MatShine"), 4.0f);
-					setModel(shader, Model);
-					sphere->Draw(shader);
-				}
-				Model->popMatrix();
+			// 	// White Part
+			// 	Model->pushMatrix();
+			// 	{
+			// 		Model->scale(glm::vec3(whiteScale));
+			// 		// Set white material
+			// 		glUniform3f(shader->getUniform("MatAmb"), eyeWhiteColor.r * 0.3f, eyeWhiteColor.g * 0.3f, eyeWhiteColor.b * 0.3f);
+			// 		glUniform3f(shader->getUniform("MatDif"), eyeWhiteColor.r, eyeWhiteColor.g, eyeWhiteColor.b);
+			// 		glUniform3f(shader->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f);
+			// 		glUniform1f(shader->getUniform("MatShine"), 4.0f);
+			// 		setModel(shader, Model);
+			// 		sphere->Draw(shader);
+			// 	}
+			// 	Model->popMatrix();
 
-				// Pupil Part
-				Model->pushMatrix();
-				{
-					Model->translate(glm::vec3(0, 0, whiteScale * 0.5f + pupilOffsetForward));
-					Model->scale(glm::vec3(pupilScale));
-					// Set black material
-					glUniform3f(shader->getUniform("MatAmb"), eyePupilColor.r * 0.3f, eyePupilColor.g * 0.3f, eyePupilColor.b * 0.3f);
-					glUniform3f(shader->getUniform("MatDif"), eyePupilColor.r, eyePupilColor.g, eyePupilColor.b);
-					glUniform3f(shader->getUniform("MatSpec"), 0.5f, 0.5f, 0.5f);
-					glUniform1f(shader->getUniform("MatShine"), 32.0f);
-					setModel(shader, Model);
-					sphere->Draw(shader);
-				}
-				Model->popMatrix();
-			}
-			Model->popMatrix(); // Pop right eye transform
+			// 	// Pupil Part
+			// 	Model->pushMatrix();
+			// 	{
+			// 		Model->translate(glm::vec3(0, 0, whiteScale * 0.5f + pupilOffsetForward));
+			// 		Model->scale(glm::vec3(pupilScale));
+			// 		// Set black material
+			// 		glUniform3f(shader->getUniform("MatAmb"), eyePupilColor.r * 0.3f, eyePupilColor.g * 0.3f, eyePupilColor.b * 0.3f);
+			// 		glUniform3f(shader->getUniform("MatDif"), eyePupilColor.r, eyePupilColor.g, eyePupilColor.b);
+			// 		glUniform3f(shader->getUniform("MatSpec"), 0.5f, 0.5f, 0.5f);
+			// 		glUniform1f(shader->getUniform("MatShine"), 32.0f);
+			// 		setModel(shader, Model);
+			// 		sphere->Draw(shader);
+			// 	}
+			// 	Model->popMatrix();
+			// }
+			// Model->popMatrix(); // Pop right eye transform
 
 		} // End loop through enemies
 
@@ -2262,60 +2369,11 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 	}
 
 	void updateEnemies(float deltaTime) {
-		static Pathfinder pathfinder(gridSize);
 		int screenWidth, screenHeight;
 		glfwGetFramebufferSize(windowManager->getHandle(), &screenWidth, &screenHeight);
 		// TODO: Add enemy movement, AI, attack logic later
 		for (auto* enemy : enemies) {
-			if (!enemy->isAlive()) enemy->setPosition(enemy->getPosition() - vec3(0.0f, 3.0f, 0.0f));
-
-			if (distance(enemy->getPosition(), player->getPosition()) <= enemy->getAggroRange() || enemy->isHit()) {
-				enemy->setAggro(true);
-			}
-
-			if (enemy->getDamageTimer() > 0.0f) {
-				enemy->setDamageTimer(enemy->getDamageTimer() - deltaTime);
-			} else if (enemy->getDamageTimer() <= 0.0f) {
-				enemy->setHit(false);
-				enemy->setDamageTimer(0.0f);
-			}
-			// Example: Simple bobbing motion
-			// float bobSpeed = 2.0f;
-			// float bobHeight = 0.05f;
-			// glm::vec3 currentPos = enemy->getPosition();
-			// enemy->setPosition(glm::vec3(currentPos.x, 0.8f + sin(glfwGetTime() * bobSpeed) * bobHeight, currentPos.z));
-			 // IMPORTANT: Update enemy AABB if it moves
-			 // enemy->updateAABB(); // Need to add AABB members and update method to Enemy/Entity class
-				// // Check for collision with player
-				// glm::vec3 enemyMin = enemy->getAABBMin();
-				// glm::vec3 enemyMax = enemy->getAABBMax();
-				// glm::vec3 playerMin = player->getAABBMin();
-				// glm::vec3 playerMax = player->getAABBMax();
-
-			if (enemy->isAggro()) {
-				enemy->moveTowardsPlayer(player->getPosition(), deltaTime);
-			}
-
-			static float lastDamageTime = 0.0f; // Track the last time damage was applied
-			if (distance(enemy->getPosition(), player->getPosition()) < 1.0f) {
-				float currentTime = glfwGetTime();
-				if (currentTime - lastDamageTime >= 1.0f) { // Check if 1 second has passed
-					player->takeDamage(10); // Apply damage to the player
-					lastDamageTime = currentTime; // Update the last damage time
-					std::cout << "Player took damage! Current HP: " << player->getHitpoints() << std::endl;
-
-
-					redFlashTimer = redFlashDuration; // Reset the red flash timer
-
-					
-				}
-			}
-
-				// if (checkAABBCollision(enemyMin, enemyMax, playerMin, playerMax)) {
-				// 	// Handle collision with player
-				// 	cout << "Enemy collided with player!" << endl;
-				// 	player->takeDamage(10);
-				// }
+			enemy->update(player.get(), deltaTime);
 		}
 	}
 
@@ -2704,7 +2762,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 	void updateProjectiles(float deltaTime) {
 		if (!sphereAABBCalculated) return;
 
-		float damageAmount = 25.0f;
+		float damageAmount = Config::PROJECTILE_DAMAGE;
 
 		// Iterate using index for potential removal
 		for (int i = 0; i < activeSpells.size(); ++i) {
@@ -3025,7 +3083,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 			shader->unbind();
 			particleAlphaTex->unbind();
-			
+
 
 		Model->popMatrix();
 	}
@@ -3080,13 +3138,14 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 
 
+
 	void drawLock(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model){
 		//need models
 		shader->bind();
 
 
 		//top lock
-		
+
 		Model->pushMatrix();
 			Model->loadIdentity();
 			Model->translate(vec3(0.0f, 2.5f, 38.5f)); 
@@ -3359,7 +3418,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			Model->scale(2.0f);
 			Model->rotate(glm::radians(90.0f), vec3(1.0f, 0.0f, 0.0f));
 			Model->rotate(glm::radians(-90.0f), vec3(0.0f, 1.0f, 0.0f));
-			
+
 
 			// --- Set Material & Draw ---
 			// (Material setting code remains the same)
@@ -3371,7 +3430,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 			Model->popMatrix();
 		} // End drawing loop
-			
+
 		Model->popMatrix();
 		shader->unbind();
 
@@ -3385,7 +3444,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		Model->scale(2.0f);
 		Model->rotate(glm::radians(90.0f), vec3(1.0f, 0.0f, 0.0f));
 		Model->rotate(glm::radians(-90.0f), vec3(0.0f, 1.0f, 0.0f));
-		
+
 
 		// --- Set Material & Draw ---
 		// (Material setting code remains the same)
@@ -3455,11 +3514,11 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 	void drawDamageIndicator(float alpha) {
 		int screenWidth, screenHeight;
-		glfwGetFramebufferSize(windowManager->getHandle(), &screenWidth, &screenHeight);  
+		glfwGetFramebufferSize(windowManager->getHandle(), &screenWidth, &screenHeight);
 
 		glEnable(GL_BLEND);
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-		// glDisable(GL_DEPTH_TEST); 
+		// glDisable(GL_DEPTH_TEST);
 		redFlashProg->bind();
 
 		glm::mat4 proj = glm::ortho(0.0f, (float)screenWidth, 0.0f, (float)screenHeight, -1.0f, 1.0f);
@@ -3471,6 +3530,23 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 		healthBar->Draw(redFlashProg);
 		redFlashProg->unbind();
+	}
+
+	void drawOcclusionBoxAtPlayer(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
+		if (!shader || !Model || !sphere) return; // Need shader, stack, model
+
+		shader->bind();
+		Model->pushMatrix();
+		Model->loadIdentity(); // Start from identity for projectile
+
+		Model->translate(player->getPosition() + glm::vec3(0, 1.0f, 0));
+		Model->scale(0.25f);
+
+		setModel(shader, Model);
+		sphere->Draw(shader); // Draw the sphere model
+
+		Model->popMatrix();
+		shader->unbind();
 	}
 
 	void render(float frametime, float animTime) {
@@ -3601,6 +3677,37 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			//particleAlphaTex->bind(particleProg->getUniform("alphaTexture"));
 			particleProg->unbind();
 		}
+		 // these four, walls, ground, library and boss room need to be called before Occlusion Query
+		drawBorderWalls(assimptexProg, Model); // Draw the borders
+
+		drawLibGrnd(assimptexProg, Model); // Draw the library ground
+
+
+		// 2. Draw the Static Library Shelves
+		drawLibrary(assimptexProg, Model, true);
+
+		drawBossRoom(assimptexProg, Model, true); // Draw the boss room
+
+		// disable color writes
+		glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+		// disable depth writes
+		glDepthMask(GL_FALSE);
+
+		// begin occlusion query
+		glBeginQuery(GL_ANY_SAMPLES_PASSED, occlusionQueryID);
+
+		// Draw a small sphere at the player's position
+		drawOcclusionBoxAtPlayer(prog2, Model);
+
+		glEndQuery(GL_ANY_SAMPLES_PASSED);
+
+		GLuint resultofQuery = 0;
+		glGetQueryObjectuiv(occlusionQueryID, GL_QUERY_RESULT, &resultofQuery);
+		visible = resultofQuery;
+
+		// re-enable color writes and depth writes
+		glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+		glDepthMask(GL_TRUE);
 
 		// --- Draw Scene Elements ---
 		// ORDER MATTERS for transparency, but with opaque objects and depth testing, it's less critical.
@@ -3610,9 +3717,6 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		// drawGroundSections(prog2, Model);
 
 		// drawBorder(prog2, Model);
-
-		// 2. Draw the Static Library Shelves
-		drawLibrary(assimptexProg, Model, true);
 
 		// 3. Draw the Door
 		// drawDoor(prog2, Model);
@@ -3640,12 +3744,6 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 		// drawSkybox(assimptexProg, Model); // Draw the skybox last
 
-		drawBorderWalls(assimptexProg, Model); // Draw the borders
-
-		drawLibGrnd(assimptexProg, Model); // Draw the library ground
-
-		drawBossRoom(assimptexProg, Model, true); // Draw the boss room
-
 		//testing drawing lock and key
 		if(unlock){
 			updateLock(prog2, Model);
@@ -3656,6 +3754,9 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		
 		// orbCollectibles.emplace_back(sphere, orbSpawnPos, book.orbScale, book.orbColor);
 		// drawKey(prog2, Model);
+
+
+
 		drawBossEnemy(prog2, Model); // Draw the boss enemy
 
 
@@ -3670,15 +3771,35 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		#endif
 
 		// red flash
-		if (redFlashTimer > 0.0f) {
-			redFlashTimer -= frametime;
+		if (player->getDamageTimer() > 0.0f) {
+			player->setDamageTimer(player->getDamageTimer() - frametime);
 
-			float alpha = redFlashTimer / redFlashDuration;
+			float alpha = player->getDamageTimer() / Config::PLAYER_HIT_DURATION;
 			// cout << "Red flash alpha: " << alpha << endl;
 			// glEnable(GL_DEPTH_TEST);
 
 			drawDamageIndicator(alpha);
+    }
+// =======
+// 		if (player->isAlive()) {
+// 			// red flash
+// 			if (redFlashTimer > 0.0f) {
+// 				redFlashTimer -= frametime;
 
+// 				float alpha = redFlashTimer / redFlashDuration;
+// 				// cout << "Red flash alpha: " << alpha << endl;
+// 				// glEnable(GL_DEPTH_TEST);
+
+// 				drawDamageIndicator(alpha);
+// 			}
+// 		}
+		else if (!player->isAlive() && !debugCamera) {
+			// If player is dead, show red flash
+			movingForward = false;
+			movingBackward = false;
+			movingLeft = false;
+			movingRight = false;
+			drawDamageIndicator(1.0f);
 		}
 
 		/*MINI MAP*/
@@ -3705,7 +3826,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			drawLibGrnd(prog2, Model);
 			drawBossRoom(prog2, Model, false); //boss room not drawing
 
-			
+
 
 			//stripped down player draw
 
@@ -3753,7 +3874,7 @@ int main(int argc, char *argv[])
 		vec3(0, 0, 0),
 		Config::PLAYER_HP_MAX,
 		Config::PLAYER_MOVE_SPEED,
-		application->sphere,
+		application->CatWizard,
 		vec3(1.0f, 1.0f, 1.0f),
 		vec3(0.0f, 0.0f, 0.0f)
 	);
@@ -3783,6 +3904,7 @@ int main(int argc, char *argv[])
 	application->initMapGen();
 	application->initGeom(resourceDir);
 	application->initGround();
+	glGenQueries(1, &application->occlusionQueryID);
 
 	auto lastTime = chrono::high_resolution_clock::now();
 
