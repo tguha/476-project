@@ -2695,9 +2695,9 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 			ShadowProg->bind();
 
 			// Setup shadow mapping
-			glActiveTexture(GL_TEXTURE1);
+			glActiveTexture(GL_TEXTURE10);
 			glBindTexture(GL_TEXTURE_2D, depthMap); // Bind shadow map texture
-			glUniform1i(ShadowProg->getUniform("shadowDepth"), 1); // Set uniform for shadow map
+			glUniform1i(ShadowProg->getUniform("shadowDepth"), 10); // Set uniform for shadow map
 
 			// Set light and camera uniforms
 			glUniform3f(ShadowProg->getUniform("lightDir"), lightDir.x, lightDir.y, lightDir.z); // Set light direction

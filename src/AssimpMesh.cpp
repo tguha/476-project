@@ -92,6 +92,8 @@ void AssimpMesh::Draw(const std::shared_ptr<Program> prog) const {
 
         // Only bind the first texture of each type and it exists
         if (prog->hasUniform(uniformName) && boundTextures.find(texture.type) == boundTextures.end()) {
+            if (textureUnit == 10) ++textureUnit; // Skip shadow map unit
+
             glActiveTexture(GL_TEXTURE0 + textureUnit);
             glBindTexture(GL_TEXTURE_2D, texture.id);
             glUniform1i(prog->getUniform(uniformName), textureUnit);
