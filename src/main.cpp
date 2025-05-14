@@ -937,7 +937,7 @@ public:
 				glUniform1f(curS->getUniform("MatShine"), 10.0f);
 			break;
 			case 5:
-			//yellow
+			//yellow (Madeline' key and lock color)
 				glUniform3f(curS->getUniform("MatAmb"), 0.95f , 0.78f , 0.14f );
 				glUniform3f(curS->getUniform("MatDif"), 0.95f, 0.78f, 0.14f);
 				glUniform3f(curS->getUniform("MatSpec"), 0.3f, 0.3f, 0.3f);
@@ -1660,6 +1660,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			borderWalls.clear();
 			borderWallKeys.clear();
 			orbCollectibles.clear();
+			keyCollectibles.clear();
 			if (!player->isAlive()) {
 				player->resetHitpoints();
 				player->setAlive(); // Reset player status to alive if had died
@@ -1669,6 +1670,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 				bossfightstarted = false;
 				bossfightended = false;
 			}
+
 			bossEnemy->setAlive(); // Reset boss status to alive
 			initMapGen();
 			initEnemies(); // Reinitialize enemies
@@ -1699,7 +1701,12 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 
 		for (const auto* enemy : enemies) {
-			if (!enemy || !enemy->isAlive()) continue; // Skip null or dead enemies
+			if (!enemy || !enemy->isAlive()){
+				keyCollectibles.emplace_back(key, enemy->getPosition(), 0.1f,  vec3(0.9, 0.9, 0.9));
+				drawKey(shader, Model );
+				continue; // Skip null or dead enemies
+			} 
+			
 
 			glm::vec3 enemyPos = enemy->getPosition();
 
@@ -1810,6 +1817,8 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			// Model->popMatrix(); // Pop right eye transform
 
 		} // End loop through enemies
+
+
 
 		shader->unbind();
 	}
@@ -2054,7 +2063,10 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 							Model->rotate(glm::radians(bossGrid[gridPos].transformData.rotation), vec3(0, 1, 0)); // Rotate for left/right walls
 							Model->scale(1.0f);
 							setModel(shader, Model);
-							door->Draw(shader); // Use the door model for the entrance
+							if(unlock == false){
+								door->Draw(shader); // Use the door model for the entrance
+							}
+							
 							Model->popMatrix();
 						} else if (bossGrid[gridPos].borderType == BossRoomGen::BorderType::ENTRANCE_SIDE) {
 							Model->pushMatrix();
@@ -3136,7 +3148,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 		Model->pushMatrix();
 			Model->loadIdentity();
-			Model->translate(vec3(0.0f, 2.5f, 38.5f));  //doorPosition
+			Model->translate(vec3(0.0f, 2.5f, 38.5f)); 
 			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
 			Model->scale(0.1f);
 			SetMaterialMan(shader, 5); //gold
@@ -3160,7 +3172,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		//lower lock
 		Model->pushMatrix();
 			Model->loadIdentity();
-			Model->translate(vec3(0.0f, 0.5f, 38.5f));  //doorPosition
+			Model->translate(vec3(0.0f, 0.5f, 38.5f)); 
 			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
 			Model->scale(0.1f);
 			SetMaterialMan(shader, 5); //gold
@@ -3180,54 +3192,154 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 		shader->bind();
 
+		/* 
+
+		
+		Model->pushMatrix();
+			Model->loadIdentity();
+			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			//Model->scale(0.1f);
+			SetMaterialMan(shader, 5); //gold
+
+			//top lock
+			Model->pushMatrix();
+				Model->translate(vec3(0.0f, 2.5f, 38.5f));  
+				Model->scale(0.1f);
+				setModel(shader, Model);
+				lock->Draw(shader);
+			Model->popMatrix();
+			//top handle
+			Model->pushMatrix();
+				Model->translate(vec3(0.0f, 2.5f, 38.5f)); 
+				Model->scale(0.1f);
+				Model->rotate( 1* glm::radians(15.0) + lTheta , vec3(0.0f, 0.0f, 1.0f)); //max -30?
+				setModel(shader, Model);
+				lockHandle->Draw(shader);
+			Model->popMatrix();
+
+			//middle lock
+			Model->pushMatrix();
+				Model->translate(vec3(0.0f, 1.5f, 38.5f)); 
+				Model->scale(0.1f);
+				setModel(shader, Model);
+				lock->Draw(shader);
+			Model->popMatrix();
+
+			//middle handle
+			Model->pushMatrix();
+				Model->translate(vec3(0.0f, 1.5f, 38.5f)); 
+				Model->scale(0.1f);
+				Model->rotate( 1* glm::radians(15.0) + lTheta , vec3(0.0f, 0.0f, 1.0f)); 
+				setModel(shader, Model);
+				lockHandle->Draw(shader);
+			Model->popMatrix();
+
+			//bottom lock
+			Model->pushMatrix();
+				Model->translate(vec3(0.0f, 0.5f, 38.5f));
+				Model->scale(0.1f);
+				setModel(shader, Model);
+				lock->Draw(shader);
+			Model->popMatrix();
+
+			//bottom handle
+			Model->pushMatrix();
+				Model->translate(vec3(0.0f, 0.5f, 38.5f));
+				Model->scale(0.1f);
+				Model->rotate( 1* glm::radians(15.0) + lTheta , vec3(0.0f, 0.0f, 1.0f)); 
+				setModel(shader, Model);
+				lockHandle->Draw(shader);
+			Model->popMatrix();
+
+
+		Model->popMatrix();
+
+		*/
+
 
 		//top lock
 		Model->pushMatrix();
 			Model->loadIdentity();
 			Model->translate(vec3(0.0f, 2.5f, 38.5f));  //doorPosition
 			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
-
 			Model->scale(0.1f);
 			SetMaterialMan(shader, 5); //gold
 			setModel(shader, Model);
 			lock->Draw(shader);
-			Model->pushMatrix();
-				Model->rotate( -1*lTheta , vec3(0.0f, 0.0f, 1.0f)); //max -30?
-				SetMaterialMan(shader, 6); //gold
-				lockHandle->Draw(shader);
-			Model->popMatrix();
+		Model->popMatrix();
+
+		//top handle
+		Model->pushMatrix();
+			Model->loadIdentity();
+			Model->translate(vec3(0.0f, 2.5f, 38.5f));
+			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			Model->rotate( 1* glm::radians(15.0) + lTheta , vec3(0.0f, 0.0f, 1.0f)); //max -30?
+			Model->scale(0.1f);
+			// Model->rotate(  glm::radians(90.0) , vec3(0.0f, 1.0f, 0.0f)); //max -30
+			SetMaterialMan(shader, 6); //brown
+			setModel(shader, Model);
+			lockHandle->Draw(shader);
 		Model->popMatrix();
 
 		//middle lock
 		Model->pushMatrix();
 			Model->loadIdentity();
-			Model->translate(vec3(0.0f, 1.5f, 38.5f));  //doorPosition
+			Model->translate(vec3(0.0f, 1.5f, 38.5f));  
 			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
 			Model->scale(0.1f);
 			SetMaterialMan(shader, 5); //gold
 			setModel(shader, Model);
 			lock->Draw(shader);
+		Model->popMatrix();
+
+		//midle handle
+		Model->pushMatrix();
+			Model->loadIdentity();
+			Model->translate(vec3(0.0f, 1.5f, 38.5f)); 
+			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			Model->rotate( 1* glm::radians(15.0) + lTheta , vec3(0.0f, 0.0f, 1.0f)); //max -30?
+			Model->scale(0.1f);
+			// Model->rotate(  glm::radians(90.0) , vec3(0.0f, 1.0f, 0.0f)); //max -30
+			SetMaterialMan(shader, 6); //brown
+			setModel(shader, Model);
 			lockHandle->Draw(shader);
 		Model->popMatrix();
 
 		// lower lock
 		Model->pushMatrix();
 			Model->loadIdentity();
-			Model->translate(vec3(0.0f, 0.5f, 38.5f));  //doorPosition
+			Model->translate(vec3(0.0f, 0.5f, 38.5f));  
 			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
 			Model->scale(0.1f);
 			SetMaterialMan(shader, 5); //gold
 			setModel(shader, Model);
 			lock->Draw(shader);
-			Model->pushMatrix();
-				SetMaterialMan(shader, 6); //brown
-				//not rotating
-				// cout << "rotating????: " << lTheta << endl;
-				Model->rotate( glm::radians(lTheta) , vec3(0.0f, 0.0f, 1.0f)); //max -30?
-				setModel(shader, Model);
-				lockHandle->Draw(shader);
-			Model->popMatrix();
+			
 		Model->popMatrix();
+
+		//lower handle
+		Model->pushMatrix();
+			Model->loadIdentity();
+			Model->translate(vec3(0.0f, 0.5f, 38.5f)); 
+			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			Model->rotate( 1* glm::radians(15.0) + lTheta , vec3(0.0f, 0.0f, 1.0f)); //max -30?
+			Model->scale(0.1f);
+			// Model->rotate(  glm::radians(90.0) , vec3(0.0f, 1.0f, 0.0f)); //max -30
+			SetMaterialMan(shader, 6); //brown
+			setModel(shader, Model);
+			lockHandle->Draw(shader);
+		Model->popMatrix();
+
+
+
+
+
+			// if(lTheta < 30.0){
+			// 	lTheta+= 0.1;
+			// lTheta = sin(glfwGetTime());
+			// }
+
+
 
 		// Model->pushMatrix();
 		// 	Model->loadIdentity();
@@ -3243,21 +3355,21 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 		shader->unbind();
 
-		// if(lTheta < 90){
-			// lTheta+= 0.1;
-			lTheta = sin(glfwGetTime());
-		// }
+		
 	}
+
+	//drawOrb, draw book , updateBooks, updateOrb, shootSpell
+
+	//glm::vec3 enemyPos = enemy->getPosition();
+	//enemy->isAlive() == false
 
 	/* keyCollect */
 	void drawKey(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model){
 
-		/*
-
 		// --- Collision Check Logic ---
 		for (auto& key : keyCollectibles) {
 			// Perform collision check ONLY if not collected AND in the IDLE state
-			if (!key.collected && key.state == KeyState::IDLE && // <<<--- ADD STATE CHECK
+			if (!key.collected && key.state == OrbState::IDLE && // <<<--- ADD STATE CHECK
 				checkAABBCollision(manAABBmin, manAABBmax, key.AABBmin, key.AABBmax)) {
 				key.collected = true;
 				// key.state = OrbState::COLLECTED; // Optionally set state
@@ -3265,15 +3377,17 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 				std::cout << "Collected a key! (" << keysCollectedCount << ")\n";
 			}
 		}
+
+		
 		//need models
 		shader->bind();
 
-				int collectedKeyDrawIndex = 0;
+		int collectedKeyDrawIndex = 0;
 
 		for (auto& key : keyCollectibles) {
 
 			glm::vec3 currentDrawPosition;
-			float currentDrawScale = key.scale; // Use base scale
+			//float currentDrawScale = key.scale; // Use base scale
 
 			if (key.collected) {
 				// Calculate position behind the player (same logic as before)
@@ -3320,7 +3434,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		Model->popMatrix();
 		shader->unbind();
 
-		*/
+		
 		shader->bind();
 
 		// --- Set up transformations ---
@@ -3344,14 +3458,14 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		shader->unbind();
 	}
 
-	// 	void updateKeys(float currentTime) {
-	// 	for (auto& orb : orbCollectibles) {
-	// 		// Update levitation only if not already collected
-	// 		if (!orb.collected) {
-	// 			orb.updateLevitation(currentTime);
-	// 		}
-	// 	}
-	// }
+	void updateKeys(float currentTime) {
+		for (auto& key : keyCollectibles) {
+			// Update levitation only if not already collected
+			if (!key.collected) {
+				key.updateLevitation(currentTime);
+			}
+		}
+	}
 
 	void drawBossHealthBar(glm::mat4 viewMatrix, glm::mat4 projMatrix) {
 		float healthBarWidth = 200.0f;
@@ -3456,6 +3570,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		updateCameraVectors();
 		updateBooks(frametime);
 		updateOrbs((float)glfwGetTime());
+		//updateKeys((float)glfwGetTime());
 		updateEnemies(frametime);
 		updateProjectiles(frametime);
 		particleSystem->update(frametime); // Update particles
@@ -3636,8 +3751,12 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		else{
 			drawLock(prog2, Model);
 		}
+		
+		// orbCollectibles.emplace_back(sphere, orbSpawnPos, book.orbScale, book.orbColor);
+		// drawKey(prog2, Model);
 
-		drawKey(prog2, Model);
+
+
 		drawBossEnemy(prog2, Model); // Draw the boss enemy
 
 
@@ -3700,7 +3819,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			drawLibrary(prog2, Model, false);
 			drawBossRoom(prog2, Model, false);
 			drawBossEnemy(prog2, Model);
-			drawOrbs(prog2, Model);
+			// drawOrbs(prog2, Model);
 			drawMiniPlayer(prog2, Model);
 			drawBorderWalls(prog2, Model);
 			// SetMaterialMan(prog2,6 );
