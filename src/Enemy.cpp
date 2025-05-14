@@ -21,7 +21,7 @@ void Enemy::moveTowardsPlayer(const glm::vec3& playerPosition, float deltaTime) 
     direction.y = 0; // Keep the enemy on the same Y level
     direction = glm::normalize(direction); // Normalize the direction vector
     this->move(direction, deltaTime);
-    this->setRotY(atan2(direction.x, direction.z) * 180.0f / M_PI); // Rotate towards the player
+    this->setRotY(atan2(direction.x, direction.z) * 180.0f / 3.14); // Rotate towards the player
 }
 
 void Enemy::attack(float damage, float deltaTime) {

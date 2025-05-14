@@ -30,6 +30,8 @@ class Animation
         inline float GetDuration() { return m_Duration; }
         inline const AssimpNodeData& GetRootNode() { return m_RootNode; }
         inline const std::map<std::string, BoneInfo>& GetBoneIDMap() { return m_BoneInfoMap; }
+        glm::mat4 GetGlobalInverseTransform() { return m_GlobalInverseTransform; }
+        
 
         // void setAnimation(int animIndex, AssimpModel* model);
     private:
@@ -40,6 +42,8 @@ class Animation
         std::vector<Bone*> m_Bones;
         AssimpNodeData m_RootNode;
         std::map<std::string, BoneInfo> m_BoneInfoMap;
+        glm::mat4 m_GlobalInverseTransform;
+        const bool verbose_debug = true;
 
         // struct AnimationData
         // {

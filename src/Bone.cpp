@@ -155,3 +155,4 @@ glm::mat4 Bone::InterpolateScaling(float animationTime) {
 // midwayLength = animationTime - lastTimeStamp
 // framesDiff = nextTimeStamp - lastTimeStamp
 // scaleFactor = midwayLength / framesDiff
+
