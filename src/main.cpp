@@ -697,7 +697,8 @@ public:
 		updateCameraVectors();
 
 		borderWallTex = make_shared<Texture>();
-		borderWallTex->setFilename(resourceDirectory + "/sky_sphere/sky_sphere.fbm/infinite_lib2.png");
+		// borderWallTex->setFilename(resourceDirectory + "/sky_sphere/sky_sphere.fbm/infinite_lib2.png");
+		borderWallTex->setFilename(resourceDirectory + "/Wall/textures/mossCastle.png");
 		borderWallTex->init();
 		borderWallTex->setUnit(0);
 		borderWallTex->setWrapModes(GL_REPEAT, GL_REPEAT);
@@ -1251,11 +1252,25 @@ public:
 			0, 0, 1
 		};
 
+		// float WallTex[] = {
+		// 	0, 0,
+		// 	1, 0,
+		// 	1, 1,
+		// 	0, 1
+		// };
+
+		// Repeating wall texture
+		float texRepeatPerUnit = 0.2f;
+
+		// Compute number of times to repeat the texture
+		float texRepeatX = length * texRepeatPerUnit;
+		float texRepeatY = height * texRepeatPerUnit;
+
 		float WallTex[] = {
-			0, 0,
-			1, 0,
-			1, 1,
-			0, 1
+			0.0f,         0.0f,
+			texRepeatX,   0.0f,
+			texRepeatX,   texRepeatY,
+			0.0f,         texRepeatY
 		};
 
 		unsigned short idx[] = { 0, 1, 2, 0, 2, 3 };
