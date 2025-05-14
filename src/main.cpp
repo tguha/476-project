@@ -1320,7 +1320,7 @@ public:
 	void initEnemies() {
 		if (enemies.size() == 0) {
 			std::vector<vec3> enemySpawnPositions = library->getEnemySpawnPositions();
-			
+
 			for (auto e = enemies.begin(); e != enemies.end(); ++e) {
 				enemies.erase(e);
 			}
@@ -1705,8 +1705,8 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 				keyCollectibles.emplace_back(key, enemy->getPosition(), 0.1f,  vec3(0.9, 0.9, 0.9));
 				drawKey(shader, Model );
 				continue; // Skip null or dead enemies
-			} 
-			
+			}
+
 
 			glm::vec3 enemyPos = enemy->getPosition();
 
@@ -2066,7 +2066,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 							if(unlock == false){
 								door->Draw(shader); // Use the door model for the entrance
 							}
-							
+
 							Model->popMatrix();
 						} else if (bossGrid[gridPos].borderType == BossRoomGen::BorderType::ENTRANCE_SIDE) {
 							Model->pushMatrix();
@@ -3148,7 +3148,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 		Model->pushMatrix();
 			Model->loadIdentity();
-			Model->translate(vec3(0.0f, 2.5f, 38.5f)); 
+			Model->translate(vec3(0.0f, 2.5f, 38.5f));
 			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
 			Model->scale(0.1f);
 			SetMaterialMan(shader, 5); //gold
@@ -3172,7 +3172,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		//lower lock
 		Model->pushMatrix();
 			Model->loadIdentity();
-			Model->translate(vec3(0.0f, 0.5f, 38.5f)); 
+			Model->translate(vec3(0.0f, 0.5f, 38.5f));
 			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
 			Model->scale(0.1f);
 			SetMaterialMan(shader, 5); //gold
@@ -3192,9 +3192,9 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 		shader->bind();
 
-		/* 
+		/*
 
-		
+
 		Model->pushMatrix();
 			Model->loadIdentity();
 			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
@@ -3203,14 +3203,14 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 			//top lock
 			Model->pushMatrix();
-				Model->translate(vec3(0.0f, 2.5f, 38.5f));  
+				Model->translate(vec3(0.0f, 2.5f, 38.5f));
 				Model->scale(0.1f);
 				setModel(shader, Model);
 				lock->Draw(shader);
 			Model->popMatrix();
 			//top handle
 			Model->pushMatrix();
-				Model->translate(vec3(0.0f, 2.5f, 38.5f)); 
+				Model->translate(vec3(0.0f, 2.5f, 38.5f));
 				Model->scale(0.1f);
 				Model->rotate( 1* glm::radians(15.0) + lTheta , vec3(0.0f, 0.0f, 1.0f)); //max -30?
 				setModel(shader, Model);
@@ -3219,7 +3219,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 			//middle lock
 			Model->pushMatrix();
-				Model->translate(vec3(0.0f, 1.5f, 38.5f)); 
+				Model->translate(vec3(0.0f, 1.5f, 38.5f));
 				Model->scale(0.1f);
 				setModel(shader, Model);
 				lock->Draw(shader);
@@ -3227,9 +3227,9 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 			//middle handle
 			Model->pushMatrix();
-				Model->translate(vec3(0.0f, 1.5f, 38.5f)); 
+				Model->translate(vec3(0.0f, 1.5f, 38.5f));
 				Model->scale(0.1f);
-				Model->rotate( 1* glm::radians(15.0) + lTheta , vec3(0.0f, 0.0f, 1.0f)); 
+				Model->rotate( 1* glm::radians(15.0) + lTheta , vec3(0.0f, 0.0f, 1.0f));
 				setModel(shader, Model);
 				lockHandle->Draw(shader);
 			Model->popMatrix();
@@ -3246,7 +3246,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			Model->pushMatrix();
 				Model->translate(vec3(0.0f, 0.5f, 38.5f));
 				Model->scale(0.1f);
-				Model->rotate( 1* glm::radians(15.0) + lTheta , vec3(0.0f, 0.0f, 1.0f)); 
+				Model->rotate( 1* glm::radians(15.0) + lTheta , vec3(0.0f, 0.0f, 1.0f));
 				setModel(shader, Model);
 				lockHandle->Draw(shader);
 			Model->popMatrix();
@@ -3284,7 +3284,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		//middle lock
 		Model->pushMatrix();
 			Model->loadIdentity();
-			Model->translate(vec3(0.0f, 1.5f, 38.5f));  
+			Model->translate(vec3(0.0f, 1.5f, 38.5f));
 			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
 			Model->scale(0.1f);
 			SetMaterialMan(shader, 5); //gold
@@ -3295,7 +3295,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		//midle handle
 		Model->pushMatrix();
 			Model->loadIdentity();
-			Model->translate(vec3(0.0f, 1.5f, 38.5f)); 
+			Model->translate(vec3(0.0f, 1.5f, 38.5f));
 			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
 			Model->rotate( 1* glm::radians(15.0) + lTheta , vec3(0.0f, 0.0f, 1.0f)); //max -30?
 			Model->scale(0.1f);
@@ -3308,19 +3308,19 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		// lower lock
 		Model->pushMatrix();
 			Model->loadIdentity();
-			Model->translate(vec3(0.0f, 0.5f, 38.5f));  
+			Model->translate(vec3(0.0f, 0.5f, 38.5f));
 			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
 			Model->scale(0.1f);
 			SetMaterialMan(shader, 5); //gold
 			setModel(shader, Model);
 			lock->Draw(shader);
-			
+
 		Model->popMatrix();
 
 		//lower handle
 		Model->pushMatrix();
 			Model->loadIdentity();
-			Model->translate(vec3(0.0f, 0.5f, 38.5f)); 
+			Model->translate(vec3(0.0f, 0.5f, 38.5f));
 			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
 			Model->rotate( 1* glm::radians(15.0) + lTheta , vec3(0.0f, 0.0f, 1.0f)); //max -30?
 			Model->scale(0.1f);
@@ -3355,7 +3355,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 		shader->unbind();
 
-		
+
 	}
 
 	//drawOrb, draw book , updateBooks, updateOrb, shootSpell
@@ -3378,7 +3378,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			}
 		}
 
-		
+
 		//need models
 		shader->bind();
 
@@ -3434,7 +3434,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		Model->popMatrix();
 		shader->unbind();
 
-		
+
 		shader->bind();
 
 		// --- Set up transformations ---
@@ -3677,6 +3677,10 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			//particleAlphaTex->bind(particleProg->getUniform("alphaTexture"));
 			particleProg->unbind();
 		}
+		// --- Draw Scene Elements ---
+		// ORDER MATTERS for transparency, but with opaque objects and depth testing, it's less critical.
+		// Drawing grounds first is logical.
+
 		 // these four, walls, ground, library and boss room need to be called before Occlusion Query
 		drawBorderWalls(assimptexProg, Model); // Draw the borders
 
@@ -3709,17 +3713,8 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 		glDepthMask(GL_TRUE);
 
-		// --- Draw Scene Elements ---
-		// ORDER MATTERS for transparency, but with opaque objects and depth testing, it's less critical.
-		// Drawing grounds first is logical.
 
-		// 1. Draw Ground, Path
-		// drawGroundSections(prog2, Model);
-
-		// drawBorder(prog2, Model);
-
-		// 3. Draw the Door
-		// drawDoor(prog2, Model);
+		drawPlayer(assimptexProg, Model, animTime);
 
 		// 4. Draw Falling/Interactable Books
 		drawBooks(prog2, Model);
@@ -3734,8 +3729,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 		drawBossProjectiles(prog2, Model);
 
-		// 7. Draw Player (often drawn last or near last)
-		drawPlayer(assimptexProg, Model, animTime);
+
 
 		/*
 		//Test drawing cat model
@@ -3751,7 +3745,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		else{
 			drawLock(prog2, Model);
 		}
-		
+
 		// orbCollectibles.emplace_back(sphere, orbSpawnPos, book.orbScale, book.orbColor);
 		// drawKey(prog2, Model);
 
@@ -3814,7 +3808,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			// drawBorder(prog2, Model);
 
 			// drawDoor(prog2, Model);
-			drawBooks(prog2, Model);
+			// drawBooks(prog2, Model);
 			// drawEnemies(prog2, Model);
 			drawLibrary(prog2, Model, false);
 			drawBossRoom(prog2, Model, false);
