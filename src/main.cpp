@@ -861,6 +861,8 @@ public:
 
 		//key
 		key = new AssimpModel(resourceDirectory + "/Key_and_Lock/key.obj");
+		Collectible key1 = Collectible(key, vec3(0.0, 2.0, 0.0), 0.1f,  vec3(0.9, 0.9, 0.9));
+		keyCollectibles.push_back(key1);
 
 		//lock
 		lock = new AssimpModel(resourceDirectory + "/Key_and_Lock/lockCopy.obj");
@@ -1702,8 +1704,8 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 		for (const auto* enemy : enemies) {
 			if (!enemy || !enemy->isAlive()){
-				keyCollectibles.emplace_back(key, enemy->getPosition(), 0.1f,  vec3(0.9, 0.9, 0.9));
-				drawKey(shader, Model );
+				// keyCollectibles.emplace_back(key, enemy->getPosition(), 0.1f,  vec3(0.9, 0.9, 0.9));
+				// drawKey(shader, Model );
 				continue; // Skip null or dead enemies
 			} 
 			
@@ -3413,49 +3415,49 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 			// --- Set up transformations ---
 			Model->pushMatrix();
-			Model->loadIdentity();
-			Model->translate(vec3(0.0f, 0.5f, 0.5f)); //last enemy pos
-			Model->scale(2.0f);
-			Model->rotate(glm::radians(90.0f), vec3(1.0f, 0.0f, 0.0f));
-			Model->rotate(glm::radians(-90.0f), vec3(0.0f, 1.0f, 0.0f));
+				Model->loadIdentity();
+				Model->translate(vec3(0.0f, 0.5f, 0.5f)); //last enemy pos
+				Model->scale(2.0f);
+				Model->rotate(glm::radians(90.0f), vec3(1.0f, 0.0f, 0.0f));
+				Model->rotate(glm::radians(-90.0f), vec3(0.0f, 1.0f, 0.0f));
 
 
-			// --- Set Material & Draw ---
-			// (Material setting code remains the same)
-			SetMaterialMan(shader, 5); //gold
+				// --- Set Material & Draw ---
+				// (Material setting code remains the same)
+				SetMaterialMan(shader, 5); //gold
 
-			setModel(shader, Model);
-			//orb.model->Draw(simpleShader);
-			key.model->Draw(shader);
+				setModel(shader, Model);
+				//orb.model->Draw(simpleShader);
+				key.model->Draw(shader);
 
 			Model->popMatrix();
 		} // End drawing loop
 
-		Model->popMatrix();
+		//Model->popMatrix();
 		shader->unbind();
 
 		
-		shader->bind();
+		// shader->bind();
 
-		// --- Set up transformations ---
-		Model->pushMatrix();
-		Model->loadIdentity();
-		Model->translate(vec3(0.0f, 0.5f, 0.5f)); //last enemy pos
-		Model->scale(2.0f);
-		Model->rotate(glm::radians(90.0f), vec3(1.0f, 0.0f, 0.0f));
-		Model->rotate(glm::radians(-90.0f), vec3(0.0f, 1.0f, 0.0f));
+		// // --- Set up transformations ---
+		// Model->pushMatrix();
+		// Model->loadIdentity();
+		// Model->translate(vec3(0.0f, 0.5f, 0.5f)); //last enemy pos
+		// Model->scale(2.0f);
+		// Model->rotate(glm::radians(90.0f), vec3(1.0f, 0.0f, 0.0f));
+		// Model->rotate(glm::radians(-90.0f), vec3(0.0f, 1.0f, 0.0f));
 
 
-		// --- Set Material & Draw ---
-		// (Material setting code remains the same)
-		SetMaterialMan(shader, 5); //gold
+		// // --- Set Material & Draw ---
+		// // (Material setting code remains the same)
+		// SetMaterialMan(shader, 5); //gold
 
-		setModel(shader, Model);
-		//orb.model->Draw(simpleShader);
-		key->Draw(shader);
+		// setModel(shader, Model);
+		// //orb.model->Draw(simpleShader);
+		// key->Draw(shader);
 
-		Model->popMatrix();
-		shader->unbind();
+		// Model->popMatrix();
+		// shader->unbind();
 	}
 
 	void updateKeys(float currentTime) {
@@ -3747,13 +3749,17 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		//testing drawing lock and key
 		if(unlock){
 			updateLock(prog2, Model);
+			// drawKey(prog2, Model);
 		}
 		else{
 			drawLock(prog2, Model);
 		}
 		
-		// orbCollectibles.emplace_back(sphere, orbSpawnPos, book.orbScale, book.orbColor);
-		// drawKey(prog2, Model);
+
+		
+		//keyCollectibles.emplace_back(key, vec3(0.0, 2.0, 0.0), 0.1f,  vec3(0.9, 0.9, 0.9));
+
+		drawKey(prog2, Model);
 
 
 
