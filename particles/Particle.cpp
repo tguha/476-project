@@ -122,7 +122,7 @@ void Particle::launch(float current_t, const glm::vec3& start_pos, const glm::ve
     this->scale = particle_scale;   // Set scale
     this->color = particle_color;   // Set color
 
-    // Default other properties if necessary, or ensure they don't interfere
+    
     this->charge = 0.0f; // Fireballs are not charged
     this->m = 0.1f;      // Lighter mass for particles
     this->d = 0.01f;     // Minimal damping
