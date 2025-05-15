@@ -1,4 +1,5 @@
 #include "Bone.h"
+#include <iostream>
 
 #define GLM_ENABLE_EXPERIMENTAL
 
@@ -137,6 +138,7 @@ glm::mat4 Bone::InterpolateRotation(float animationTime) {
     float scaleFactor = GetScaleFactor(m_Rotations[p0Index].timeStamp, m_Rotations[p1Index].timeStamp, animationTime);
     glm::quat finalRotation = glm::slerp(m_Rotations[p0Index].orientation, m_Rotations[p1Index].orientation, scaleFactor);
     finalRotation = glm::normalize(finalRotation);
+
     return glm::toMat4(finalRotation);
 }
 

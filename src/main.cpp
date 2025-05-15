@@ -708,10 +708,12 @@ public:
  		string errStr;
 
 		// load the walking character model
-		stickfigure_running = new AssimpModel(resourceDirectory + "/CatWizard/CatWizardAnimationFixed.fbx");
+		// load the walking character moded
+		stickfigure_running = new AssimpModel(resourceDirectory + "/CatWizard/CatWizardAnimation.fbx");
 		stickfigure_running->assignTexture("texture_diffuse1", resourceDirectory + "/CatWizard/textures/ImphenziaPalette02-Albedo.png");
 		//PROBLEM GETTING ANIMATION FROM "Fixed" FBX
-		stickfigure_anim = new Animation(resourceDirectory + "/CatWizard/CatWizardAnimationFixed.fbx", stickfigure_running, 0);
+		stickfigure_anim = new Animation(resourceDirectory + "/CatWizard/CatWizardAnimation.fbx", stickfigure_running, 0);
+		//stickfigure_idle = new Animation(resourceDirectory + "/Vanguard/Vanguard.fbx", stickfigure_running, 1);
 		//stickfigure_idle = new Animation(resourceDirectory + "/Vanguard/Vanguard.fbx", stickfigure_running, 1);
 
 		//TEST Load the cat
@@ -1297,14 +1299,6 @@ public:
 		
 		vector<glm::mat4> transforms = catwizard_animator->GetFinalBoneMatrices(); 
 
-		for (int i = 0; i < 5; ++i) {
-			std::cout << "FinalBoneMatrix[" << i << "]:\n";
-			const glm::mat4& m = transforms[i];
-			std::cout << m[0][0] << ", " << m[0][1] << ", " << m[0][2] << ", " << m[0][3] << "\n"
-				<< m[1][0] << ", " << m[1][1] << ", " << m[1][2] << ", " << m[1][3] << "\n"
-				<< m[2][0] << ", " << m[2][1] << ", " << m[2][2] << ", " << m[2][3] << "\n"
-				<< m[3][0] << ", " << m[3][1] << ", " << m[3][2] << ", " << m[3][3] << "\n\n";
-		}
 
 		int numBones = std::min((int)transforms.size(), Config::MAX_BONES);
 		for (int i = 0; i < numBones; ++i) {
@@ -1318,9 +1312,9 @@ public:
 		// Model->translate(characterMovement); // Use final player position
 		Model->translate(player->getPosition());
 		// *** USE CAMERA ROTATION FOR MODEL ***
-		Model->rotate(glm::radians(-90.0f), vec3(1.0f, 0.0f, 0.0f));
-		Model->rotate(player->getRotY() + 3.14f, vec3(0, 0, 1)); // <<-- FIXED ROTATION
-		//Model->scale(0.01f);
+		Model->rotate(glm::radians(90.0f), vec3(1.0f, 0.0f, 0.0f));
+		Model->rotate(( - 1.0f * player->getRotY()), vec3(0, 0, 1)); // <<-- FIXED ROTATION
+		Model->scale(0.01f);
 
 		// Update VISUAL bounding box (can be different from collision box if needed)
 		// Using the same AABB calculation logic as before for consistency

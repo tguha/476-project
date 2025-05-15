@@ -22,7 +22,10 @@ void Animator::UpdateAnimation(float dt)
     }
     m_CurrentTime += dt * tickRate; // Update current time based on delta time and ticks per second
     m_CurrentTime = fmod(m_CurrentTime, m_CurrentAnimation->GetDuration()); // Loop the animation
-    CalculateBoneTransform(&m_CurrentAnimation->GetRootNode(), m_CurrentAnimation->GetGlobalInverseTransform());
+
+    glm::mat4 flipY = glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(0, 1, 0));
+    CalculateBoneTransform(&m_CurrentAnimation->GetRootNode(), flipY * m_CurrentAnimation->GetGlobalInverseTransform());
+    //CalculateBoneTransform(&m_CurrentAnimation->GetRootNode(), m_CurrentAnimation->GetGlobalInverseTransform());
     
 }
 

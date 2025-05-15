@@ -18,7 +18,7 @@ Animation::Animation(const std::string& animationPath, AssimpModel* model, int a
     m_GlobalInverseTransform = AssimpGLMHelpers::ConvertMatrixToGLMFormat(globalTransformation);
     ReadHierarchyData(m_RootNode, scene->mRootNode);
     ReadMissingBones(animation, *model);
-    
+  
     if (verbose_debug) {
         std::cout << "Root transform (bind pose):\n";
         for (int i = 0; i < 4; ++i) {
