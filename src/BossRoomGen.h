@@ -71,6 +71,7 @@ class BossRoomGen {
         // Cell getCell(const glm::ivec2& pos) const { return grid.getCell(pos); }
         std::mt19937& getSeedGen() { return seedGen; }
         const glm::vec3& getWorldOrigin() const { return BossroomworldOrigin; } // Get the world origin for the grid
+        bool isInsideBossArea(const glm::ivec2& gridPos);
 
         int mapXtoGridX(float x) const {
             // float worldXwidth = size.x;
@@ -114,6 +115,9 @@ class BossRoomGen {
         std::vector<glm::vec2> avoidPoints;
         glm::ivec2 gridSize;
         glm::vec3 BossroomworldOrigin = glm::vec3(0, 0, 0); // World origin for the grid
+        float entranceWidth;
+        float radiusX;
+        float radiusY;
 
 
         std::map<ClusterType, float> objMinSpacing = {

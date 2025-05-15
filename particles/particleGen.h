@@ -23,7 +23,8 @@ public:
       // Particle positions in camera space
       vec4 x0w = C * vec4(x0.x, x0.y, x0.z, 1.0f);
       vec4 x1w = C * vec4(x1.x, x1.y, x1.z, 1.0f);
-      return x0w.z < x1w.z;
+      // Sort by camera space Z (farther particles first)
+      return x0w.z > x1w.z;
    }
   
    mat4 C; // current camera matrix

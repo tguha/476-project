@@ -36,7 +36,11 @@ void BossRoomGen::placeBorder() {
     float radiusX = size.x * 0.35f; // Ellipse width
     float radiusY = size.y * 0.35f; // Ellipse height
 
+    this->radiusX = radiusX; // Store the radius for later use
+    this->radiusY = radiusY; // Store the radius for later use
+
     float entranceWidth = 3.0f; // Width of the opening at the bottom (in grid units)
+    this->entranceWidth = entranceWidth; // Store the entrance width for later use
 
     for (int y = 0; y < size.y; ++y) {
         for (int x = 0; x < size.x; ++x) {
@@ -197,3 +201,16 @@ void BossRoomGen::placeExit() {
     }
     std::cout << "[BossRoomGen] Exit placed.\n";
 }
+
+bool BossRoomGen::isInsideBossArea(const glm::ivec2& gridPos) {
+    // Check if the position is inside the boss room area
+    glm::vec2 pos = glm::vec2(gridPos.x, gridPos.y);
+    glm::vec2 center = glm::vec2(gridSize.x / 2.0f, gridSize.y / 2.0f);
+
+    glm::vec2 delta = pos - center;
+    float ellipseValue = (delta.x * delta.x) / (radiusX * radiusX) +
+                         (delta.y * delta.y) / (radiusY * radiusY);
+    return (ellipseValue <= 0.85f); // Inside the ellipse
+}
+
+

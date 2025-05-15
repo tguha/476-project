@@ -43,6 +43,8 @@ enum class Material {
     wood,
     mini_map,
     defaultMaterial,
+    blue_body,
+    gold,
 };
 
 // --- Structs ---
@@ -65,32 +67,49 @@ struct SpellProjectile {
 };
 
 struct WallObject {
-    float length;
-    vec3 position;
-    vec3 direction;
-    float height;
-    float width;
-    GLuint WallVAID;
-    GLuint BuffObj, NorBuffObj, IndxBuffObj;
-    GLuint TexBuffObj;
-    int GiboLen;
-
-    shared_ptr<Texture> texture; // Texture for the wall
-    int id; // ID for the wall object
+	float length;
+	vec3 position;
+	vec3 direction;
+	float height;
+	float width;
+	GLuint WallVAID;
+	GLuint BuffObj, NorBuffObj, IndxBuffObj;
+	GLuint TexBuffObj;
+	int GiboLen;
+	shared_ptr<Texture> texture; // Texture for the wall
 };
 
 struct LibGrndObject {
-    float length;
-    float width;
-    float height;
-    vec3 center_pos;
-    GLuint VAO;
-    GLuint BuffObj, NorBuffObj, IndxBuffObj;
-    GLuint TexBuffObj;
-    int GiboLen;
+	float length;
+	float width;
+	float height;
+	vec3 center_pos;
+	GLuint VAO;
+	GLuint BuffObj, NorBuffObj, IndxBuffObj;
+	GLuint TexBuffObj;
+	int GiboLen;
+	shared_ptr<Texture> texture; // Texture for the library
+};
 
-    shared_ptr<Texture> texture; // Texture for the library
-    int id; // ID for the library ground object
+struct WallObjKey {
+	glm::vec3 position;
+	glm::vec3 direction;
+	float height;
+	bool operator<(const WallObjKey& other) const {
+		return std::tie(position.x, position.y, position.z, direction.x, direction.y, direction.z, height) <
+			std::tie(other.position.x, other.position.y, other.position.z, other.direction.x, other.direction.y, other.direction.z, other.height);
+	}
+};
+
+	
+
+struct LibGrndObjKey {
+	glm::vec3 center_pos;
+	float height;
+	bool operator<(const LibGrndObjKey& other) const {
+		return std::tie(center_pos.x, center_pos.y, center_pos.z, height) <
+			std::tie(other.center_pos.x, other.center_pos.y, other.center_pos.z, other.height);
+	}
 };
 
 // --- Classes ---
@@ -195,6 +214,7 @@ public:
     bool collected;
     Material material;
     OrbState state = OrbState::SPAWNING;
+    // KeyState key_state = KeyState::SPAWNING;
     glm::vec3 spawnPosition;
     glm::vec3 idlePosition;
     float levitationHeight = 0.6f;
@@ -203,7 +223,7 @@ public:
 
     Collectible(AssimpModel* mdl, const glm::vec3& spawnPos, float scl, Material orbMat)
         : model(mdl), position(spawnPos), scale(scl), collected(false), material(orbMat),
-        state(OrbState::LEVITATING), spawnPosition(spawnPos)
+        state(OrbState::LEVITATING), spawnPosition(spawnPos) //KeyState::LEVITATING  key_state(KeyState::LEVITATING),
     {
         idlePosition = spawnPosition + glm::vec3(0.0f, levitationHeight, 0.0f);
         levitationStartTime = glfwGetTime();
@@ -219,14 +239,14 @@ public:
     }
 
     void updateLevitation(float currentTime) {
-        if (state == OrbState::LEVITATING) {
+        if (state == OrbState::LEVITATING) { //KeyState::LEVITATING
             float elapsedTime = currentTime - levitationStartTime;
             float t = glm::clamp(elapsedTime / levitationDuration, 0.0f, 1.0f);
             t = t * t * (3.0f - 2.0f * t); // Smoothstep
             position = glm::mix(spawnPosition, idlePosition, t);
             updateAABB();
             if (t >= 1.0f) {
-                state = OrbState::IDLE;
+                state = OrbState::IDLE; ////KeyState::IDLE
                 position = idlePosition;
                 updateAABB();
             }
