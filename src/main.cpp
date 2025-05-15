@@ -1,14 +1,16 @@
-//======================================
-// The start of our wizarding adventure
-//======================================
+/*
+ * The start of our wizarding adventure
+ */
 
 #include <iostream>
 #include <glad/glad.h>
 #include <chrono>
 #include <thread>
+
+// #include <windows.h>
+// #include <mmsystem.h>
 #include <set>
 #pragma comment(lib, "winmm.lib")
-
 #include "GLSL.h"
 #include "Program.h"
 #include "MatrixStack.h"
@@ -27,53 +29,46 @@
 #include "BossRoomGen.h"
 #include "FrustumCulling.h"
 #include "BossEnemy.h"
+
 #include "Config.h"
 #include "GameObjectTypes.h"
+
 #include "../particles/particleGen.h"
 #include "TextureManager.h"
 
+// value_ptr for glm
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtx/quaternion.hpp>
-#include <glm/gtx/vector_angle.hpp>
-#include <algorithm>
-#include <limits>
+#include <glm/gtx/quaternion.hpp> // For glm::quat and glm::rotation
+#include <glm/gtx/vector_angle.hpp> // Also sometimes needed for glm::rotation
+#include <algorithm>              // For std::remove_if
+#include <limits>                 // For std::numeric_limits (used in updateBoundingBox)
 
 using namespace std;
 using namespace glm;
 
+#define SHOW_HEALTHBAR 1 // 1 = show health bar, 0 = hide health bar
+#define ENEMY_MOVEMENT 1 // 1 = enable enemy movement, 0 = disable enemy movement
+
 class Application : public EventCallbacks {
 public:
-	// Setup window and context
+	std::shared_ptr<Player> player;
 	WindowManager * windowManager = nullptr;
+
 	bool windowMaximized = false;
 	int window_width = Config::DEFAULT_WINDOW_WIDTH;
 	int window_height = Config::DEFAULT_WINDOW_HEIGHT;
 
 	// Our shader programs
-	shared_ptr<Program> particleProg;
-	shared_ptr<Program> DepthProg;
-	shared_ptr<Program> DepthProgDebug;
-	shared_ptr<Program> ShadowProg;
-	shared_ptr<Program> DebugProg;
-	shared_ptr<Program> hudProg;
-	shared_ptr<Program> prog2_enemy;
-	shared_ptr<Program> redFlashProg;
-
-	// Shadows
-	GLuint depthMapFBO;
-	const GLuint S_WIDTH = 2048, S_HEIGHT = 2048;
-	GLuint depthMap;
-
-	// PLayer
-	std::shared_ptr<Player> player;
+	std::shared_ptr<Program> texProg, hudProg, prog2, prog2_enemy, assimptexProg, redFlashProg;
+	std::shared_ptr<Program> particleProg;
 
 	// ground data - Reused for all flat ground planes
-	GLuint GrndBuffObj, GrndNorBuffObj, GrndTexBuffObj, GIndxBuffObj;
-	int g_GiboLen;
-	// Geometry for texture render
-	GLuint quad_VertexArrayID;
-	GLuint quad_vertexbuffer;
+	GLuint GrndBuffObj = 0, GrndNorBuffObj = 0, GIndxBuffObj = 0; // Initialize to 0
+	int g_GiboLen = 0;
+	GLuint GroundVertexArrayID = 0; // Initialize to 0
+	float groundSize = 20.0f; // Half-size of the main library ground square
+	float groundY = Config::GROUND_HEIGHT;     // Y level for all ground planes
 
 	float exposure = 1.0f;
 	float saturation = 1.0f;
@@ -85,21 +80,25 @@ public:
 	shared_ptr<Texture> particleAlphaTex;
 
 	vector<WallObject> borderWalls;
-	vector<LibGrndObject> libraryGrounds;
-	
+	shared_ptr<Texture> borderWallTex;
+	// std::unordered_set<int> borderWallIDs; // Set to track unique IDs
 	std::set<WallObjKey> borderWallKeys; // Set to track unique keys
+
+	vector<LibGrndObject> libraryGrounds;
+	shared_ptr<Texture> libraryGroundTex;
+	// std::unordered_set<int> libraryGroundIDs; // Set to track unique IDs
 	std::set<LibGrndObjKey> libraryGroundKeys; // Set to track unique keys
-	
-	//std::unordered_set<int> borderWallIDs; // Set to track unique IDs
-	//std::unordered_set<int> libraryGroundIDs; // Set to track unique IDs
+
+	shared_ptr<Texture> carpetTex;
+	shared_ptr<Texture> particleAlphaTex; // Add particle alpha texture
 
 	// character bounding box
 	glm::vec3 manAABBmin, manAABBmax;
 
 	// Scene layout parameters
-	vec3 libraryCenter = vec3(0.0f, Config::GROUND_HEIGHT, 0.0f);
-	vec3 bossAreaCenter = vec3(0.0f, Config::GROUND_HEIGHT, 60.0f); // Further away
-	vec3 doorPosition = vec3(0.0f, 1.5f, Config::GROUND_SIZE); // Center of door at library edge
+	vec3 libraryCenter = vec3(0.0f, groundY, 0.0f);
+	vec3 bossAreaCenter = vec3(0.0f, groundY, 60.0f); // Further away
+	vec3 doorPosition = vec3(0.0f, 1.5f, groundSize); // Center of door at library edge
 	vec3 doorScale = vec3(1.5f, 3.0f, 0.2f); // Width, Height, Thickness
 	float pathWidth = 4.0f; // Width of the path connecting areas
 
@@ -110,13 +109,16 @@ public:
 
 	// --- Spell Projectiles ---
 	std::vector<SpellProjectile> activeSpells;
-	std::shared_ptr<particleGen> particleSystem; // Add particle system
-	glm::vec3 baseSphereLocalAABBMin; // Store base sphere AABB once
+	std::shared_ptr<particleGen> particleSystem; 
+	glm::vec3 baseSphereLocalAABBMin;
 	glm::vec3 baseSphereLocalAABBMax;
 	bool sphereAABBCalculated = false;
 
 	// -- Boss Enemy Spell Projectiles --
 	std::vector<SpellProjectile> bossActiveSpells;
+
+	// character bounding box
+	glm::vec3 manAABBmin, manAABBmax;
 
 	AssimpModel *book_shelf1, *book_shelf2;
 	AssimpModel *candelabra, *chest, *library_bench, *low_poly_bookshelf, *table_chairs1, *table_chairs2, *grandfather_clock, *bookstand, *door;
@@ -152,9 +154,13 @@ public:
 	int change_mat = 0;
 
 	// vec3 characterMovement = vec3(0, 0, 0);
-	glm::vec3 manScale = glm::vec3(0.01, 0.01, 0.01);
+	glm::vec3 manScale = glm::vec3(0.01f, 0.01f, 0.01f);
 	glm::vec3 manMoveDir = glm::vec3(sin(radians(0.0f)), 0, cos(radians(0.0f)));
-	AABB playerAABB; // Contains <vec3>min and <vec3>max
+
+	// initial position of light cycles
+	glm::vec3 start_lightcycle1_pos = glm::vec3(-384, -11, 31);
+	glm::vec3 start_lightcycle2_pos = glm::vec3(-365, -11, 9.1);
+
 
 	float theta = glm::radians(Config::CAMERA_DEFAULT_THETA_DEGREES); // controls yaw
 	float phi = glm::radians(Config::CAMERA_DEFAULT_PHI_DEGREES); // controls pitch
@@ -165,12 +171,13 @@ public:
 	glm::vec3 eye = glm::vec3(-6, 1.03, 0); /*MINI MAP*/
 	glm::vec3 lookAt = glm::vec3(0, 0, 0); /*MINI MAP*/
 	glm::vec3 up = glm::vec3(0, 1, 0);
-	bool CULL = false;
+	bool CULL = false; 
 
 	vec3 right = normalize(cross(manMoveDir, up));
 
 	bool mouseIntialized = false;
 	double lastX, lastY;
+
 
 	int debug = 0;
 	int debug_pos = 0;
@@ -186,7 +193,7 @@ public:
 	bool movingRight = false;
 
 	//unlock bool
-	bool unlocked = false;
+	bool unlock = false;
 	float lTheta = 0;
 
 	float characterRotation = 0.0f;
@@ -248,6 +255,169 @@ public:
 		glDrawBuffer(GL_NONE);
 		glReadBuffer(GL_NONE);
 		glBindFramebuffer(GL_FRAMEBUFFER, 0); // Unbind the framebuffer
+	}
+
+	void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods)
+	{
+		if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
+		{
+			glfwSetWindowShouldClose(window, GL_TRUE);
+		}
+
+		if (key == GLFW_KEY_F11 && action == GLFW_PRESS)
+		{
+			//Fullscreen Mode
+			if (!windowMaximized) {
+				glfwMaximizeWindow(window);
+				windowMaximized = !windowMaximized;
+			}
+			else {
+				glfwRestoreWindow(window);
+				windowMaximized = !windowMaximized;
+			}
+		}
+
+		if (player->isAlive() || debugCamera) {
+			if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_W) != GLFW_RELEASE) {
+				manState = Man_State::WALKING;
+
+				//Movement Variable
+				movingForward = true;
+				if (debug_pos) {
+					cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
+					cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
+				}
+			} else if (key == GLFW_KEY_W && action == GLFW_RELEASE) {
+				manState = Man_State::STANDING;
+				//Movement Variable
+				movingForward = false;
+			}
+			if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_S) != GLFW_RELEASE) {
+				manState = Man_State::WALKING;
+
+				//Movement Variable
+				movingBackward = true;
+
+				if (debug_pos) {
+					cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
+					cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
+				}
+
+			} else if (key == GLFW_KEY_S && action == GLFW_RELEASE) {
+				manState = Man_State::STANDING;
+				//Movement Variable
+				movingBackward = false;
+			}
+			if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_A) != GLFW_RELEASE) {
+				manState = Man_State::WALKING;
+
+				//Movement Variable
+				movingLeft = true;
+
+				if (debug_pos) {
+					cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
+					cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
+				}
+
+			} else if (key == GLFW_KEY_A && action == GLFW_RELEASE) {
+				manState = Man_State::STANDING;
+				//Movement Variable
+				movingLeft = false;
+			}
+			if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_D) != GLFW_RELEASE) {
+				manState = Man_State::WALKING;
+
+				//Movement Variable
+				movingRight = true;
+
+				if (debug_pos) {
+					cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
+					cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
+				}
+			} else if (key == GLFW_KEY_D && action == GLFW_RELEASE) {
+				manState = Man_State::STANDING;
+				//Movement Variable
+				movingRight = false;
+			}
+		}
+		if (key == GLFW_KEY_Z && action == GLFW_PRESS) {
+			glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
+		}
+		if (key == GLFW_KEY_Z && action == GLFW_RELEASE) {
+			glPolygonMode( GL_FRONT_AND_BACK, GL_FILL );
+		}
+		if (key == GLFW_KEY_F && action == GLFW_PRESS) { // Interaction Key
+			interactWithBooks();
+    	}
+		if (key == GLFW_KEY_L && action == GLFW_PRESS){
+			cursor_visable = !cursor_visable;
+			if (cursor_visable) {
+				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+			}
+			else {
+				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+			}
+		}
+		if(key == GLFW_KEY_U && action == GLFW_PRESS){
+			unlock = true;
+			canFightboss = true;
+		}
+		if (key == GLFW_KEY_K && action == GLFW_PRESS) {
+			debugCamera = !debugCamera;
+		}
+
+		// Shoot fireball with SPACEBAR
+        if (key == GLFW_KEY_SPACE && action == GLFW_PRESS) {
+            if (player->isAlive()) { // Only shoot if alive
+                shootSpell();
+            }
+        }
+
+		if (!player->isAlive() && key == GLFW_KEY_R && action == GLFW_PRESS) { // Changed restart to R
+			restartGen = true;
+		}
+	}
+
+	void scrollCallback(GLFWwindow *window, double deltaX, double deltaY)
+	{
+			theta = theta + deltaX * glm::radians(Config::CAMERA_SCROLL_SENSITIVITY_DEGREES);
+			phi = phi - deltaY * glm::radians(Config::CAMERA_SCROLL_SENSITIVITY_DEGREES);
+
+			if (phi > glm::radians(Config::CAMERA_PHI_MAX_DEGREES)) {
+				phi = glm::radians(Config::CAMERA_PHI_MAX_DEGREES);
+			}
+			if (phi < glm::radians(Config::CAMERA_PHI_MIN_DEGREES)) {
+				phi = glm::radians(Config::CAMERA_PHI_MIN_DEGREES);
+			}
+
+			updateCameraVectors();
+	}
+
+	void mouseMoveCallback(GLFWwindow* window, double xpos, double ypos) {
+		if (!mouseIntialized) {
+			lastX = xpos;
+			lastY = ypos;
+			mouseIntialized = true;
+			return;
+		}
+
+		float deltaX = xpos - lastX;
+		float deltaY = lastY - ypos;
+		lastX = xpos;
+		lastY = ypos;
+
+		theta = theta + deltaX * Config::CAMERA_MOUSE_SENSITIVITY;
+		phi = phi + deltaY * Config::CAMERA_MOUSE_SENSITIVITY;
+
+		if (phi > glm::radians(Config::CAMERA_PHI_MAX_DEGREES)) {
+			phi = glm::radians(Config::CAMERA_PHI_MAX_DEGREES);
+		}
+		if (phi < radians(-80.0f))
+		{
+			phi = radians(-80.0f);
+		}
+
+		updateCameraVectors();
 	}
 
 	void updateCameraVectors() {
@@ -319,10 +489,10 @@ public:
 			player->setRotY(-(theta + radians(-90.0f)));
 			player->setRotX(phi);
 
-			manMoveDir = vec3(sin(player->getRotY()), 0, cos(player->getRotY()));
+		manMoveDir = vec3(sin(player->getRotY()), 0, cos(player->getRotY()));
 			right = normalize(cross(manMoveDir, up));
 
-			// lookAt = eye + front;
+				// lookAt = eye + front;
 		}
 		else {
 			//Activate Debug Camera
@@ -353,8 +523,7 @@ public:
 
 	}
 
-	void mouseCallback(GLFWwindow* window, int button, int action, int mods)
-	{
+	void mouseCallback(GLFWwindow* window, int button, int action, int mods) {
 		double posX, posY;
 
 		if (action == GLFW_PRESS)
@@ -368,7 +537,9 @@ public:
 		glViewport(0, 0, width, height);
 	}
 
-	void init(const std::string& resourceDirectory) {
+
+	void init(const std::string& resourceDirectory)
+	{
 		GLSL::checkVersion();
 
 		// Set background color and enable z-buffer test
@@ -440,8 +611,6 @@ public:
 		for (int i = 0; i < Config::MAX_BONES; i++) {
 			ShadowProg->addUniform("finalBonesMatrices[" + to_string(i) + "]");
 		}
-		ShadowProg->addAttribute("boneIds");
-		ShadowProg->addAttribute("weights");
 
 		ShadowProg->bind();
 		GLint loc = ShadowProg->getUniform("uMaps");
@@ -452,7 +621,7 @@ public:
 		initShadow();
 
 		hudProg = make_shared<Program>();
-		hudProg->setVerbose(Config::DEBUG_SHADER);
+		hudProg->setVerbose(true);
 		hudProg->setShaderNames(resourceDirectory + "/hud_vert.glsl", resourceDirectory + "/hud_frag.glsl");
 		hudProg->init();
 		hudProg->addUniform("projection");
@@ -475,7 +644,7 @@ public:
 		particleProg->addAttribute("vertScale"); // Add this line
 
 		redFlashProg = make_shared<Program>();
-		redFlashProg->setVerbose(Config::DEBUG_SHADER);
+		redFlashProg->setVerbose(true);
 		redFlashProg->setShaderNames(resourceDirectory + "/red_flash_vert.glsl", resourceDirectory + "/red_flash_frag.glsl");
 		redFlashProg->init();
 		redFlashProg->addUniform("projection");
@@ -638,6 +807,13 @@ public:
 		// low_poly_bookshelf->assignTexture("texture_roughness1", resourceDirectory + "/cluster_assets/low_poly_bookshelf/textures/Plane_Bake1_pbr_roughness.png");
 		// low_poly_bookshelf->assignTexture("texture_normal1", resourceDirectory + "/cluster_assets/low_poly_bookshelf/textures/Plane_Bake1_pbr_normal.jpg");
 
+		// low_poly_bookshelf = new AssimpModel(resourceDirectory + "/cluster_assets/low_poly_bookshelf/Low_poly_bookshelf.obj");
+
+		// low_poly_bookshelf->assignTexture("texture_diffuse1", resourceDirectory + "/cluster_assets/low_poly_bookshelf/textures/Plane_Bake1_pbr_diffuse.png");
+		// low_poly_bookshelf->assignTexture("texture_metalness1", resourceDirectory + "/cluster_assets/low_poly_bookshelf/textures/Plane_Bake1_pbr_metalness.png");
+		// low_poly_bookshelf->assignTexture("texture_roughness1", resourceDirectory + "/cluster_assets/low_poly_bookshelf/textures/Plane_Bake1_pbr_roughness.png");
+		// low_poly_bookshelf->assignTexture("texture_normal1", resourceDirectory + "/cluster_assets/low_poly_bookshelf/textures/Plane_Bake1_pbr_normal.jpg");
+
 		table_chairs1 = new AssimpModel(resourceDirectory + "/cluster_assets/table_chairs/table_chairs_3.obj");
 
 		table_chairs1->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/table_chairs/textures/table_chairs_3_diffuse.png");
@@ -664,6 +840,8 @@ public:
 
 		// border = new AssimpModel(resourceDirectory + "/border.obj");
 
+		// border = new AssimpModel(resourceDirectory + "/border.obj");
+
 		// load the sphere (spell)
 		sphere = new AssimpModel(resourceDirectory + "/SmoothSphere.obj");
 
@@ -676,6 +854,8 @@ public:
 
 		//key
 		key = new AssimpModel(resourceDirectory + "/Key_and_Lock/key.obj");
+		Collectible key1 = Collectible(key, vec3(0.0, 2.0, 0.0), 0.1f,  vec3(0.9, 0.9, 0.9));
+		keyCollectibles.push_back(key1);
 
 		//lock
 		lock = new AssimpModel(resourceDirectory + "/Key_and_Lock/lockCopy.obj");
@@ -713,10 +893,8 @@ public:
 			cerr << "ERROR: Sphere model not loaded, cannot create enemies." << endl;
 		}
 	}
-	
-	void SetMaterial(shared_ptr<Program> shader, Material color) {
-		/* Some important notes about PBR materials:
 
+	void SetMaterial(shared_ptr<Program> shader, Material color) {
 		Albedo (Base Color):
 		Never use pure black (0,0,0) or pure white (1,1,1)
 		Realistic materials range from about 0.04 to 0.95
@@ -911,8 +1089,10 @@ public:
 			return;
 		}
 		// Ground plane from -groundSize to +groundSize in X and Z at groundY
+		
 		float groundSize = Config::GROUND_SIZE;
 		float groundY = Config::GROUND_HEIGHT;
+
 		float GrndPos[] = {
 			-groundSize, groundY, -groundSize, // top-left
 			-groundSize, groundY,  groundSize, // bottom-left
@@ -984,7 +1164,9 @@ public:
 		Model->loadIdentity();
 		Model->translate(bossAreaCenter); // Position the boss ground plane
 		setModel(shader, Model);
+
 		SetMaterial(shader, Material::bronze); // Bronze material
+
 		glDrawElements(GL_TRIANGLES, g_GiboLen, GL_UNSIGNED_SHORT, 0);
 		Model->popMatrix();
 
@@ -1121,6 +1303,7 @@ public:
 			Model->pushMatrix();
 			Model->loadIdentity();
 			setModel(shader, Model);
+
 			SetMaterial(shader, Material::wood);
 			glDrawElements(GL_TRIANGLES, libGrnd.GiboLen, GL_UNSIGNED_SHORT, 0);
 			Model->popMatrix();
@@ -1136,6 +1319,7 @@ public:
 
 		shader->unbind(); // Unbind the simple shader
 	}
+
 
 	void initWall(float length, vec3 pos, vec3 dir, float height,
 		GLuint& WallVertexArrayID, GLuint& WallBuffObj, GLuint& WallNormBuffObj, GLuint& WIndxBuffObj, GLuint& WallTexBuffObj, int& w_GiboLen) {
@@ -1221,7 +1405,6 @@ public:
 		if (borderWallKeys.count(posKey)) {
 			return;
 		}
-
 
 		WallObject newBorder;
 		newBorder.length = length;
@@ -1330,7 +1513,9 @@ public:
 		Model->translate(player->getPosition());
 		// *** USE CAMERA ROTATION FOR MODEL ***
 		Model->rotate(glm::radians(90.0f), vec3(1.0f, 0.0f, 0.0f));
+
 		Model->rotate((-1.0f * player->getRotY()), vec3(0, 0, 1)); // <<-- FIXED ROTATION
+
 		Model->scale(0.01f);
 
 		// Update VISUAL bounding box (can be different from collision box if needed)
@@ -1369,6 +1554,7 @@ public:
 
 			// Set Material (e.g., brown for cover) - Apply once if same for both halves
 			SetMaterial(shader, Material::brown);
+
 
 			// --- Draw Left Cover/Pages ---
 			Model->pushMatrix(); // SAVE current stack state
@@ -1430,15 +1616,13 @@ public:
 
 	void drawSkybox(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		shader->bind(); // Use prog2 for simple colored shapes
-
 		Model->pushMatrix();
-		Model->loadIdentity();
-		Model->translate(vec3(bossAreaCenter.x, bossAreaCenter.y, bossAreaCenter.z - 20)); // Center the sky sphere at the player position
-		Model->scale(vec3(5.0f)); // Scale up the sky sphere to cover the scene
+			Model->loadIdentity();
+			Model->translate(vec3(bossAreaCenter.x, bossAreaCenter.y, bossAreaCenter.z - 20)); // Center the sky sphere at the player position
+			Model->scale(vec3(5.0f)); // Scale up the sky sphere to cover the scene
 
-		setModel(shader, Model);
-		sky_sphere->Draw(shader);
-
+			setModel(shader, Model);
+			sky_sphere->Draw(shader);
 		Model->popMatrix();
 		shader->unbind();
 	}
@@ -1461,6 +1645,7 @@ public:
 	// 	shader->unbind();
 	// }
 
+
 	//TODO: Add particle effects to orbs
 	void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		// --- Collision Check Logic ---
@@ -1470,6 +1655,7 @@ public:
 				checkAABBCollision(manAABBmin, manAABBmax, orb.AABBmin, orb.AABBmax)) {
 				orb.collected = true;
 				// orb.state = OrbState::COLLECTED; // Optionally set state
+				
 				currentPlayerSpellType = orb.spellType; // Equip the collected spell type
 				orbsCollectedCount++; // This might now just mean "spell charges" or be repurposed
 
@@ -1478,6 +1664,7 @@ public:
 				if (currentPlayerSpellType == SpellType::FIRE) spellTypeName = "FIRE";
 				else if (currentPlayerSpellType == SpellType::ICE) spellTypeName = "ICE";
 				else if (currentPlayerSpellType == SpellType::LIGHTNING) spellTypeName = "LIGHTNING";
+
 				std::cout << "Collected a Spell Orb! Equipped: " << spellTypeName << " Spell. Orbs available: " << orbsCollectedCount << std::endl;
 			}
 		}
@@ -1488,7 +1675,6 @@ public:
 		int collectedOrbDrawIndex = 0;
 
 		for (auto& orb : orbCollectibles) {
-
 			// Particle emission for uncollected, idle orbs
 			if (!orb.collected && orb.state == OrbState::IDLE && particleSystem) {
 				float current_particle_system_time = particleSystem->getCurrentTime();
@@ -1574,16 +1760,15 @@ public:
 
 			// --- Set up transformations ---
 			Model->pushMatrix();
-			Model->loadIdentity();
-			Model->translate(currentDrawPosition);
-			Model->scale(currentDrawScale); // Use current scale
+				Model->loadIdentity();
+				Model->translate(currentDrawPosition);
+				Model->scale(currentDrawScale); // Use current scale
 
-			// --- Set Material & Draw ---
-			// (Material setting code remains the same)
-			SetMaterial(simpleShader, orb.color);
+				// --- Set Material & Draw ---
+				SetMaterial(simpleShader, orb.color);
 
-			setModel(simpleShader, Model);
-			orb.model->Draw(simpleShader);
+				setModel(simpleShader, Model);
+				orb.model->Draw(simpleShader);
 
 			Model->popMatrix();
 		} // End drawing loop
@@ -1594,9 +1779,10 @@ public:
 	void drawCat(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		if (!CatWizard) return; //Need Cat Model
 		shader->bind(); //Texture
-		if (shader == ShadowProg) {
-			glUniform1i(shader->getUniform("hasMaterial"), 0);
-		}
+
+		//if (shader == ShadowProg) {
+		//	glUniform1i(shader->getUniform("hasMaterial"), 0);
+		//}
 
 		Model->pushMatrix();
 		Model->loadIdentity();
@@ -2054,9 +2240,11 @@ public:
 	void drawBossRoom(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model, bool cullFlag) {
 		if (!shader || !Model) return;
 		shader->bind();
+
 		/*if (shader == ShadowProg) {
 			glUniform1i(shader->getUniform("hasMaterial"), 0);
 		}*/
+
 		for (int z = 0; z < bossGrid.getSize().y; ++z) {
 			for (int x = 0; x < bossGrid.getSize().x; ++x) {
 				glm::ivec2 gridPos(x, z);
@@ -2268,6 +2456,7 @@ public:
 		Model->scale(doorScale);      // Scale set in class members
 
 		SetMaterial(shader, Material::wood); // Use Wood material
+
 		setModel(shader, Model);
 		cube->Draw(shader);
 
@@ -2684,7 +2873,7 @@ public:
 
 		vec3 currentPos = player->getPosition();
 		vec3 nextPos = currentPos + desiredMoveDelta;
-		nextPos.y = Config::GROUND_HEIGHT; // Keep player on the ground plane
+		nextPos.y = groundY; // Keep player on the ground plane
 
 		// Player orientation for AABB calculation
 		// glm::quat playerOrientation = glm::angleAxis(manRot.y, glm::vec3(0, 1, 0));
@@ -2724,13 +2913,11 @@ public:
 			cout << "[DEBUG] Z-Collision prevented." << endl;
 		}
 
-
 		// Final position is the allowed position after checking both axes
 		// characterMovement = allowedPos;
 		// characterMovement.y = groundY; // Ensure Y stays correct
 
-		player->setPosition(vec3(allowedPos.x, Config::GROUND_HEIGHT, allowedPos.z)); // Update player position
-
+		player->setPosition(vec3(allowedPos.x, groundY, allowedPos.z)); // Update player position
 
 		// Update camera based on final position (done in render)
 		// return characterMovement; // Return the final, potentially adjusted, position
@@ -2738,11 +2925,11 @@ public:
 	}
 
 	// --- Shooting Function ---
-	void shootSpell() {
+	void shootSpell() { 
 		cout << "[DEBUG] shootSpell() called. Orbs: " << orbsCollectedCount << endl;
 		if (orbsCollectedCount <= 0 && !debugCamera) { // Allow shooting in debug camera without orbs
 			cout << "[DEBUG] Cannot shoot: No orbs." << endl;
-			return;
+			return; 
 		}
 
 		// Consume an orb if not in debug mode
@@ -2845,7 +3032,7 @@ public:
 
 		float damageAmount = Config::PROJECTILE_DAMAGE;
 
-		for (int i = 0; i < activeSpells.size(); ) {
+		for (int i = 0; i < activeSpells.size(); i++) {
 			if (!activeSpells[i].active) {
 				i++;
 				continue;
@@ -2860,6 +3047,7 @@ public:
 			}
 
 			proj.position += proj.direction * proj.speed * deltaTime;
+
 			proj.transform = glm::translate(glm::mat4(1.0f), proj.position);
 
 			this->updateBoundingBox(proj.localAABBMin_logical, proj.localAABBMax_logical, proj.transform, proj.aabbMin, proj.aabbMax);
@@ -2891,7 +3079,6 @@ public:
 					continue;
 				}
 			}
-			i++;
 		}
 	}
 
@@ -2924,6 +3111,7 @@ public:
 			}
 
 			proj.position += proj.direction * proj.speed * deltaTime;
+			
 			proj.transform = glm::translate(glm::mat4(1.0f), proj.position);
 
 			this->updateBoundingBox(proj.localAABBMin_logical, proj.localAABBMax_logical, proj.transform, proj.aabbMin, proj.aabbMax);
@@ -2961,6 +3149,7 @@ public:
 
 			// Check collision with player
 			// For simplicity, using a sphere check around player center for now.
+			
 			glm::vec3 playerCenter = player->getPosition() + glm::vec3(0, 1.0f, 0); // Approx player center
 			float playerRadius = 0.5f; // Approx player radius
 
@@ -3016,10 +3205,9 @@ public:
 		mat4 ortho = glm::ortho(-15.0f * wS, 15.0f * wS, -15.0f * wS, 15.0f * wS, 2.1f, 100.f);
 		glUniformMatrix4fv(curShade->getUniform("P"), 1, GL_FALSE, value_ptr(ortho));
 		return ortho;
-	}
+  }
 
 	void drawMiniPlayer(shared_ptr<Program> curS, shared_ptr<MatrixStack> Model) { /*MINI MAP*/
-
 		//sphere->Draw(shader);
 		curS->bind();
 
@@ -3099,7 +3287,7 @@ public:
 		Model->loadIdentity();
 		glUniformMatrix4fv(shader->getUniform("M"), 1, GL_FALSE, value_ptr(Model->topMatrix())); // M is now identity
 		Model->popMatrix(); // Restore original Model stack state
-
+		
 		gen->drawMe(shader); // gen->drawMe will set its own blend/depth states and draw
 
 		// Restore state --- gen->drawMe() handles its own GL state restoration
@@ -3167,38 +3355,38 @@ public:
 		//top lock
 
 		Model->pushMatrix();
-		Model->loadIdentity();
-		Model->translate(vec3(0.0f, 2.5f, 38.5f));
-		Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
-		Model->scale(0.1f);
-		SetMaterial(shader, Material::gold); //gold
-		setModel(shader, Model);
-		lock->Draw(shader);
-		lockHandle->Draw(shader);
+			Model->loadIdentity();
+			Model->translate(vec3(0.0f, 2.5f, 38.5f));
+			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			Model->scale(0.1f);
+			SetMaterial(shader, Material::gold); //gold
+			setModel(shader, Model);
+			lock->Draw(shader);
+			lockHandle->Draw(shader);
 		Model->popMatrix();
 
 		//middle lock
 		Model->pushMatrix();
-		Model->loadIdentity();
-		Model->translate(vec3(0.0f, 1.5f, 38.5f));  //doorPosition
-		Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
-		Model->scale(0.1f);
-		SetMaterial(shader, Material::gold); //gold
-		setModel(shader, Model);
-		lock->Draw(shader);
-		lockHandle->Draw(shader);
+			Model->loadIdentity();
+			Model->translate(vec3(0.0f, 1.5f, 38.5f));  //doorPosition
+			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			Model->scale(0.1f);
+			SetMaterial(shader, Material::gold); //gold
+			setModel(shader, Model);
+			lock->Draw(shader);
+			lockHandle->Draw(shader);
 		Model->popMatrix();
 
 		//lower lock
 		Model->pushMatrix();
-		Model->loadIdentity();
-		Model->translate(vec3(0.0f, 0.5f, 38.5f));
-		Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
-		Model->scale(0.1f);
-		SetMaterial(shader, Material::gold); //gold
-		setModel(shader, Model);
-		lock->Draw(shader);
-		lockHandle->Draw(shader);
+			Model->loadIdentity();
+			Model->translate(vec3(0.0f, 0.5f, 38.5f));
+			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			Model->scale(0.1f);
+			SetMaterial(shader, Material::gold); //gold
+			setModel(shader, Model);
+			lock->Draw(shader);
+			lockHandle->Draw(shader);
 		Model->popMatrix();
 
 		shader->unbind();
@@ -3206,7 +3394,7 @@ public:
 
 	}
 
-	void updateLock(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
+	void updateLock(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model){
 		//unlock one of the locks if have a key
 		//for now unlock all
 
@@ -3279,87 +3467,80 @@ public:
 
 		//top lock
 		Model->pushMatrix();
-		Model->loadIdentity();
-		Model->translate(vec3(0.0f, 2.5f, 38.5f));  //doorPosition
-		Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
-		Model->scale(0.1f);
-		SetMaterial(shader, Material::gold); //gold
-		setModel(shader, Model);
-		lock->Draw(shader);
+			Model->loadIdentity();
+			Model->translate(vec3(0.0f, 2.5f, 38.5f));  //doorPosition
+			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			Model->scale(0.1f);
+			SetMaterial(shader, Material::gold); //gold
+			setModel(shader, Model);
+			lock->Draw(shader);
 		Model->popMatrix();
 
 		//top handle
 		Model->pushMatrix();
-		Model->loadIdentity();
-		Model->translate(vec3(0.0f, 2.5f, 38.5f));
-		Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
-		Model->rotate(1 * glm::radians(15.0) + lTheta, vec3(0.0f, 0.0f, 1.0f)); //max -30?
-		Model->scale(0.1f);
-		// Model->rotate(  glm::radians(90.0) , vec3(0.0f, 1.0f, 0.0f)); //max -30
-		SetMaterial(shader, Material::brown); //brown
-		setModel(shader, Model);
-		lockHandle->Draw(shader);
+			Model->loadIdentity();
+			Model->translate(vec3(0.0f, 2.5f, 38.5f));
+			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			Model->rotate(1 * glm::radians(15.0) + lTheta, vec3(0.0f, 0.0f, 1.0f)); //max -30?
+			Model->scale(0.1f);
+			// Model->rotate(  glm::radians(90.0) , vec3(0.0f, 1.0f, 0.0f)); //max -30
+			SetMaterial(shader, Material::brown); //brown
+			setModel(shader, Model);
+			lockHandle->Draw(shader);
 		Model->popMatrix();
 
 		//middle lock
 		Model->pushMatrix();
-		Model->loadIdentity();
-		Model->translate(vec3(0.0f, 1.5f, 38.5f));
-		Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
-		Model->scale(0.1f);
-		SetMaterial(shader, Material::gold); //gold
-		setModel(shader, Model);
-		lock->Draw(shader);
+			Model->loadIdentity();
+			Model->translate(vec3(0.0f, 1.5f, 38.5f));
+			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			Model->scale(0.1f);
+			SetMaterial(shader, Material::gold); //gold
+			setModel(shader, Model);
+			lock->Draw(shader);
 		Model->popMatrix();
 
 		//midle handle
 		Model->pushMatrix();
-		Model->loadIdentity();
-		Model->translate(vec3(0.0f, 1.5f, 38.5f));
-		Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
-		Model->rotate(1 * glm::radians(15.0) + lTheta, vec3(0.0f, 0.0f, 1.0f)); //max -30?
-		Model->scale(0.1f);
-		// Model->rotate(  glm::radians(90.0) , vec3(0.0f, 1.0f, 0.0f)); //max -30
-		SetMaterial(shader, Material::brown); //brown
-		setModel(shader, Model);
-		lockHandle->Draw(shader);
+			Model->loadIdentity();
+			Model->translate(vec3(0.0f, 1.5f, 38.5f));
+			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			Model->rotate(1 * glm::radians(15.0) + lTheta, vec3(0.0f, 0.0f, 1.0f)); //max -30?
+			Model->scale(0.1f);
+			// Model->rotate(  glm::radians(90.0) , vec3(0.0f, 1.0f, 0.0f)); //max -30
+			SetMaterial(shader, Material::brown); //brown
+			setModel(shader, Model);
+			lockHandle->Draw(shader);
 		Model->popMatrix();
 
 		// lower lock
 		Model->pushMatrix();
-		Model->loadIdentity();
-		Model->translate(vec3(0.0f, 0.5f, 38.5f));
-		Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
-		Model->scale(0.1f);
-		SetMaterial(shader, Material::gold); //gold
-		setModel(shader, Model);
-		lock->Draw(shader);
-
+			Model->loadIdentity();
+			Model->translate(vec3(0.0f, 0.5f, 38.5f));
+			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			Model->scale(0.1f);
+			SetMaterial(shader, Material::gold); //gold
+			setModel(shader, Model);
+			lock->Draw(shader);
 		Model->popMatrix();
 
 		//lower handle
 		Model->pushMatrix();
-		Model->loadIdentity();
-		Model->translate(vec3(0.0f, 0.5f, 38.5f));
-		Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
-		Model->rotate(1 * glm::radians(15.0) + lTheta, vec3(0.0f, 0.0f, 1.0f)); //max -30?
-		Model->scale(0.1f);
-		// Model->rotate(  glm::radians(90.0) , vec3(0.0f, 1.0f, 0.0f)); //max -30
-		SetMaterial(shader, Material::brown); //brown
-		setModel(shader, Model);
-		lockHandle->Draw(shader);
+			Model->loadIdentity();
+			Model->translate(vec3(0.0f, 0.5f, 38.5f));
+			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			Model->rotate(1 * glm::radians(15.0) + lTheta, vec3(0.0f, 0.0f, 1.0f)); //max -30?
+			Model->scale(0.1f);
+			// Model->rotate(  glm::radians(90.0) , vec3(0.0f, 1.0f, 0.0f)); //max -30
+			SetMaterial(shader, Material::brown); //brown
+			setModel(shader, Model);
+			lockHandle->Draw(shader);
 		Model->popMatrix();
-
-
-
-
 
 		// if(lTheta < 30.0){
 		// 	lTheta+= 0.1;
 		// lTheta = sin(glfwGetTime());
 		// }
-
-
 
 	// Model->pushMatrix();
 	// 	Model->loadIdentity();
@@ -3372,10 +3553,7 @@ public:
 	// 	lockHandle->Draw(shader);
 	// Model->popMatrix();
 
-
 		shader->unbind();
-
-
 	}
 
 	//drawOrb, draw book , updateBooks, updateOrb, shootSpell
@@ -3433,6 +3611,31 @@ public:
 
 			// --- Set up transformations ---
 			Model->pushMatrix();
+				Model->loadIdentity();
+				Model->translate(vec3(0.0f, 0.5f, 0.5f)); //last enemy pos
+				Model->scale(2.0f);
+				Model->rotate(glm::radians(90.0f), vec3(1.0f, 0.0f, 0.0f));
+				Model->rotate(glm::radians(-90.0f), vec3(0.0f, 1.0f, 0.0f));
+
+
+				// --- Set Material & Draw ---
+				// (Material setting code remains the same)
+				SetMaterial(shader, Material::gold); //gold
+
+				setModel(shader, Model);
+				//orb.model->Draw(simpleShader);
+				key.model->Draw(shader);
+			Model->popMatrix();
+		} // End drawing loop
+
+		Model->popMatrix();
+			shader->unbind();
+
+
+			shader->bind();
+
+			// --- Set up transformations ---
+			Model->pushMatrix();
 			Model->loadIdentity();
 			Model->translate(vec3(0.0f, 0.5f, 0.5f)); //last enemy pos
 			Model->scale(2.0f);
@@ -3446,36 +3649,33 @@ public:
 
 			setModel(shader, Model);
 			//orb.model->Draw(simpleShader);
-			key.model->Draw(shader);
-
-			Model->popMatrix();
-		} // End drawing loop
+			key->Draw(shader);
 
 		Model->popMatrix();
 		shader->unbind();
 
+		
+		// shader->bind();
 
-		shader->bind();
-
-		// --- Set up transformations ---
-		Model->pushMatrix();
-		Model->loadIdentity();
-		Model->translate(vec3(0.0f, 0.5f, 0.5f)); //last enemy pos
-		Model->scale(2.0f);
-		Model->rotate(glm::radians(90.0f), vec3(1.0f, 0.0f, 0.0f));
-		Model->rotate(glm::radians(-90.0f), vec3(0.0f, 1.0f, 0.0f));
+		// // --- Set up transformations ---
+		// Model->pushMatrix();
+		// Model->loadIdentity();
+		// Model->translate(vec3(0.0f, 0.5f, 0.5f)); //last enemy pos
+		// Model->scale(2.0f);
+		// Model->rotate(glm::radians(90.0f), vec3(1.0f, 0.0f, 0.0f));
+		// Model->rotate(glm::radians(-90.0f), vec3(0.0f, 1.0f, 0.0f));
 
 
-		// --- Set Material & Draw ---
-		// (Material setting code remains the same)
-		SetMaterial(shader, Material::gold); //gold
+		// // --- Set Material & Draw ---
+		// // (Material setting code remains the same)
+		// SetMaterialMan(shader, 5); //gold
 
-		setModel(shader, Model);
-		//orb.model->Draw(simpleShader);
-		key->Draw(shader);
+		// setModel(shader, Model);
+		// //orb.model->Draw(simpleShader);
+		// key->Draw(shader);
 
-		Model->popMatrix();
-		shader->unbind();
+		// Model->popMatrix();
+		// shader->unbind();
 	}
 
 	void updateKeys(float currentTime) {
@@ -3700,12 +3900,8 @@ public:
 
 		drawBossProjectiles(prog, Model);
 
-
-
-
 		//Test drawing cat model
 		//drawCat(assimptexProg, Model);
-
 
 		// drawSkybox(assimptexProg, Model); // Draw the skybox last
 
@@ -3719,8 +3915,6 @@ public:
 
 		// orbCollectibles.emplace_back(sphere, orbSpawnPos, book.orbScale, book.orbColor);
 		// drawKey(prog2, Model);
-
-
 
 		drawBossEnemy(prog, Model);
 	}
@@ -3742,9 +3936,20 @@ public:
 	}
 
 	void render(float frametime, float animTime) {
+		// Get current frame buffer size.
 		int width, height;
-		glfwGetFramebufferSize(windowManager->getHandle(), &width, &height); // Get current frame buffer size
-		float aspect = width / (float)height;
+		glfwGetFramebufferSize(windowManager->getHandle(), &width, &height);
+		glViewport(0, 0, width, height);
+
+		// Clear framebuffer.
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+		float aspect = width/(float)height;
+
+		// Create the matrix stacks
+		auto Projection = make_shared<MatrixStack>();
+		auto View = make_shared<MatrixStack>();
+		auto Model = make_shared<MatrixStack>();
 
 		// --- Update Game Logic ---
 		charMove();
@@ -3816,42 +4021,12 @@ public:
 
 		// Setup Camera
 		Projection->pushMatrix();
-		Projection->perspective(radians(45.0f), aspect, 0.1f, 100.0f);
+		Projection->perspective(radians(45.0f), aspect, 0.1f, 1000.0f); // Adjusted near/far
 		View->pushMatrix();
 		View->loadIdentity();
 		View->lookAt(eye, lookAt, up); // Use updated eye/lookAt
 
-		// Update frustum planes and light space matrix for shadow mapping
-		ExtractVFPlanes(Projection->topMatrix(), View->topMatrix(), planes);
-
-		// ==============================
-		// Second Pass: Render to Screen
-		// ==============================
-		if (Config::DEBUG_LIGHTING) { // Debugging light view from lights perspective
-			if (Config::DEBUG_GEOM) {
-				DepthProgDebug->bind();
-
-				glUniformMatrix4fv(DepthProg->getUniform("LP"), 1, GL_FALSE, value_ptr(LO));
-
-				glUniformMatrix4fv(DepthProg->getUniform("LV"), 1, GL_FALSE, value_ptr(LV));
-
-				drawSceneForShadowMap(DepthProgDebug); // Draw the scene from the lights perspective for debugging
-				
-				DepthProgDebug->unbind();
-			}
-			else { // Draw the depth map texture to a quad for visualization
-				DebugProg->bind();
-				glActiveTexture(GL_TEXTURE0);
-				glBindTexture(GL_TEXTURE_2D, depthMap);
-				glUniform1i(DebugProg->getUniform("texBuf"), 0);
-
-				glEnableVertexAttribArray(0); // Now we actually draw the quad
-				glBindBuffer(GL_ARRAY_BUFFER, quad_vertexbuffer);
-				glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
-				glDrawArrays(GL_TRIANGLES, 0, 6);
-				glDisableVertexAttribArray(0);
-				DebugProg->unbind();
-			}
+		ExtractVFPlanes(Projection->topMatrix(), View->topMatrix(), planes); // Update frustum planes
 		}
 		else { // Render the scene like normal with shadow mapping
 			ShadowProg->bind();
@@ -3955,6 +4130,47 @@ public:
 
 			ShadowProg->unbind();
 		}
+
+		/*MINI MAP*/
+		prog2->bind();
+			glClear( GL_DEPTH_BUFFER_BIT);
+			glViewport(0, height-350, 350, 350);
+			SetOrthoMatrix(prog2);
+			SetTopView(prog2); /*MINI MAP*/
+			SetMaterialMan(prog2,6 );
+			//drawScene(prog2, CULL);
+			/* draws */
+			// drawBorder(prog2, Model);
+
+			// drawDoor(prog2, Model);
+			// drawBooks(prog2, Model);
+			// drawEnemies(prog2, Model);
+			drawLibrary(prog2, Model, false);
+			drawBossRoom(prog2, Model, false);
+			drawBossEnemy(prog2, Model);
+			// drawOrbs(prog2, Model);
+			drawMiniPlayer(prog2, Model);
+			drawBorderWalls(prog2, Model);
+			// SetMaterialMan(prog2,6 );
+			drawLibGrnd(prog2, Model);
+			drawBossRoom(prog2, Model, false); //boss room not drawing
+
+
+
+			//stripped down player draw
+
+			// if (SD)
+			// 	drawOccupied(prog2);
+		prog2->unbind();
+
+		prog2_enemy->bind();
+			glClear( GL_DEPTH_BUFFER_BIT);
+			glViewport(0, height-300, 300, 300);
+			SetOrthoMatrix(prog2_enemy);
+			SetTopView(prog2_enemy); /*MINI MAP*/
+			drawEnemies(prog2_enemy, Model);
+
+		prog2_enemy->unbind();
 
 		// --- Cleanup ---
 		Projection->popMatrix();
@@ -4146,8 +4362,7 @@ void mouseMoveCallbackWrapper(GLFWwindow* window, double xpos, double ypos) {
 	app->mouseMoveCallback(window, xpos, ypos);
 }
 
-int main(int argc, char* argv[])
-{
+int main(int argc, char* argv[]) {
 	// Where the resources are loaded from
 	std::string resourceDir = "../resources";
 

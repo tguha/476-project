@@ -85,7 +85,7 @@ inline glm::vec3 materialToColor(Material m) {
 struct SpellProjectile {
     glm::vec3 position;
     glm::vec3 direction;
-    float speed = 20.0f;
+    float speed = 15.0f;
     float lifetime = 2.0f;
     float spawnTime = 0.0f;
     bool active = true;
@@ -172,7 +172,7 @@ public:
     float openSpeed = glm::radians(120.0f);
     AssimpModel* bookModel;
     AssimpModel* orbModel;
-    Material orbColor;
+    vec3 orbColor;
     float orbScale = 0.1f;
     bool orbSpawned = false;
     SpellType spellType = SpellType::FIRE;
@@ -279,7 +279,7 @@ public:
     glm::vec3 spawnPosition;
     glm::vec3 idlePosition;
     float levitationHeight = 0.6f;
-    float levitationStartTime;
+    float levitationStartTime = 0.0f;
     float levitationDuration = 0.75f;
 
     Collectible(AssimpModel* mdl, const glm::vec3& spawnPos, float scl, Material clrIn, SpellType type = SpellType::FIRE)

@@ -1,13 +1,16 @@
-#pragma once
+#ifndef ASSIMPMESH_H
+#define ASSIMPMESH_H
 
 #include <string>
 #include <vector>
 #include <memory>
 #include <glad/glad.h>
 #include <glm/gtc/type_ptr.hpp>
+
 #include "Program.h"
 
 #define MAX_BONE_INFLUENCE 4
+
 
 struct Vertex {
     glm::vec3 Position;
@@ -36,15 +39,10 @@ class AssimpMesh {
        AssimpMesh(std::vector<Vertex> vertices, std::vector<unsigned int> indices, std::vector<AssimpTexture> textures);
        void Draw(const std::shared_ptr<Program> prog) const;
 
-       bool hasTextureType(const std::string& type) const {
-           for (const auto& texture : textures) {
-               if (texture.type == type) return true;
-           }
-           return false;
-       }
-
     private:
         unsigned int VBO, EBO;
 
         void setupMesh();
 };
+
+#endif // ASSIMPMESH_H
