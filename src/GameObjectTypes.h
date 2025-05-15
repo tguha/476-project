@@ -1,11 +1,14 @@
 #pragma once
 
 #include <glad/glad.h>
+#include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
+#include <memory>
 #include "Spline.h"
 #include "AssimpModel.h"
 #include "Config.h"
+#include "Texture.h"
 
 // --- Enums ---
 enum class BookState {
@@ -28,6 +31,14 @@ enum class Man_State {
     STANDING
 };
 
+// --- Spell Types ---
+enum class SpellType {
+    NONE,
+    FIRE,
+    ICE,
+    LIGHTNING
+};
+
 enum class Material {
     purple,
     black,
@@ -47,23 +58,54 @@ enum class Material {
     gold,
 };
 
+// Map each Material enum to a base color for particles or fallback
+inline glm::vec3 materialToColor(Material m) {
+    switch (m) {
+    case Material::purple:            return glm::vec3(0.3f, 0.1f, 0.4f);
+    case Material::black:             return glm::vec3(0.04f);
+    case Material::eye_white:         return glm::vec3(0.95f);
+    case Material::pupil_white:       return glm::vec3(0.85f, 0.85f, 0.9f);
+    case Material::bronze:            return glm::vec3(0.714f, 0.4284f, 0.181f);
+    case Material::silver:            return glm::vec3(0.972f, 0.960f, 0.915f);
+    case Material::brown:             return glm::vec3(0.25f, 0.15f, 0.08f);
+    case Material::orb_glowing_blue:  return glm::vec3(0.1f, 0.2f, 0.5f);
+    case Material::orb_glowing_red:   return glm::vec3(0.5f, 0.1f, 0.1f);
+    case Material::orb_glowing_yellow:return glm::vec3(0.5f, 0.4f, 0.1f);
+    case Material::grey:              return glm::vec3(0.8f);
+    case Material::wood:              return glm::vec3(0.65f, 0.45f, 0.25f);
+    case Material::mini_map:          return glm::vec3(0.65f, 0.45f, 0.25f);
+    case Material::defaultMaterial:   return glm::vec3(0.5f);
+    case Material::blue_body:         return glm::vec3(0.35f, 0.4f, 0.914f);
+    case Material::gold:              return glm::vec3(1.0f, 0.766f, 0.336f);
+    default:                          return glm::vec3(1.0f); // fallback white
+    }
+};
+
 // --- Structs ---
 struct SpellProjectile {
     glm::vec3 position;
     glm::vec3 direction;
-    glm::vec3 scale = glm::vec3(0.05f, 0.05f, 0.6f);
     float speed = 20.0f;
     float lifetime = 2.0f;
     float spawnTime = 0.0f;
     bool active = true;
-    AssimpModel* model = nullptr;
 
-    glm::vec3 aabbMin = glm::vec3(0);
-    glm::vec3 aabbMax = glm::vec3(0);
-    glm::mat4 transform = glm::mat4(1);
+    glm::vec3 aabbMin;
+    glm::vec3 aabbMax;
+    glm::mat4 transform;
 
-    SpellProjectile(glm::vec3 startPos, glm::vec3 dir, float time, AssimpModel* mdl)
-        : position(startPos), direction(normalize(dir)), spawnTime(time), model(mdl), transform(1.0f) {}
+    glm::vec3 localAABBMin_logical;
+    glm::vec3 localAABBMax_logical;
+
+    SpellType spellType = SpellType::FIRE;
+
+    SpellProjectile(glm::vec3 startPos, glm::vec3 dir, float time)
+        : position(startPos), direction(normalize(dir)), spawnTime(time), transform(1.0f) {
+        float s = 0.2f;
+        localAABBMin_logical = glm::vec3(-s, -s, -s);
+        localAABBMax_logical = glm::vec3(s, s, s);
+        active = true;
+    }
 };
 
 struct WallObject {
@@ -76,7 +118,7 @@ struct WallObject {
 	GLuint BuffObj, NorBuffObj, IndxBuffObj;
 	GLuint TexBuffObj;
 	int GiboLen;
-	shared_ptr<Texture> texture; // Texture for the wall
+	std::shared_ptr<Texture> texture; // Texture for the wall
 };
 
 struct LibGrndObject {
@@ -88,7 +130,7 @@ struct LibGrndObject {
 	GLuint BuffObj, NorBuffObj, IndxBuffObj;
 	GLuint TexBuffObj;
 	int GiboLen;
-	shared_ptr<Texture> texture; // Texture for the library
+	std::shared_ptr<Texture> texture; // Texture for the library
 };
 
 struct WallObjKey {
@@ -133,10 +175,25 @@ public:
     Material orbColor;
     float orbScale = 0.1f;
     bool orbSpawned = false;
+    SpellType spellType = SpellType::FIRE;
 
-    Book(AssimpModel* bookMdl, AssimpModel* orbMdl, const glm::vec3& pos, const glm::vec3& scl, const glm::quat& orient, Material orbMat)
+    Book(AssimpModel* bookMdl, AssimpModel* orbMdl, const glm::vec3& pos, const glm::vec3& scl, const glm::quat& orient, SpellType type)
         : initialPosition(pos), position(pos), scale(scl), orientation(orient),
-        bookModel(bookMdl), orbModel(orbMdl), orbColor(orbMat) {
+        bookModel(bookMdl), orbModel(orbMdl), spellType(type) {
+        switch (spellType) {
+        case SpellType::FIRE:
+            orbColor = Material::orb_glowing_red;
+            break;
+        case SpellType::ICE:
+            orbColor = Material::orb_glowing_blue;
+            break;
+        case SpellType::LIGHTNING:
+            orbColor = Material::orb_glowing_yellow;
+            break;
+        default:
+            orbColor = Material::defaultMaterial;
+            break;
+        }
     }
 
     ~Book() {
@@ -215,8 +272,9 @@ public:
     glm::vec3 AABBmin;
     glm::vec3 AABBmax;
     bool collected;
-    Material material;
+    Material color;
     OrbState state = OrbState::SPAWNING;
+    SpellType spellType = SpellType::FIRE;
     // KeyState key_state = KeyState::SPAWNING;
     glm::vec3 spawnPosition;
     glm::vec3 idlePosition;
@@ -224,10 +282,29 @@ public:
     float levitationStartTime;
     float levitationDuration = 0.75f;
 
-    Collectible(AssimpModel* mdl, const glm::vec3& spawnPos, float scl, Material orbMat)
-        : model(mdl), position(spawnPos), scale(scl), collected(false), material(orbMat),
-        state(OrbState::LEVITATING), spawnPosition(spawnPos)
-    {
+    Collectible(AssimpModel* mdl, const glm::vec3& spawnPos, float scl, Material clrIn, SpellType type = SpellType::FIRE)
+        : model(mdl), position(spawnPos), scale(scl), collected(false),
+        state(OrbState::LEVITATING), spellType(type), spawnPosition(spawnPos) {
+
+        // Set color based on spellType
+        switch (spellType) {
+        case SpellType::FIRE:
+            //this->color = glm::vec3(1.0f, 0.4f, 0.1f); // Orange/Red for Fire
+            this->color = Material::orb_glowing_red; // Orange/Red for Fire
+            break;
+        case SpellType::ICE:
+            //this->color = glm::vec3(0.2f, 0.7f, 1.0f); // Light Blue for Ice
+            this->color = Material::orb_glowing_blue; // Light Blue for Ice
+            break;
+        case SpellType::LIGHTNING:
+            //this->color = glm::vec3(1.0f, 1.0f, 0.3f); // Yellow for Lightning
+            this->color = Material::orb_glowing_yellow; // Yellow for Lightning
+            break;
+        default:
+            this->color = clrIn; // Fallback to input color if type is NONE or undefined
+            break;
+        }
+
         idlePosition = spawnPosition + glm::vec3(0.0f, levitationHeight, 0.0f);
         levitationStartTime = glfwGetTime();
         updateAABB();
@@ -242,14 +319,14 @@ public:
     }
 
     void updateLevitation(float currentTime) {
-        if (state == OrbState::LEVITATING) { //KeyState::LEVITATING
+        if (state == OrbState::LEVITATING) {
             float elapsedTime = currentTime - levitationStartTime;
             float t = glm::clamp(elapsedTime / levitationDuration, 0.0f, 1.0f);
             t = t * t * (3.0f - 2.0f * t); // Smoothstep
             position = glm::mix(spawnPosition, idlePosition, t);
             updateAABB();
             if (t >= 1.0f) {
-                state = OrbState::IDLE; ////KeyState::IDLE
+                state = OrbState::IDLE;
                 position = idlePosition;
                 updateAABB();
             }

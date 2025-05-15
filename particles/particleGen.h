@@ -11,7 +11,7 @@
 
 using namespace glm;
 using namespace std;
-const int MAX_PARTICLES = 100;
+const int MAX_PARTICLES = 1000;
 
 class ParticleSorter {
 public:
@@ -45,11 +45,13 @@ private:
 	int numP = MAX_PARTICLES;
 	GLfloat points[MAX_PARTICLES*3];
 	GLfloat pointColors[MAX_PARTICLES * 4];
+	GLfloat pointScales[MAX_PARTICLES];
 	
 	mat4 theCamera;
 	unsigned vertArrObj;		// VAO: contains both buffer
 	unsigned vertBuffObj;
 	unsigned colorBuffObj;
+	unsigned scaleBuffObj;
 
 	float r_low;
 	float r_high;
@@ -72,8 +74,22 @@ public:
 	{ 
 		numP = numParticles;
 	}
+	float getCurrentTime() const { return t; }
 	void initParticleGroup(int PARTICLES_PER_SPRAY, vec3 playerPos, Entity* Ent);
 	void deleteOldestParticleGroup(const int PARTICLES_PER_SPRAY, Entity* Ent);
+
+	// Method to spawn a burst of particles for effects like fireballs
+    void spawnParticleBurst(const glm::vec3& position, 
+                            const glm::vec3& base_direction, 
+                            int count, 
+                            float current_time, 
+                            float speed_min, 
+                            float speed_max, 
+                            float spread, 
+                            float p_lifespan_min, float p_lifespan_max,
+                            const glm::vec4& p_color_start, 
+                            const glm::vec4& p_color_end, 
+                            float p_scale_min, float p_scale_max);
 };
 
 

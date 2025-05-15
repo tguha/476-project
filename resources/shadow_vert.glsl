@@ -35,7 +35,7 @@ void main() {
 	vec4 finalPosition = vec4(0.0);
 	vec3 finalNormal = vec3(0.0);
 
-	if (hasBones) {
+	if (hasBones == true) {
 		for (int i = 0; i < MAX_BONE_INFLUENCE; i++) {
 			if(boneIds[i] == -1) {
 				continue;

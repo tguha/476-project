@@ -2,6 +2,7 @@
 
 layout(location = 0) in vec3 vertPos;
 layout(location = 1) in vec4 vertColor;
+layout(location = 2) in float vertScale;
 
 uniform mat4 P;
 uniform mat4 M;
@@ -22,7 +23,8 @@ void main()
 	M0[1] = vec4(0.0, 1.0, 0.0, 0.0);
 	M0[2] = vec4(0.0, 0.0, 1.0, 0.0);
 
-	// gl_PointSize = 15.0 * (1.0 + 0.5 * sin(gl_InstanceID * 0.1));
+	float basePointSize = 40.0;
+	gl_PointSize = basePointSize * vertScale;
 
 	gl_Position = P *V* M0 * vec4(vertPos.xyz, 1.0);
 
