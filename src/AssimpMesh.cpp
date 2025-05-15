@@ -89,7 +89,7 @@ void AssimpMesh::Draw(const std::shared_ptr<Program> prog) const {
     // First, set all texture availability flags to false
     for (const auto& pair : typeToBoolUniform) {
         if (prog->hasUniform(pair.second)) {
-            glUniform1i(prog->getUniform(pair.second), 0);
+            glUniform1i(prog->getUniform(pair.second), GL_FALSE);
         }
     }
 
@@ -107,7 +107,7 @@ void AssimpMesh::Draw(const std::shared_ptr<Program> prog) const {
             glUniform1i(prog->getUniform(uniformName), textureUnit);
 
             
-            glUniform1i(prog->getUniform(boolUniformName), 1); // Set the boolean flag to indicate this texture is available
+            glUniform1i(prog->getUniform(boolUniformName), GL_TRUE); // Set the boolean flag to indicate this texture is available
 
             boundTextures[texture.type] = true;
             textureUnit++;

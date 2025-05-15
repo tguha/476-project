@@ -101,8 +101,6 @@ struct WallObjKey {
 	}
 };
 
-	
-
 struct LibGrndObjKey {
 	glm::vec3 center_pos;
 	float height;
@@ -110,6 +108,11 @@ struct LibGrndObjKey {
 		return std::tie(center_pos.x, center_pos.y, center_pos.z, height) <
 			std::tie(other.center_pos.x, other.center_pos.y, other.center_pos.z, other.height);
 	}
+};
+
+struct AABB {
+    vec3 min;
+    vec3 max;
 };
 
 // --- Classes ---
@@ -218,12 +221,12 @@ public:
     glm::vec3 spawnPosition;
     glm::vec3 idlePosition;
     float levitationHeight = 0.6f;
-    float levitationStartTime = 0.0f;
+    float levitationStartTime;
     float levitationDuration = 0.75f;
 
     Collectible(AssimpModel* mdl, const glm::vec3& spawnPos, float scl, Material orbMat)
         : model(mdl), position(spawnPos), scale(scl), collected(false), material(orbMat),
-        state(OrbState::LEVITATING), spawnPosition(spawnPos) //KeyState::LEVITATING  key_state(KeyState::LEVITATING),
+        state(OrbState::LEVITATING), spawnPosition(spawnPos)
     {
         idlePosition = spawnPosition + glm::vec3(0.0f, levitationHeight, 0.0f);
         levitationStartTime = glfwGetTime();

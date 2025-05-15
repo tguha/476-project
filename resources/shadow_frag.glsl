@@ -31,6 +31,8 @@ uniform float lightIntensity;
 uniform vec3 lightDir;
 uniform vec3 cameraPos;
 
+uniform float enemyAlpha;
+
 in pass_struct {
    vec3 fPos;
    vec3 fragNor;
@@ -168,6 +170,12 @@ void main() {
 
     // Gamma correction (sRGB)
     color = pow(color, vec3(1.0/2.2));
+
+    // from prev enemy shader
+    if (enemyAlpha != 1.0) {
+        vec3 redTint = vec3(0.7, 0.1, 0.1);
+        color = mix(color, redTint, enemyAlpha);
+    }
 
     FragColor = vec4(color, 1.0);
 }
