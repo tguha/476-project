@@ -878,8 +878,8 @@ public:
 
 		//key
 		key = new AssimpModel(resourceDirectory + "/Key_and_Lock/key.obj");
-		Collectible key1 = Collectible(key, vec3(0.0, 2.0, 0.0), 0.1f,  vec3(0.9, 0.9, 0.9));
-		keyCollectibles.push_back(key1);
+		// Collectible key1 = Collectible(key, vec3(0.0, 2.0, 0.0), 0.1f,  vec3(0.9, 0.9, 0.9));
+		// keyCollectibles.push_back(key1);
 
 		//lock
 		lock = new AssimpModel(resourceDirectory + "/Key_and_Lock/lockCopy.obj");
