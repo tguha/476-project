@@ -1,10 +1,12 @@
 #version 410 core
 
+
 uniform sampler2D texture_diffuse1;
 uniform sampler2D texture_specular1;
 uniform sampler2D texture_roughness1;
 uniform sampler2D texture_metalness1;
 uniform sampler2D texture_emission1;
+
 const int MAX_LIGHTS = 12;
 uniform vec3 lightColor[MAX_LIGHTS];
 uniform float lightIntensity[MAX_LIGHTS];

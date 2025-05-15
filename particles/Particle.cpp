@@ -33,12 +33,9 @@ Particle::Particle(vec3 start) :
 	startPos(start),
 	attachedEntity(nullptr),
 	camDist(1.0f)
-{
-}
+{}
 
-Particle::~Particle()
-{
-}
+Particle::~Particle() {}
 
 void Particle::load(vec3 start, float r_low, float r_high, float g_low, float g_high, float b_low, float b_high, float scale_low, float scale_high)
 {
@@ -79,7 +76,6 @@ void Particle::update(float t, float h, const vec3 &g, const vec3 start, float r
 	// change velocity based on gravity
 	//v = v + g * (tEnd - t);
 	x += v * vec3(scale* frameTime * 9.0);
-
 }
 
 void Particle::assignGroup(vec3 start, Entity* entity, float r_low, float r_high, float g_low, float g_high, float b_low, float b_high, float scale_low, float scale_high)
@@ -96,5 +92,4 @@ void Particle::calcCamDist(mat4 view) {
 	camDist = camSpaceVec.z;
 }
 
-void Particle::resize() {
-}
+void Particle::resize() {}

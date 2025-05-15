@@ -3,6 +3,7 @@
 #include <iostream>
 #include "stb_image.h"
 #include "AssimpGLMHelpers.h"
+#include "Config.h"
 #include <filesystem>
 
 
@@ -103,7 +104,7 @@ void AssimpModel::processNode(aiNode* node, const aiScene* scene) {
 }
 
 std::vector<AssimpTexture> AssimpModel::loadMaterialTextures(aiMaterial* mat, aiTextureType type, std::string typeName, const aiScene* scene) {
-    std::cout << "Material has " << mat->GetTextureCount(type) << " textures of type " << typeName << std::endl;
+    if (Config::DEBUG_TEX_LOADING) std::cout << "Material has " << mat->GetTextureCount(type) << " textures of type " << typeName << std::endl;
     std::vector<AssimpTexture> textures;
     for (unsigned int i = 0; i < mat->GetTextureCount(type); i++) {
         aiString str;
@@ -130,6 +131,9 @@ std::vector<AssimpTexture> AssimpModel::loadMaterialTextures(aiMaterial* mat, ai
                 texture.id = AssimpTextureFromFile(str.C_Str(), directory);
             }
 
+            texture.type = typeName;
+            texture.path = str.C_Str();
+
             textures.push_back(texture);
             textures_loaded.push_back(texture);
         }
@@ -152,7 +156,7 @@ unsigned int AssimpTextureFromFile(const char* path, const std::string& director
     // Normalize path (replace backslashes with forward slashes for cross-platform compatibility)
     std::replace(filename.begin(), filename.end(), '\\', '/');
 
-    std::cout << "Attempting to load texture: " << filename << std::endl;
+    if (Config::DEBUG_TEX_LOADING) std::cout << "Attempting to load texture: " << filename << std::endl;
 
     unsigned int textureID;
     glGenTextures(1, &textureID);
@@ -179,7 +183,7 @@ unsigned int AssimpTextureFromFile(const char* path, const std::string& director
         else {
             format = GL_RGB;
             internalFormat = gamma ? GL_SRGB : GL_RGB;
-            std::cout << "Unusual number of components in image: " << nrComponents << std::endl;
+            if (Config::DEBUG_TEX_LOADING) std::cout << "Unusual number of components in image: " << nrComponents << std::endl;
         }
 
         glBindTexture(GL_TEXTURE_2D, textureID);
@@ -193,7 +197,7 @@ unsigned int AssimpTextureFromFile(const char* path, const std::string& director
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
-        std::cout << "Successfully loaded texture: " << filename << " (" << width << "x" << height
+        if (Config::DEBUG_TEX_LOADING) std::cout << "Successfully loaded texture: " << filename << " (" << width << "x" << height
             << ", " << nrComponents << " channels)" << std::endl;
 
         stbi_image_free(data);
@@ -335,6 +339,15 @@ AssimpMesh AssimpModel::processMesh(aiMesh* mesh, const aiScene* scene) {
         vertex.Position = AssimpGLMHelpers::GetGLMVec(mesh->mVertices[i]);
         vertex.Normal = AssimpGLMHelpers::GetGLMVec(mesh->mNormals[i]);
 
+        if (mesh->HasTangentsAndBitangents()) {
+            vertex.Tangent = AssimpGLMHelpers::GetGLMVec(mesh->mTangents[i]);
+            vertex.Bitangent = AssimpGLMHelpers::GetGLMVec(mesh->mBitangents[i]);
+        }
+        else {
+            vertex.Tangent = glm::vec3(1.0f, 0.0f, 0.0f);
+            vertex.Bitangent = glm::vec3(0.0f, 1.0f, 0.0f);
+        }
+
         if (mesh->mTextureCoords[0])
         {
             glm::vec2 vec;
@@ -363,33 +376,51 @@ AssimpMesh AssimpModel::processMesh(aiMesh* mesh, const aiScene* scene) {
 
     aiMaterial* material = scene->mMaterials[mesh->mMaterialIndex];
 
-    // diffuse maps
-    std::vector<AssimpTexture> diffuseMaps = loadMaterialTextures(material, aiTextureType_DIFFUSE, "texture_diffuse", scene);
-    textures.insert(textures.end(), diffuseMaps.begin(), diffuseMaps.end());
+    // Albedo / Base Color
+    auto albedoMaps = loadMaterialTextures(material, aiTextureType_BASE_COLOR, "texture_diffuse", scene);
+    textures.insert(textures.end(), albedoMaps.begin(), albedoMaps.end());
 
-    // specular maps
-    std::vector<AssimpTexture> specularMaps = loadMaterialTextures(material, aiTextureType_SPECULAR, "texture_specular", scene);
-    textures.insert(textures.end(), specularMaps.begin(), specularMaps.end());
-
-    // normal maps
-    std::vector<AssimpTexture> normalMaps = loadMaterialTextures(material, aiTextureType_HEIGHT, "texture_normal", scene);
-    textures.insert(textures.end(), normalMaps.begin(), normalMaps.end());
-
-    // height maps
-    std::vector<AssimpTexture> heightMaps = loadMaterialTextures(material, aiTextureType_AMBIENT, "texture_height", scene);
-    textures.insert(textures.end(), heightMaps.begin(), heightMaps.end());
-
-    // roughness maps
-    std::vector<AssimpTexture> roughnessMaps = loadMaterialTextures(material, aiTextureType_SHININESS, "texture_roughness", scene);
-    textures.insert(textures.end(), roughnessMaps.begin(), roughnessMaps.end());
-
-    // metalness maps
-    std::vector<AssimpTexture> metalnessMaps = loadMaterialTextures(material, aiTextureType_OPACITY, "texture_metalness", scene);
+    // Metalness
+    auto metalnessMaps = loadMaterialTextures(material, aiTextureType_METALNESS, "texture_metalness", scene);
     textures.insert(textures.end(), metalnessMaps.begin(), metalnessMaps.end());
 
-    // emission maps
-    std::vector<AssimpTexture> emissionMaps = loadMaterialTextures(material, aiTextureType_EMISSIVE, "texture_emission", scene);
+    // Roughness
+    auto roughnessMaps = loadMaterialTextures(material, aiTextureType_DIFFUSE_ROUGHNESS, "texture_roughness", scene);
+    textures.insert(textures.end(), roughnessMaps.begin(), roughnessMaps.end());
+
+    // Normal map (PBR-convention)
+    auto normalMaps = loadMaterialTextures(material, aiTextureType_NORMAL_CAMERA, "texture_normal", scene);
+    textures.insert(textures.end(), normalMaps.begin(), normalMaps.end());
+
+    // Emission
+    auto emissionMaps = loadMaterialTextures(material, aiTextureType_EMISSION_COLOR, "texture_emission", scene);
     textures.insert(textures.end(), emissionMaps.begin(), emissionMaps.end());
+
+    // Fallback to legacy if modern PBR ones are missing:
+    if (albedoMaps.empty()) {
+        auto legacyAlb = loadMaterialTextures(material, aiTextureType_DIFFUSE, "texture_diffuse", scene);
+        textures.insert(textures.end(), legacyAlb.begin(), legacyAlb.end());
+    }
+
+    if (normalMaps.empty()) {
+        auto legacyNor = loadMaterialTextures(material, aiTextureType_HEIGHT, "texture_normal", scene);
+        textures.insert(textures.end(), legacyNor.begin(), legacyNor.end());
+    }
+
+    if (roughnessMaps.empty()) {
+        auto legacyRough = loadMaterialTextures(material, aiTextureType_SHININESS, "texture_roughness", scene);
+        textures.insert(textures.end(), legacyRough.begin(), legacyRough.end());
+    }
+
+    if (metalnessMaps.empty()) {
+        auto legacyMetal = loadMaterialTextures(material, aiTextureType_OPACITY, "texture_metalness", scene);
+        textures.insert(textures.end(), legacyMetal.begin(), legacyMetal.end());
+    }
+
+    if (emissionMaps.empty()) {
+        auto legacyEmit = loadMaterialTextures(material, aiTextureType_EMISSIVE, "texture_emission", scene);
+        textures.insert(textures.end(), legacyEmit.begin(), legacyEmit.end());
+    }
 
     ExtractBoneWeightForVertices(vertices, mesh, scene);
 
@@ -410,7 +441,6 @@ void AssimpModel::SetVertexBoneData(Vertex& vertex, int boneID, float weight) {
             return; // already set
         }
     }
-
 
     for (int i = 0; i < MAX_BONE_INFLUENCE; ++i) {
         if (vertex.m_BoneIDs[i] < 0) {
