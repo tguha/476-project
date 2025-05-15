@@ -17,6 +17,8 @@ namespace Config {
 
     // UI
     constexpr bool SHOW_HEALTHBAR = true;
+	constexpr bool SHOW_MINIMAP = true;
+
     const std::string RESOURCE_DIRECTORY_PREFIX = "../resources"; // Default, can be overridden
 
     // Default Window Dimensions
@@ -61,7 +63,7 @@ namespace Config {
     constexpr float CAMERA_PHI_MAX_DEGREES = -10.0f;
 
     // Gameplay
-    constexpr float GROUND_Y_LEVEL = 0.0f;
+    constexpr float GROUND_HEIGHT = 0.0f;
     constexpr float INTERACTION_RADIUS = 5.0f;
     constexpr float SPELL_PROJECTILE_SPEED = 20.0f;
     constexpr float SPELL_PROJECTILE_LIFETIME = 2.0f;

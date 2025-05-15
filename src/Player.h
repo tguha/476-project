@@ -4,6 +4,7 @@
 #include "Entity.h"
 #include "Spell.h"
 #include "Config.h"
+#include "GameObjectTypes.h"
 
 typedef enum {
     SLOT_LEFT,
