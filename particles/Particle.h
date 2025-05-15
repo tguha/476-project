@@ -39,6 +39,10 @@ public:
 	const vec3 &getPosition() const { return x; };
 	const vec3 &getVelocity() const { return v; };
 	const vec4 &getColor() const { return color; };
+	float getTEnd() const { return tEnd; };
+	void setTEnd(float time) { tEnd = time; }
+	float getScale() const { return scale; }
+	void launch(float current_t, const glm::vec3& start_pos, const glm::vec3& initial_vel, float particle_lifespan, const glm::vec4& particle_color, float particle_scale);
 	void assignGroup(vec3 start, Entity* entity, float r_low, float r_high, float g_low, float g_high, float b_low, float b_high, float scale_low, float scale_high);
 	void calcCamDist(mat4 view);
 	void resize();

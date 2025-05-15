@@ -9,6 +9,7 @@
 #include "../src/MatrixStack.h"
 #include "../src/Texture.h"
 #include "../src/Entity.h"
+#include "../src/Config.h"
 
 using namespace std;
 
@@ -44,10 +45,13 @@ void particleGen::gpuSetup() {
 		pointColors[i * 4 + 2] = 1.0;
 		pointColors[i * 4 + 3] = 1.0;
 
+		pointScales[i] = 1.0f; // Initialize scales
+
 		auto particle = make_shared<Particle>(start);
 		particles.push_back(particle);
 		unusedParticles.push_back(particle);
 		particle->load(start, r_low, r_high, g_low, g_high, b_low, b_high, scale_low, scale_high);
+        particle->setTEnd(-1.0f); // Ensure particle is initially available
 	}
 
 	//generate the VAO
@@ -70,6 +74,11 @@ void particleGen::gpuSetup() {
    //actually memcopy the data - only do this once
    glBufferData(GL_ARRAY_BUFFER, sizeof(pointColors), &pointColors[0], GL_STREAM_DRAW);
    
+   //generate vertex buffer for scales
+   glGenBuffers(1, &scaleBuffObj);
+   glBindBuffer(GL_ARRAY_BUFFER, scaleBuffObj);
+   glBufferData(GL_ARRAY_BUFFER, sizeof(pointScales), &pointScales[0], GL_STREAM_DRAW);
+
    assert(glGetError() == GL_NO_ERROR);
 	
 }
@@ -83,7 +92,7 @@ void particleGen::reSet() {
 void particleGen::drawMe(std::shared_ptr<Program> prog) {
     // Enable blending for transparent particles
     glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE); // Additive blending for more fiery type stuff
     
     // Enable depth testing but don't write to depth buffer
     glEnable(GL_DEPTH_TEST);
@@ -105,13 +114,25 @@ void particleGen::drawMe(std::shared_ptr<Program> prog) {
     glVertexAttribDivisor(0, 1);
     glVertexAttribDivisor(1, 1);
 
+    // SCALE BUF
+    int h_scale = prog->getAttribute("vertScale");
+    GLSL::enableVertexAttribArray(h_scale);
+    glBindBuffer(GL_ARRAY_BUFFER, scaleBuffObj);
+    glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, 0, 0); // Attribute 2, 1 float
+
+    glVertexAttribDivisor(0, 1); // pos
+    glVertexAttribDivisor(1, 1); // color
+    glVertexAttribDivisor(2, 1); // scale
+
     // Draw the points!
     glDrawArraysInstanced(GL_POINTS, 0, 1, numP);
     
     glVertexAttribDivisor(0, 0);
     glVertexAttribDivisor(1, 0);
+    glVertexAttribDivisor(2, 0);
     glDisableVertexAttribArray(0);
     glDisableVertexAttribArray(1);
+    glDisableVertexAttribArray(2); // Disable scale attribute array
 
     // Reset state
     glDepthMask(GL_TRUE);
@@ -151,6 +172,8 @@ void particleGen::update(float frameTime) {
       pointColors[i*4+1] = col.g; 
       pointColors[i*4+2] = col.b;
       pointColors[i*4+3] = col.a;
+
+      pointScales[i] = particles[i]->getScale(); // Update scales array
   }
 
   //update the GPU data
@@ -161,6 +184,10 @@ void particleGen::update(float frameTime) {
   glBindBuffer(GL_ARRAY_BUFFER, colorBuffObj);
   glBufferData(GL_ARRAY_BUFFER, sizeof(pointColors), NULL, GL_STREAM_DRAW);
   glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(float)*numP*4, pointColors);
+
+  glBindBuffer(GL_ARRAY_BUFFER, scaleBuffObj); // Bind scale buffer
+  glBufferData(GL_ARRAY_BUFFER, sizeof(pointScales), NULL, GL_STREAM_DRAW); // Orphan
+  glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(float)*numP, pointScales); // Update
 
   glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
@@ -180,5 +207,40 @@ void particleGen::deleteOldestParticleGroup(const int PARTICLES_PER_SPRAY, Entit
 		deletedParticle->assignGroup(start, Ent, r_low, r_high, g_low, g_high, b_low, b_high, scale_low, scale_high);
 		unusedParticles.push_back(deletedParticle);
 	}
+}
+
+// Implementation for spawning a burst of particles
+void particleGen::spawnParticleBurst(const glm::vec3& position, 
+                                     const glm::vec3& base_direction, 
+                                     int count, 
+                                     float current_time, 
+                                     float speed_min, float speed_max, 
+                                     float spread, 
+                                     float p_lifespan_min, float p_lifespan_max,
+                                     const glm::vec4& p_color_start, 
+                                     const glm::vec4& p_color_end, 
+                                     float p_scale_min, float p_scale_max)
+{
+    int spawned_count = 0;
+    for (int i = 0; i < particles.size() && spawned_count < count; ++i) {
+        if (current_time > particles[i]->getTEnd()) { // Check if particle is available
+            // Calculate randomized direction
+            glm::vec3 random_offset = glm::vec3(
+                Config::randFloat(-spread, spread),
+                Config::randFloat(-spread, spread),
+                Config::randFloat(-spread, spread)
+            );
+            glm::vec3 particle_velocity = glm::normalize(base_direction + random_offset) * Config::randFloat(speed_min, speed_max);
+
+            // Randomize particle properties
+            float particle_lifespan = Config::randFloat(p_lifespan_min, p_lifespan_max);
+            float t_color = Config::randFloat(0.0f, 1.0f);
+            glm::vec4 particle_color = glm::mix(p_color_start, p_color_end, t_color);
+            float particle_scale = Config::randFloat(p_scale_min, p_scale_max);
+
+            particles[i]->launch(current_time, position, particle_velocity, particle_lifespan, particle_color, particle_scale);
+            spawned_count++;
+        }
+    }
 }
 

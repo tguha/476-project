@@ -1,6 +1,7 @@
 #pragma once
 
 #include <glad/glad.h>
+#include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include "Spline.h"
@@ -28,24 +29,38 @@ enum class Man_State {
     STANDING
 };
 
+// --- Spell Types ---
+enum class SpellType {
+    NONE,
+    FIRE,
+    ICE,
+    LIGHTNING
+};
 
 // --- Structs ---
 struct SpellProjectile {
     glm::vec3 position;
     glm::vec3 direction;
-    glm::vec3 scale = glm::vec3(0.05f, 0.05f, 0.6f);
-    float speed = 20.0f;
+    float speed = 15.0f;
     float lifetime = 2.0f;
     float spawnTime = 0.0f;
     bool active = true;
-    AssimpModel* model = nullptr;
 
     glm::vec3 aabbMin;
     glm::vec3 aabbMax;
     glm::mat4 transform;
 
-    SpellProjectile(glm::vec3 startPos, glm::vec3 dir, float time, AssimpModel* mdl)
-        : position(startPos), direction(normalize(dir)), spawnTime(time), model(mdl), transform(1.0f) {
+    glm::vec3 localAABBMin_logical;
+    glm::vec3 localAABBMax_logical;
+
+    SpellType spellType = SpellType::FIRE;
+
+    SpellProjectile(glm::vec3 startPos, glm::vec3 dir, float time)
+        : position(startPos), direction(normalize(dir)), spawnTime(time), transform(1.0f) {
+        float s = 0.2f;
+        localAABBMin_logical = glm::vec3(-s, -s, -s);
+        localAABBMax_logical = glm::vec3(s, s, s);
+        active = true;
     }
 };
 
@@ -67,10 +82,25 @@ public:
     vec3 orbColor;
     float orbScale = 0.1f;
     bool orbSpawned = false;
+    SpellType spellType = SpellType::FIRE;
 
-    Book(AssimpModel* bookMdl, AssimpModel* orbMdl, const glm::vec3& pos, const glm::vec3& scl, const glm::quat& orient, const glm::vec3& orbClr)
+    Book(AssimpModel* bookMdl, AssimpModel* orbMdl, const glm::vec3& pos, const glm::vec3& scl, const glm::quat& orient, SpellType type)
         : initialPosition(pos), position(pos), scale(scl), orientation(orient),
-        bookModel(bookMdl), orbModel(orbMdl), orbColor(orbClr) {
+        bookModel(bookMdl), orbModel(orbMdl), spellType(type) {
+        switch (spellType) {
+            case SpellType::FIRE:
+                orbColor = glm::vec3(1.0f, 0.4f, 0.1f);
+                break;
+            case SpellType::ICE:
+                orbColor = glm::vec3(0.2f, 0.7f, 1.0f);
+                break;
+            case SpellType::LIGHTNING:
+                orbColor = glm::vec3(1.0f, 1.0f, 0.3f);
+                break;
+            default:
+                orbColor = glm::vec3(0.7f, 0.7f, 0.7f);
+                break;
+        }
     }
 
     ~Book() {
@@ -151,17 +181,33 @@ public:
     bool collected;
     glm::vec3 color;
     OrbState state = OrbState::SPAWNING;
-    // KeyState key_state = KeyState::SPAWNING;
+    SpellType spellType = SpellType::FIRE;
     glm::vec3 spawnPosition;
     glm::vec3 idlePosition;
     float levitationHeight = 0.6f;
     float levitationStartTime = 0.0f;
     float levitationDuration = 0.75f;
 
-    Collectible(AssimpModel* mdl, const glm::vec3& spawnPos, float scl, const glm::vec3& clr)
-        : model(mdl), position(spawnPos), scale(scl), collected(false), color(clr),
-        state(OrbState::LEVITATING),  spawnPosition(spawnPos) //KeyState::LEVITATING  key_state(KeyState::LEVITATING),
-    {
+    Collectible(AssimpModel* mdl, const glm::vec3& spawnPos, float scl, const glm::vec3& clrIn, SpellType type)
+        : model(mdl), position(spawnPos), scale(scl), collected(false), 
+        state(OrbState::LEVITATING), spellType(type), spawnPosition(spawnPos) {
+        
+        // Set color based on spellType
+        switch (spellType) {
+            case SpellType::FIRE:
+                this->color = glm::vec3(1.0f, 0.4f, 0.1f); // Orange/Red for Fire
+                break;
+            case SpellType::ICE:
+                this->color = glm::vec3(0.2f, 0.7f, 1.0f); // Light Blue for Ice
+                break;
+            case SpellType::LIGHTNING:
+                this->color = glm::vec3(1.0f, 1.0f, 0.3f); // Yellow for Lightning
+                break;
+            default:
+                this->color = clrIn; // Fallback to input color if type is NONE or undefined
+                break;
+        }
+
         idlePosition = spawnPosition + glm::vec3(0.0f, levitationHeight, 0.0f);
         levitationStartTime = glfwGetTime();
         updateAABB();
@@ -176,14 +222,14 @@ public:
     }
 
     void updateLevitation(float currentTime) {
-        if (state == OrbState::LEVITATING) { //KeyState::LEVITATING
+        if (state == OrbState::LEVITATING) {
             float elapsedTime = currentTime - levitationStartTime;
             float t = glm::clamp(elapsedTime / levitationDuration, 0.0f, 1.0f);
             t = t * t * (3.0f - 2.0f * t); // Smoothstep
             position = glm::mix(spawnPosition, idlePosition, t);
             updateAABB();
             if (t >= 1.0f) {
-                state = OrbState::IDLE; ////KeyState::IDLE
+                state = OrbState::IDLE;
                 position = idlePosition;
                 updateAABB();
             }
