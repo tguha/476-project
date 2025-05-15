@@ -15,28 +15,28 @@ Animation::Animation(const std::string& animationPath, AssimpModel* model, int a
     m_TicksPerSecond = animation->mTicksPerSecond;
     aiMatrix4x4 globalTransformation = scene->mRootNode->mTransformation;
     globalTransformation = globalTransformation.Inverse();
+    m_GlobalInverseTransform = AssimpGLMHelpers::ConvertMatrixToGLMFormat(globalTransformation);
     ReadHierarchyData(m_RootNode, scene->mRootNode);
     ReadMissingBones(animation, *model);
-    // m_Scene = importer.ReadFile(animationPath, aiProcess_Triangulate | aiProcess_JoinIdenticalVertices | aiProcess_SortByPType);
-    // assert(m_Scene && m_Scene->mRootNode);
-    // aiMatrix4x4 globalTransformation = m_Scene->mRootNode->mTransformation;
-    // globalTransformation = globalTransformation.Inverse();
-    // ReadHierarchyData(m_RootNode, m_Scene->mRootNode);
-    // for (unsigned int i = 0; i < m_Scene->mNumAnimations; i++) {
-    //     aiAnimation* animation = m_Scene->mAnimations[i];
-    //     AnimationData animData;
-    //     animData.name = animation->mName.data ? animation->mName.data : "Unnamed";
-    //     animData.duration = animation->mDuration;
-    //     animData.ticksPerSecond = animation->mTicksPerSecond ? animation->mTicksPerSecond : 25.0f; // Default value if not specified
+  
+    if (verbose_debug) {
+        std::cout << "Root transform (bind pose):\n";
+        for (int i = 0; i < 4; ++i) {
+            for (int j = 0; j < 4; ++j) {
+                std::cout << scene->mRootNode->mTransformation[j][i] << " | ";
+            }
+            std::cout << std::endl;
+        }
+        std::cout << "Transformation Inverse (bind pose):\n";
+        for (int i = 0; i < 4; ++i) {
+            for (int j = 0; j < 4; ++j) {
+                std::cout << globalTransformation[j][i] << " | ";
+            }
+            std::cout << std::endl;
+        }
 
-    //     std::cout << "Found animation " << i << ": "
-    //         << animation->mName.C_Str()
-    //         << " duration: " << animation->mDuration
-    //         << " ticks per second: " << animation->mTicksPerSecond << std::endl;
-
-    //     m_AnimationData.push_back(animData);
-    // }
-}
+    }
+  }
 
 Animation::~Animation() {
 }
@@ -57,6 +57,21 @@ void Animation::ReadMissingBones(const aiAnimation* animation, AssimpModel& mode
 
     auto& boneInfoMap = model.GetBoneInfoMap();
     int& boneCount = model.GetBoneCounter();
+
+    //Testing For Bone Offset Matricies
+    if (verbose_debug){
+        for (const auto& pair : boneInfoMap) {
+            std::cout << pair.first << " offset:\n";
+            for (int i = 0; i < 4; ++i) {
+                for (int j = 0; j < 4; ++j) {
+                    std::cout << pair.second.offset[j][i] << " | ";
+
+                }
+                std::cout << std::endl;
+            }
+        }
+    }
+
 
     // reading channels
     for (int i = 0; i < size; i++) {

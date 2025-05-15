@@ -22,14 +22,14 @@ class Player : public Entity {
 
         // Init spell inventory with empty slots
         Spell spellInventory[Config::INVENTORY_SIZE] = {
-            Spell("Empty", SpellType::NO_SPELL, 0, 0, 0, 0, SpellType::NO_SPELL),
-            Spell("Empty", SpellType::NO_SPELL, 0, 0, 0, 0, SpellType::NO_SPELL),
-            Spell("Empty", SpellType::NO_SPELL, 0, 0, 0, 0, SpellType::NO_SPELL),
-            Spell("Empty", SpellType::NO_SPELL, 0, 0, 0, 0, SpellType::NO_SPELL),
-            Spell("Empty", SpellType::NO_SPELL, 0, 0, 0, 0, SpellType::NO_SPELL),
-            Spell("Empty", SpellType::NO_SPELL, 0, 0, 0, 0, SpellType::NO_SPELL),
-            Spell("Empty", SpellType::NO_SPELL, 0, 0, 0, 0, SpellType::NO_SPELL),
-            Spell("Empty", SpellType::NO_SPELL, 0, 0, 0, 0, SpellType::NO_SPELL)
+            Spell("Empty", 0, 0, 0, 0, 0, SpellType::NONE),
+            Spell("Empty", 0, 0, 0, 0, 0, SpellType::NONE),
+            Spell("Empty", 0, 0, 0, 0, 0, SpellType::NONE),
+            Spell("Empty", 0, 0, 0, 0, 0, SpellType::NONE),
+            Spell("Empty", 0, 0, 0, 0, 0, SpellType::NONE),
+            Spell("Empty", 0, 0, 0, 0, 0, SpellType::NONE),
+            Spell("Empty", 0, 0, 0, 0, 0, SpellType::NONE),
+            Spell("Empty", 0, 0, 0, 0, 0, SpellType::NONE)
         };
 
         SpellSlot activeSpellSlot;
