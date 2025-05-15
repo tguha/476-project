@@ -29,7 +29,6 @@
 #include "BossRoomGen.h"
 #include "FrustumCulling.h"
 #include "BossEnemy.h"
-
 #include "Config.h"
 #include "GameObjectTypes.h"
 
@@ -47,28 +46,38 @@
 using namespace std;
 using namespace glm;
 
-#define SHOW_HEALTHBAR 1 // 1 = show health bar, 0 = hide health bar
-#define ENEMY_MOVEMENT 1 // 1 = enable enemy movement, 0 = disable enemy movement
-
 class Application : public EventCallbacks {
 public:
-	std::shared_ptr<Player> player;
-	WindowManager * windowManager = nullptr;
-
+	// Setup window and context
+	WindowManager* windowManager = nullptr;
 	bool windowMaximized = false;
 	int window_width = Config::DEFAULT_WINDOW_WIDTH;
 	int window_height = Config::DEFAULT_WINDOW_HEIGHT;
 
 	// Our shader programs
-	std::shared_ptr<Program> texProg, hudProg, prog2, prog2_enemy, assimptexProg, redFlashProg;
-	std::shared_ptr<Program> particleProg;
+	shared_ptr<Program> particleProg;
+	shared_ptr<Program> DepthProg;
+	shared_ptr<Program> DepthProgDebug;
+	shared_ptr<Program> ShadowProg;
+	shared_ptr<Program> DebugProg;
+	shared_ptr<Program> hudProg;
+	shared_ptr<Program> prog2_enemy;
+	shared_ptr<Program> redFlashProg;
+
+	// Shadows
+	GLuint depthMapFBO;
+	const GLuint S_WIDTH = 2048, S_HEIGHT = 2048;
+	GLuint depthMap;
+
+	// PLayer
+	std::shared_ptr<Player> player;
 
 	// ground data - Reused for all flat ground planes
-	GLuint GrndBuffObj = 0, GrndNorBuffObj = 0, GIndxBuffObj = 0; // Initialize to 0
-	int g_GiboLen = 0;
-	GLuint GroundVertexArrayID = 0; // Initialize to 0
-	float groundSize = 20.0f; // Half-size of the main library ground square
-	float groundY = Config::GROUND_HEIGHT;     // Y level for all ground planes
+	GLuint GrndBuffObj, GrndNorBuffObj, GrndTexBuffObj, GIndxBuffObj;
+	int g_GiboLen;
+	// Geometry for texture render
+	GLuint quad_VertexArrayID;
+	GLuint quad_vertexbuffer;
 
 	float exposure = 1.0f;
 	float saturation = 1.0f;
@@ -80,25 +89,21 @@ public:
 	shared_ptr<Texture> particleAlphaTex;
 
 	vector<WallObject> borderWalls;
-	shared_ptr<Texture> borderWallTex;
-	// std::unordered_set<int> borderWallIDs; // Set to track unique IDs
-	std::set<WallObjKey> borderWallKeys; // Set to track unique keys
-
 	vector<LibGrndObject> libraryGrounds;
-	shared_ptr<Texture> libraryGroundTex;
-	// std::unordered_set<int> libraryGroundIDs; // Set to track unique IDs
+
+	std::set<WallObjKey> borderWallKeys; // Set to track unique keys
 	std::set<LibGrndObjKey> libraryGroundKeys; // Set to track unique keys
 
-	shared_ptr<Texture> carpetTex;
-	shared_ptr<Texture> particleAlphaTex; // Add particle alpha texture
+	//std::unordered_set<int> borderWallIDs; // Set to track unique IDs
+	//std::unordered_set<int> libraryGroundIDs; // Set to track unique IDs
 
 	// character bounding box
 	glm::vec3 manAABBmin, manAABBmax;
 
 	// Scene layout parameters
-	vec3 libraryCenter = vec3(0.0f, groundY, 0.0f);
-	vec3 bossAreaCenter = vec3(0.0f, groundY, 60.0f); // Further away
-	vec3 doorPosition = vec3(0.0f, 1.5f, groundSize); // Center of door at library edge
+	vec3 libraryCenter = vec3(0.0f, Config::GROUND_HEIGHT, 0.0f);
+	vec3 bossAreaCenter = vec3(0.0f, Config::GROUND_HEIGHT, 60.0f); // Further away
+	vec3 doorPosition = vec3(0.0f, 1.5f, Config::GROUND_SIZE); // Center of door at library edge
 	vec3 doorScale = vec3(1.5f, 3.0f, 0.2f); // Width, Height, Thickness
 	float pathWidth = 4.0f; // Width of the path connecting areas
 
@@ -109,27 +114,24 @@ public:
 
 	// --- Spell Projectiles ---
 	std::vector<SpellProjectile> activeSpells;
-	std::shared_ptr<particleGen> particleSystem; 
-	glm::vec3 baseSphereLocalAABBMin;
+	std::shared_ptr<particleGen> particleSystem; // Add particle system
+	glm::vec3 baseSphereLocalAABBMin; // Store base sphere AABB once
 	glm::vec3 baseSphereLocalAABBMax;
 	bool sphereAABBCalculated = false;
 
 	// -- Boss Enemy Spell Projectiles --
 	std::vector<SpellProjectile> bossActiveSpells;
 
-	// character bounding box
-	glm::vec3 manAABBmin, manAABBmax;
+	AssimpModel* book_shelf1, * book_shelf2;
+	AssimpModel* candelabra, * chest, * library_bench, * low_poly_bookshelf, * table_chairs1, * table_chairs2, * grandfather_clock, * bookstand, * door;
 
-	AssimpModel *book_shelf1, *book_shelf2;
-	AssimpModel *candelabra, *chest, *library_bench, *low_poly_bookshelf, *table_chairs1, *table_chairs2, *grandfather_clock, *bookstand, *door;
+	AssimpModel* healthBar;
 
-	AssimpModel *healthBar;
+	AssimpModel* cube, * sphere;
 
-	AssimpModel *cube, *sphere;
+	AssimpModel* sky_sphere;
 
-	AssimpModel *sky_sphere;
-
-	AssimpModel *border, *lock, *lockHandle, *key;
+	AssimpModel* border, * lock, * lockHandle, * key;
 
 	//key collectibles
 	std::vector<Collectible> keyCollectibles;
@@ -138,15 +140,15 @@ public:
 	//  vector of books
 	vector<Book> books;
 
-	AssimpModel *stickfigure_running, *stickfigure_standing;
-	Animation *stickfigure_anim, *stickfigure_idle;
-	Animator *catwizard_animator, *stickfigure_animator;
+	AssimpModel* stickfigure_running, * stickfigure_standing;
+	Animation* stickfigure_anim, * stickfigure_idle;
+	Animator* catwizard_animator, * stickfigure_animator;
 
-	AssimpModel *CatWizard;
+	AssimpModel* CatWizard;
 
-	AssimpModel *iceElemental;
+	AssimpModel* iceElemental;
 
-	BossEnemy *bossEnemy;
+	BossEnemy* bossEnemy;
 
 	float AnimDeltaTime = 0.0f;
 	float AnimLastFrame = 0.0f;
@@ -154,13 +156,9 @@ public:
 	int change_mat = 0;
 
 	// vec3 characterMovement = vec3(0, 0, 0);
-	glm::vec3 manScale = glm::vec3(0.01f, 0.01f, 0.01f);
+	glm::vec3 manScale = glm::vec3(0.01, 0.01, 0.01);
 	glm::vec3 manMoveDir = glm::vec3(sin(radians(0.0f)), 0, cos(radians(0.0f)));
-
-	// initial position of light cycles
-	glm::vec3 start_lightcycle1_pos = glm::vec3(-384, -11, 31);
-	glm::vec3 start_lightcycle2_pos = glm::vec3(-365, -11, 9.1);
-
+	AABB playerAABB; // Contains <vec3>min and <vec3>max
 
 	float theta = glm::radians(Config::CAMERA_DEFAULT_THETA_DEGREES); // controls yaw
 	float phi = glm::radians(Config::CAMERA_DEFAULT_PHI_DEGREES); // controls pitch
@@ -171,13 +169,12 @@ public:
 	glm::vec3 eye = glm::vec3(-6, 1.03, 0); /*MINI MAP*/
 	glm::vec3 lookAt = glm::vec3(0, 0, 0); /*MINI MAP*/
 	glm::vec3 up = glm::vec3(0, 1, 0);
-	bool CULL = false; 
+	bool CULL = false;
 
 	vec3 right = normalize(cross(manMoveDir, up));
 
 	bool mouseIntialized = false;
 	double lastX, lastY;
-
 
 	int debug = 0;
 	int debug_pos = 0;
@@ -193,7 +190,7 @@ public:
 	bool movingRight = false;
 
 	//unlock bool
-	bool unlock = false;
+	bool unlocked = false;
 	float lTheta = 0;
 
 	float characterRotation = 0.0f;
@@ -205,11 +202,11 @@ public:
 
 	Man_State manState = Man_State::STANDING;
 
-	LibraryGen *library = new LibraryGen();
+	LibraryGen* library = new LibraryGen();
 	Grid<LibraryGen::Cell> grid;
 	ivec2 gridSize = glm::ivec2(30, 30); // Size of the grid (number of cells in each dimension)
 
-	BossRoomGen *bossRoom = new BossRoomGen();
+	BossRoomGen* bossRoom = new BossRoomGen();
 	Grid<BossRoomGen::Cell> bossGrid;
 	ivec2 bossGridSize = glm::ivec2(30, 30); // Size of the grid (number of cells in each dimension)
 
@@ -238,31 +235,18 @@ public:
 	SpellType currentPlayerSpellType = SpellType::FIRE; // Player starts with Fire spell by default
 	int nextSpellTypeIndex = 1; // Used to cycle spell types for new orbs: 1=FIRE, 2=ICE, 3=LIGHTNING
 
-	// Set up the FBO for storing the light's depth map
-	void initShadow() {
-		glGenFramebuffers(1, &depthMapFBO); // Generate FBO for shadow depth
-		glGenTextures(1, &depthMap); // Generate texture for shadow depth
-		glBindTexture(GL_TEXTURE_2D, depthMap);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, S_WIDTH, S_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
-
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-
-		glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO); // bind with framebuffer's depth buffer
-		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthMap, 0); // attach the texture to the framebuffer
-		glDrawBuffer(GL_NONE);
-		glReadBuffer(GL_NONE);
-		glBindFramebuffer(GL_FRAMEBUFFER, 0); // Unbind the framebuffer
-	}
-
-	void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods)
+	void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods)
 	{
 		if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
 		{
 			glfwSetWindowShouldClose(window, GL_TRUE);
 		}
+
+		if (key == GLFW_KEY_EQUAL && action == GLFW_PRESS) exposure += 0.1f;
+		if (key == GLFW_KEY_MINUS && action == GLFW_PRESS) exposure -= 0.1f;
+
+		if (key == GLFW_KEY_1 && action == GLFW_PRESS) saturation -= 0.1f;
+		if (key == GLFW_KEY_2 && action == GLFW_PRESS) saturation += 0.1f;
 
 		if (key == GLFW_KEY_F11 && action == GLFW_PRESS)
 		{
@@ -284,10 +268,11 @@ public:
 				//Movement Variable
 				movingForward = true;
 				if (debug_pos) {
-					cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
-					cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
+					std::cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
+					std::cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
 				}
-			} else if (key == GLFW_KEY_W && action == GLFW_RELEASE) {
+			}
+			else if (key == GLFW_KEY_W && action == GLFW_RELEASE) {
 				manState = Man_State::STANDING;
 				//Movement Variable
 				movingForward = false;
@@ -299,11 +284,12 @@ public:
 				movingBackward = true;
 
 				if (debug_pos) {
-					cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
-					cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
+					std::cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
+					std::cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
 				}
 
-			} else if (key == GLFW_KEY_S && action == GLFW_RELEASE) {
+			}
+			else if (key == GLFW_KEY_S && action == GLFW_RELEASE) {
 				manState = Man_State::STANDING;
 				//Movement Variable
 				movingBackward = false;
@@ -315,11 +301,12 @@ public:
 				movingLeft = true;
 
 				if (debug_pos) {
-					cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
-					cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
+					std::cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
+					std::cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
 				}
 
-			} else if (key == GLFW_KEY_A && action == GLFW_RELEASE) {
+			}
+			else if (key == GLFW_KEY_A && action == GLFW_RELEASE) {
 				manState = Man_State::STANDING;
 				//Movement Variable
 				movingLeft = false;
@@ -331,25 +318,26 @@ public:
 				movingRight = true;
 
 				if (debug_pos) {
-					cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
-					cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
+					std::cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
+					std::cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
 				}
-			} else if (key == GLFW_KEY_D && action == GLFW_RELEASE) {
+			}
+			else if (key == GLFW_KEY_D && action == GLFW_RELEASE) {
 				manState = Man_State::STANDING;
 				//Movement Variable
 				movingRight = false;
 			}
 		}
 		if (key == GLFW_KEY_Z && action == GLFW_PRESS) {
-			glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
+			glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 		}
 		if (key == GLFW_KEY_Z && action == GLFW_RELEASE) {
-			glPolygonMode( GL_FRONT_AND_BACK, GL_FILL );
+			glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 		}
 		if (key == GLFW_KEY_F && action == GLFW_PRESS) { // Interaction Key
 			interactWithBooks();
-    	}
-		if (key == GLFW_KEY_L && action == GLFW_PRESS){
+		}
+		if (key == GLFW_KEY_L && action == GLFW_PRESS) {
 			cursor_visable = !cursor_visable;
 			if (cursor_visable) {
 				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
@@ -358,39 +346,41 @@ public:
 				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
 			}
 		}
-		if(key == GLFW_KEY_U && action == GLFW_PRESS){
-			unlock = true;
-			canFightboss = true;
+		if (key == GLFW_KEY_U && action == GLFW_PRESS) {
+			unlocked = true;
 		}
 		if (key == GLFW_KEY_K && action == GLFW_PRESS) {
 			debugCamera = !debugCamera;
 		}
 
 		// Shoot fireball with SPACEBAR
-        if (key == GLFW_KEY_SPACE && action == GLFW_PRESS) {
-            if (player->isAlive()) { // Only shoot if alive
-                shootSpell();
-            }
-        }
+		if (key == GLFW_KEY_SPACE && action == GLFW_PRESS) {
+			if (player->isAlive()) { // Only shoot if alive
+				shootSpell();
+			}
+		}
 
 		if (!player->isAlive() && key == GLFW_KEY_R && action == GLFW_PRESS) { // Changed restart to R
 			restartGen = true;
 		}
+
+		if (key == GLFW_KEY_O && action == GLFW_PRESS) Config::DEBUG_LIGHTING = !Config::DEBUG_LIGHTING;
+		if (key == GLFW_KEY_P && action == GLFW_PRESS) Config::DEBUG_GEOM = !Config::DEBUG_GEOM;
 	}
 
-	void scrollCallback(GLFWwindow *window, double deltaX, double deltaY)
+	void scrollCallback(GLFWwindow* window, double deltaX, double deltaY)
 	{
-			theta = theta + deltaX * glm::radians(Config::CAMERA_SCROLL_SENSITIVITY_DEGREES);
-			phi = phi - deltaY * glm::radians(Config::CAMERA_SCROLL_SENSITIVITY_DEGREES);
+		theta = theta + deltaX * glm::radians(Config::CAMERA_SCROLL_SENSITIVITY_DEGREES);
+		phi = phi - deltaY * glm::radians(Config::CAMERA_SCROLL_SENSITIVITY_DEGREES);
 
-			if (phi > glm::radians(Config::CAMERA_PHI_MAX_DEGREES)) {
-				phi = glm::radians(Config::CAMERA_PHI_MAX_DEGREES);
-			}
-			if (phi < glm::radians(Config::CAMERA_PHI_MIN_DEGREES)) {
-				phi = glm::radians(Config::CAMERA_PHI_MIN_DEGREES);
-			}
+		if (phi > glm::radians(Config::CAMERA_PHI_MAX_DEGREES)) {
+			phi = glm::radians(Config::CAMERA_PHI_MAX_DEGREES);
+		}
+		if (phi < glm::radians(Config::CAMERA_PHI_MIN_DEGREES)) {
+			phi = glm::radians(Config::CAMERA_PHI_MIN_DEGREES);
+		}
 
-			updateCameraVectors();
+		updateCameraVectors();
 	}
 
 	void mouseMoveCallback(GLFWwindow* window, double xpos, double ypos) {
@@ -420,6 +410,25 @@ public:
 		updateCameraVectors();
 	}
 
+	// Set up the FBO for storing the light's depth map
+	void initShadow() {
+		glGenFramebuffers(1, &depthMapFBO); // Generate FBO for shadow depth
+		glGenTextures(1, &depthMap); // Generate texture for shadow depth
+		glBindTexture(GL_TEXTURE_2D, depthMap);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, S_WIDTH, S_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+
+		glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO); // bind with framebuffer's depth buffer
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthMap, 0); // attach the texture to the framebuffer
+		glDrawBuffer(GL_NONE);
+		glReadBuffer(GL_NONE);
+		glBindFramebuffer(GL_FRAMEBUFFER, 0); // Unbind the framebuffer
+	}
+
 	void updateCameraVectors() {
 		if (!debugCamera) {
 			//Activate Player Camera
@@ -438,7 +447,7 @@ public:
 			// player->setRotY(-(theta + radians(-90.0f)));
 			// player->setRotX(phi);
 
-			// // cout << "Theta: " << theta << " Phi: " << phi << endl;
+			// // std::cout << "Theta: " << theta << " Phi: " << phi << endl;
 			// manMoveDir = vec3(sin(player->getRotY()), 0, cos(player->getRotY()));
 			// right = normalize(cross(manMoveDir, up));
 			// 1. Compute the desired front vector
@@ -854,7 +863,7 @@ public:
 
 		//key
 		key = new AssimpModel(resourceDirectory + "/Key_and_Lock/key.obj");
-		Collectible key1 = Collectible(key, vec3(0.0, 2.0, 0.0), 0.1f,  vec3(0.9, 0.9, 0.9));
+		Collectible key1 = Collectible(key, vec3(0.0, 2.0, 0.0), 0.1f,  Material::gold);
 		keyCollectibles.push_back(key1);
 
 		//lock
@@ -864,10 +873,10 @@ public:
 		baseSphereLocalAABBMin = sphere->getBoundingBoxMin();
 		baseSphereLocalAABBMax = sphere->getBoundingBoxMax();
 		sphereAABBCalculated = true;
-		cout << "[DEBUG] Stored Base Sphere Local AABB." << endl;
+		std::cout << "[DEBUG] Stored Base Sphere Local AABB." << endl;
 
 		// --- Initialize Enemy(s) ---
-		cout << "Initializing enemies..." << endl;
+		std::cout << "Initializing enemies..." << endl;
 		// Use the scale factor used in drawEnemies
 		// Body scale was (0.5f, bodyBaseScaleY * 1.6f, 0.5f) where bodyBaseScaleY = 0.8f => (0.5, 1.28, 0.5)
 		// glm::vec3 enemyCollisionScale = glm::vec3(0.5f, 1.28f, 0.5f); // Define the scale
@@ -877,13 +886,13 @@ public:
 		// Check if sphere model is loaded before creating enemies that use it
 		if (sphere) {
 			// enemies.push_back(new Enemy(bossSpawnPos, 200.0f, 0.0f, sphere, enemyCollisionScale, vec3(0.0f))); // <<-- Pass sphere and scale
-			// cout << " Enemy placed at boss area: (" << bossSpawnPos.x << ", " << bossSpawnPos.y << ", " << bossSpawnPos.z << ")" << endl;
+			// std::cout << " Enemy placed at boss area: (" << bossSpawnPos.x << ", " << bossSpawnPos.y << ", " << bossSpawnPos.z << ")" << endl;
 			// enemies.push_back(new Enemy(libraryCenter + vec3(-5.0f, 0.8f, 8.0f), ENEMY_HP_MAX / 2, 2.0f, sphere, enemyCollisionScale, vec3(0.0f))); // <<-- Pass sphere and scale
 
 			// std::vector<vec3> enemySpawnPositions = library->getEnemySpawnPositions();
 			// for (const auto& spawnPos : enemySpawnPositions) {
 			// 	enemies.push_back(new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.z), ENEMY_HP_MAX, 2.0f, iceElemental, enemyCollisionScale, vec3(0.0f)));
-			// 	// cout << " Enemy placed at: (" << spawnPos.x << ", " << spawnPos.y << ", " << spawnPos.z << ")" << endl;
+			// 	// std::cout << " Enemy placed at: (" << spawnPos.x << ", " << spawnPos.y << ", " << spawnPos.z << ")" << endl;
 			// }
 			initEnemies();
 
@@ -895,7 +904,7 @@ public:
 	}
 
 	void SetMaterial(shared_ptr<Program> shader, Material color) {
-		Albedo (Base Color):
+		/* Albedo(Base Color) :
 		Never use pure black (0,0,0) or pure white (1,1,1)
 		Realistic materials range from about 0.04 to 0.95
 		For metals, this is the actual metal color
@@ -1085,7 +1094,7 @@ public:
 	void initGround() {
 		// Check if already initialized
 		if (GroundVertexArrayID != 0) {
-			cout << "Warning: initGround() called more than once." << endl;
+			std::cout << "Warning: initGround() called more than once." << endl;
 			return;
 		}
 		// Ground plane from -groundSize to +groundSize in X and Z at groundY
@@ -1135,7 +1144,7 @@ public:
 		glBindBuffer(GL_ARRAY_BUFFER, 0);
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 
-		cout << "Ground Initialized: VAO ID " << GroundVertexArrayID << endl;
+		std::cout << "Ground Initialized: VAO ID " << GroundVertexArrayID << endl;
 	}
 
 	// Draw the ground sections (library, boss area, path)
@@ -1431,7 +1440,7 @@ public:
 
 			for (const auto& spawnPos : enemySpawnPositions) {
 				enemies.push_back(new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.z), ENEMY_HP_MAX, 2.0f, iceElemental, vec3(1.0f), vec3(0.0f)));
-				// cout << " Enemy placed at: (" << spawnPos.x << ", " << spawnPos.y << ", " << spawnPos.z << ")" << endl;
+				// std::cout << " Enemy placed at: (" << spawnPos.x << ", " << spawnPos.y << ", " << spawnPos.z << ")" << endl;
 			}
 		}
 	}
@@ -1537,7 +1546,7 @@ public:
 		curS->unbind();
 
 		if (curS == ShadowProg) {
-			cout << "Drawing particles" << endl;
+			std::cout << "Drawing particles" << endl;
 			drawParticles(particleSystem, particleProg, Model); // draw particles if full scene render
 		}
 
@@ -1655,7 +1664,7 @@ public:
 				checkAABBCollision(manAABBmin, manAABBmax, orb.AABBmin, orb.AABBmax)) {
 				orb.collected = true;
 				// orb.state = OrbState::COLLECTED; // Optionally set state
-				
+
 				currentPlayerSpellType = orb.spellType; // Equip the collected spell type
 				orbsCollectedCount++; // This might now just mean "spell charges" or be repurposed
 
@@ -1723,93 +1732,94 @@ public:
 					p_scale_max = 0.3f;
 					break;
 				}
-            // Particle emission for uncollected, idle orbs
-            if (!orb.collected && orb.state == OrbState::IDLE && particleSystem) {
-                float current_particle_system_time = particleSystem->getCurrentTime();
+				// Particle emission for uncollected, idle orbs
+				if (!orb.collected && orb.state == OrbState::IDLE && particleSystem) {
+					float current_particle_system_time = particleSystem->getCurrentTime();
 
-                float p_speed_min = 0.05f;
-                float p_speed_max = 0.1f;
-                float p_spread = 1.5f; 
-                // lifespans  short so they die quickly and are recycled for other effects
-                float p_lifespan_min = 0.6f; 
-                float p_lifespan_max = 1.2f; 
+					float p_speed_min = 0.05f;
+					float p_speed_max = 0.1f;
+					float p_spread = 1.5f;
+					// lifespans  short so they die quickly and are recycled for other effects
+					float p_lifespan_min = 0.6f;
+					float p_lifespan_max = 1.2f;
 
-                // Base particle color (TODO: can be tweaked, maybe slightly transparent)
-                glm::vec4 p_color_start = glm::vec4(orb.color, 0.7f); 
-                glm::vec4 p_color_end = glm::vec4(orb.color, 0.2f);   
-                float p_scale_min = 0.1f;
-                float p_scale_max = 0.25f;
+					// Base particle color (TODO: can be tweaked, maybe slightly transparent)
+					vec3 base = materialToColor(orb.color);
+					glm::vec4 p_color_start = glm::vec4(base, 0.7f);
+					glm::vec4 p_color_end = glm::vec4(base, 0.2f);
+					float p_scale_min = 0.1f;
+					float p_scale_max = 0.25f;
 
-                int current_particles_to_spawn = 15; // Set a fixed number of particles for all orbs
-                // Customize particle aura based on spell type
-                switch (orb.spellType) {
-                    case SpellType::FIRE:
-                        // current_particles_to_spawn = 15; // Increased for density with short life
-                        p_color_start = glm::vec4(1.0f, 0.5f, 0.1f, 0.8f); 
-                        p_color_end = glm::vec4(0.9f, 0.2f, 0.0f, 0.3f);   
-                        p_scale_min = 0.25f; 
-                        p_scale_max = 0.45f;
-                        break;
-                    case SpellType::ICE:
-                        // current_particles_to_spawn = 15; // Increased for density
-                        p_color_start = glm::vec4(0.5f, 0.8f, 1.0f, 0.8f); 
-                        p_color_end = glm::vec4(0.2f, 0.5f, 0.8f, 0.3f);   
-                        p_scale_min = 0.25f;
-                        p_scale_max = 0.45f;
-                        break;
-                    case SpellType::LIGHTNING:
-                        // current_particles_to_spawn = 15; // Increased for density
-                        p_color_start = glm::vec4(1.0f, 1.0f, 0.5f, 0.8f); 
-                        p_color_end = glm::vec4(0.8f, 0.8f, 0.2f, 0.3f);   
-                        p_scale_min = 0.25f;
-                        p_scale_max = 0.45f;
-                        break;
-                    default:
-                        // current_particles_to_spawn is 15 (standardized)
-                        // p_color_start and p_color_end use orb.color
-                        // p_lifespan_min/max are standardized
-                        // Make scales consistent with other types:
-                        p_scale_min = 0.25f; 
-                        p_scale_max = 0.45f; 
-                        break;
-                }
+					int current_particles_to_spawn = 15; // Set a fixed number of particles for all orbs
+					// Customize particle aura based on spell type
+					switch (orb.spellType) {
+					case SpellType::FIRE:
+						// current_particles_to_spawn = 15; // Increased for density with short life
+						p_color_start = glm::vec4(1.0f, 0.5f, 0.1f, 0.8f);
+						p_color_end = glm::vec4(0.9f, 0.2f, 0.0f, 0.3f);
+						p_scale_min = 0.25f;
+						p_scale_max = 0.45f;
+						break;
+					case SpellType::ICE:
+						// current_particles_to_spawn = 15; // Increased for density
+						p_color_start = glm::vec4(0.5f, 0.8f, 1.0f, 0.8f);
+						p_color_end = glm::vec4(0.2f, 0.5f, 0.8f, 0.3f);
+						p_scale_min = 0.25f;
+						p_scale_max = 0.45f;
+						break;
+					case SpellType::LIGHTNING:
+						// current_particles_to_spawn = 15; // Increased for density
+						p_color_start = glm::vec4(1.0f, 1.0f, 0.5f, 0.8f);
+						p_color_end = glm::vec4(0.8f, 0.8f, 0.2f, 0.3f);
+						p_scale_min = 0.25f;
+						p_scale_max = 0.45f;
+						break;
+					default:
+						// current_particles_to_spawn is 15 (standardized)
+						// p_color_start and p_color_end use orb.color
+						// p_lifespan_min/max are standardized
+						// Make scales consistent with other types:
+						p_scale_min = 0.25f;
+						p_scale_max = 0.45f;
+						break;
+					}
 
-                particleSystem->spawnParticleBurst(orb.position, // Emit from orb center
-                                                 glm::vec3(0,1,0), // Emit upwards slowly or randomly
-                                                 current_particles_to_spawn, 
-                                                 current_particle_system_time, 
-                                                 p_speed_min, p_speed_max, 
-                                                 p_spread, 
-                                                 p_lifespan_min, p_lifespan_max,
-                                                 p_color_start, p_color_end, 
-                                                 p_scale_min, p_scale_max);
-            }
+					particleSystem->spawnParticleBurst(orb.position, // Emit from orb center
+						glm::vec3(0, 1, 0), // Emit upwards slowly or randomly
+						current_particles_to_spawn,
+						current_particle_system_time,
+						p_speed_min, p_speed_max,
+						p_spread,
+						p_lifespan_min, p_lifespan_max,
+						p_color_start, p_color_end,
+						p_scale_min, p_scale_max);
+				}
 
-			glm::vec3 currentDrawPosition;
-			float currentDrawScale = orb.scale; // Use base scale
+				glm::vec3 currentDrawPosition;
+				float currentDrawScale = orb.scale; // Use base scale
 
-			if (orb.collected) {
-				// Calculate position behind the player (same logic as before)
-				float backOffset = 0.4f;
-				float upOffsetBase = 0.6f;
-				float stackOffset = orb.scale * 2.5f;
-				float sideOffset = 0.15f;
-				glm::vec3 playerForward = normalize(manMoveDir);
-				glm::vec3 playerUp = glm::vec3(0.0f, 1.0f, 0.0f);
-				glm::vec3 playerRight = normalize(cross(playerForward, playerUp));
-				float currentUpOffset = upOffsetBase + (collectedOrbDrawIndex * stackOffset);
-				float currentSideOffset = (collectedOrbDrawIndex % 2 == 0 ? -sideOffset : sideOffset);
-				currentDrawPosition = charMove() - playerForward * backOffset
-					+ playerUp * currentUpOffset
-					+ playerRight * currentSideOffset;
-				collectedOrbDrawIndex++;
-			}
-			else {
-				currentDrawPosition = orb.position;
-			}
+				if (orb.collected) {
+					// Calculate position behind the player (same logic as before)
+					float backOffset = 0.4f;
+					float upOffsetBase = 0.6f;
+					float stackOffset = orb.scale * 2.5f;
+					float sideOffset = 0.15f;
+					glm::vec3 playerForward = normalize(manMoveDir);
+					glm::vec3 playerUp = glm::vec3(0.0f, 1.0f, 0.0f);
+					glm::vec3 playerRight = normalize(cross(playerForward, playerUp));
+					float currentUpOffset = upOffsetBase + (collectedOrbDrawIndex * stackOffset);
+					float currentSideOffset = (collectedOrbDrawIndex % 2 == 0 ? -sideOffset : sideOffset);
+					currentDrawPosition = charMove() - playerForward * backOffset
+						+ playerUp * currentUpOffset
+						+ playerRight * currentSideOffset;
+					collectedOrbDrawIndex++;
+				}
+				else {
+					currentDrawPosition = orb.position;
+				}
 
-			// --- Set up transformations ---
-			Model->pushMatrix();
+				// --- Set up transformations ---
+				Model->pushMatrix();
 				Model->loadIdentity();
 				Model->translate(currentDrawPosition);
 				Model->scale(currentDrawScale); // Use current scale
@@ -1820,10 +1830,11 @@ public:
 				setModel(simpleShader, Model);
 				orb.model->Draw(simpleShader);
 
-			Model->popMatrix();
-		} // End drawing loop
+				Model->popMatrix();
+			} // End drawing loop
 
-		simpleShader->unbind();
+			simpleShader->unbind();
+		}
 	}
 
 	void drawCat(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
@@ -1835,17 +1846,16 @@ public:
 		//}
 
 		Model->pushMatrix();
-		Model->loadIdentity();
-		Model->translate(vec3(0.0f, 0.0f, 0.0f)); // Position at origin
-		//Model->scale(vec3(0.25f));
-		Model->rotate(glm::radians(-90.0f), vec3(1.0f, 0.0f, 0.0f));
-		setModel(shader, Model);
-		if (shader == ShadowProg) glUniform1i(shader->getUniform("player"), 1);
-		CatWizard->Draw(shader);
-		if (shader == ShadowProg) glUniform1i(shader->getUniform("player"), 0);
+			Model->loadIdentity();
+			Model->translate(vec3(0.0f, 0.0f, 0.0f)); // Position at origin
+			//Model->scale(vec3(0.25f));
+			Model->rotate(glm::radians(-90.0f), vec3(1.0f, 0.0f, 0.0f));
+			setModel(shader, Model);
+			if (shader == ShadowProg) glUniform1i(shader->getUniform("player"), 1);
+			CatWizard->Draw(shader);
+			if (shader == ShadowProg) glUniform1i(shader->getUniform("player"), 0);
 		Model->popMatrix();
 		shader->unbind();
-
 	}
 
 	void checkAllEnemies() {
@@ -2545,7 +2555,7 @@ public:
 				orbCollectibles.emplace_back(sphere, orbSpawnPos, book.orbScale, book.orbColor, book.spellType);
 
 				book.orbSpawned = true;
-				cout << "Orb Spawned! Type: " << static_cast<int>(book.spellType) << " State: LEVITATING" << endl;
+				std::cout << "Orb Spawned! Type: " << static_cast<int>(book.spellType) << " State: LEVITATING" << endl;
 			}
 		}
 	}
@@ -2616,10 +2626,10 @@ public:
 		}
 
 		if (interacted) {
-			cout << "Book spawned and falling." << endl;
+			std::cout << "Book spawned and falling." << endl;
 		}
 		else {
-			cout << "No shelf nearby to interact with." << endl;
+			std::cout << "No shelf nearby to interact with." << endl;
 		}
 	}
 
@@ -2665,8 +2675,8 @@ public:
 		// playerLocalAABBMin.y = 0.0f; // If player origin is at feet
 
 		playerAABBCalculated = true;
-		// cout << "[DEBUG] Calculated Player Local AABB Min: (" << playerLocalAABBMin.x << "," << playerLocalAABBMin.y << "," << playerLocalAABBMin.z << ")" << endl;
-		// cout << "[DEBUG] Calculated Player Local AABB Max: (" << playerLocalAABBMax.x << "," << playerLocalAABBMax.y << "," << playerLocalAABBMax.z << ")" << endl;
+		// std::cout << "[DEBUG] Calculated Player Local AABB Min: (" << playerLocalAABBMin.x << "," << playerLocalAABBMin.y << "," << playerLocalAABBMin.z << ")" << endl;
+		// std::cout << "[DEBUG] Calculated Player Local AABB Max: (" << playerLocalAABBMax.x << "," << playerLocalAABBMax.y << "," << playerLocalAABBMax.z << ")" << endl;
 	}
 
 
@@ -2844,7 +2854,7 @@ public:
 
 		// 			// 4. Check for Overlap
 		// 			if (checkAABBCollision(playerWorldMin, playerWorldMax, shelfWorldMin, shelfWorldMax)) {
-		// 				// cout << "[DEBUG] Collision DETECTED with shelf at grid (" << x << "," << z << ")" << endl;
+		// 				// std::cout << "[DEBUG] Collision DETECTED with shelf at grid (" << x << "," << z << ")" << endl;
 		// 				return true; // Collision found
 		// 			}
 		// 		} else if (grid[gridPos] == LibraryGen::TOP_BORDER || grid[gridPos] == LibraryGen::BOTTOM_BORDER) {
@@ -2862,7 +2872,7 @@ public:
 
 		// 			// 4. Check for Overlap
 		// 			if (checkAABBCollision(playerWorldMin, playerWorldMax, shelfWorldMin, shelfWorldMax)) {
-		// 				// cout << "[DEBUG] Collision DETECTED with shelf at grid (" << x << "," << z << ")" << endl;
+		// 				// std::cout << "[DEBUG] Collision DETECTED with shelf at grid (" << x << "," << z << ")" << endl;
 		// 				return true; // Collision found
 		// 			}
 		// 		} else if (grid[gridPos] == LibraryGen::LEFT_BORDER || grid[gridPos] == LibraryGen::RIGHT_BORDER) {
@@ -2880,7 +2890,7 @@ public:
 
 		// 			// 4. Check for Overlap
 		// 			if (checkAABBCollision(playerWorldMin, playerWorldMax, shelfWorldMin, shelfWorldMax)) {
-		// 				// cout << "[DEBUG] Collision DETECTED with shelf at grid (" << x << "," << z << ")" << endl;
+		// 				// std::cout << "[DEBUG] Collision DETECTED with shelf at grid (" << x << "," << z << ")" << endl;
 		// 				return true; // Collision found
 		// 			}
 		// 		}
@@ -2923,7 +2933,7 @@ public:
 
 		vec3 currentPos = player->getPosition();
 		vec3 nextPos = currentPos + desiredMoveDelta;
-		nextPos.y = groundY; // Keep player on the ground plane
+		nextPos.y = Config::GROUND_HEIGHT; // Keep player on the ground plane
 
 		// Player orientation for AABB calculation
 		// glm::quat playerOrientation = glm::angleAxis(manRot.y, glm::vec3(0, 1, 0));
@@ -2933,7 +2943,7 @@ public:
 		/*
 		if (checkCollisionAt(nextPos, playerOrientation)) {
 			 // Don't update characterMovement, effectively stopping before collision
-			 cout << "[DEBUG] Collision prevented movement." << endl;
+			 std::cout << "[DEBUG] Collision prevented movement." << endl;
 			 return currentPos; // Return current position
 		} else {
 			 // No collision detected, allow full movement
@@ -2950,7 +2960,7 @@ public:
 			allowedPos.x = nextPos.x; // Allow X movement
 		}
 		else {
-			cout << "[DEBUG] X-Collision prevented." << endl;
+			std::cout << "[DEBUG] X-Collision prevented." << endl;
 		}
 
 
@@ -2960,14 +2970,14 @@ public:
 			allowedPos.z = nextPos.z; // Allow Z movement
 		}
 		else {
-			cout << "[DEBUG] Z-Collision prevented." << endl;
+			std::cout << "[DEBUG] Z-Collision prevented." << endl;
 		}
 
 		// Final position is the allowed position after checking both axes
 		// characterMovement = allowedPos;
 		// characterMovement.y = groundY; // Ensure Y stays correct
 
-		player->setPosition(vec3(allowedPos.x, groundY, allowedPos.z)); // Update player position
+		player->setPosition(vec3(allowedPos.x, Config::GROUND_HEIGHT, allowedPos.z)); // Update player position
 
 		// Update camera based on final position (done in render)
 		// return characterMovement; // Return the final, potentially adjusted, position
@@ -2976,9 +2986,9 @@ public:
 
 	// --- Shooting Function ---
 	void shootSpell() { 
-		cout << "[DEBUG] shootSpell() called. Orbs: " << orbsCollectedCount << endl;
+		std::cout << "[DEBUG] shootSpell() called. Orbs: " << orbsCollectedCount << endl;
 		if (orbsCollectedCount <= 0 && !debugCamera) { // Allow shooting in debug camera without orbs
-			cout << "[DEBUG] Cannot shoot: No orbs." << endl;
+			std::cout << "[DEBUG] Cannot shoot: No orbs." << endl;
 			return; 
 		}
 
@@ -3054,12 +3064,12 @@ public:
 				break;
 			case SpellType::NONE:
 			default:
-				cout << "[DEBUG] Cannot shoot: No valid spell type selected." << endl;
+				std::cout << "[DEBUG] Cannot shoot: No valid spell type selected." << endl;
 				if (!activeSpells.empty()) activeSpells.pop_back();
 				if (!debugCamera) orbsCollectedCount++; // Refund orb if not in debug mode
 				return;
 			}
-			cout << "[DEBUG] Firing " << spellTypeName << " spell." << endl;
+			std::cout << "[DEBUG] Firing " << spellTypeName << " spell." << endl;
 
 			particleSystem->spawnParticleBurst(spawnPos,       // Use initial spawnPos for particles
 				shootDir,       // Use initial shootDir for particles
@@ -3072,7 +3082,7 @@ public:
 				p_scale_min, p_scale_max);
 		}
 
-		cout << "[DEBUG] Spell Fired! Start:(" << spawnPos.x << "," << spawnPos.y << "," << spawnPos.z
+		std::cout << "[DEBUG] Spell Fired! Start:(" << spawnPos.x << "," << spawnPos.y << "," << spawnPos.z
 			<< ") Dir: (" << shootDir.x << "," << shootDir.y << "," << shootDir.z
 			<< "). Active spells: " << activeSpells.size() << endl;
 	}
@@ -3107,7 +3117,7 @@ public:
 				if (!enemy || !enemy->isAlive()) continue;
 
 				if (checkAABBCollision(proj.aabbMin, proj.aabbMax, enemy->getAABBMin(), enemy->getAABBMax())) {
-					cout << "[DEBUG] Fireball HIT enemy!" << endl;
+					std::cout << "[DEBUG] Fireball HIT enemy!" << endl;
 					enemy->takeDamage(damageAmount);
 					proj.active = false;
 					hitSomething = true;
@@ -3121,7 +3131,7 @@ public:
 
 			if (canFightboss && bossEnemy && bossEnemy->isAlive()) {
 				if (checkAABBCollision(proj.aabbMin, proj.aabbMax, bossEnemy->getAABBMin(), bossEnemy->getAABBMax())) {
-					cout << "[DEBUG] Fireball HIT boss!" << endl;
+					std::cout << "[DEBUG] Fireball HIT boss!" << endl;
 					float bossDamage = 50.0f;
 					bossEnemy->takeDamage(bossDamage);
 					proj.active = false;
@@ -3204,7 +3214,7 @@ public:
 			float playerRadius = 0.5f; // Approx player radius
 
 			if (checkSphereCollision(proj.position, 0.2f + playerRadius, playerCenter, proj.aabbMax)) { // Simple sphere check: proj vs player
-				cout << "[DEBUG] Boss Spell HIT player!" << endl;
+				std::cout << "[DEBUG] Boss Spell HIT player!" << endl;
 				player->takeDamage(damageAmount);
 				proj.active = false;
 				bossActiveSpells.erase(bossActiveSpells.begin() + i);
@@ -3444,7 +3454,7 @@ public:
 
 	}
 
-	void updateLock(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model){
+	void updateLock(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		//unlock one of the locks if have a key
 		//for now unlock all
 
@@ -3986,20 +3996,9 @@ public:
 	}
 
 	void render(float frametime, float animTime) {
-		// Get current frame buffer size.
 		int width, height;
-		glfwGetFramebufferSize(windowManager->getHandle(), &width, &height);
-		glViewport(0, 0, width, height);
-
-		// Clear framebuffer.
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-		float aspect = width/(float)height;
-
-		// Create the matrix stacks
-		auto Projection = make_shared<MatrixStack>();
-		auto View = make_shared<MatrixStack>();
-		auto Model = make_shared<MatrixStack>();
+		glfwGetFramebufferSize(windowManager->getHandle(), &width, &height); // Get current frame buffer size
+		float aspect = width / (float)height;
 
 		// --- Update Game Logic ---
 		charMove();
@@ -4035,7 +4034,7 @@ public:
 			//particleAlphaTex->bind(particleProg->getUniform("alphaTexture"));
 			particleProg->unbind();
 		}
-		
+
 		// ========================================================================
 		// First Pass: Render scene from light's perspective to generate depth map
 		// ========================================================================
@@ -4071,12 +4070,42 @@ public:
 
 		// Setup Camera
 		Projection->pushMatrix();
-		Projection->perspective(radians(45.0f), aspect, 0.1f, 1000.0f); // Adjusted near/far
+		Projection->perspective(radians(45.0f), aspect, 0.1f, 100.0f);
 		View->pushMatrix();
 		View->loadIdentity();
 		View->lookAt(eye, lookAt, up); // Use updated eye/lookAt
 
-		ExtractVFPlanes(Projection->topMatrix(), View->topMatrix(), planes); // Update frustum planes
+		// Update frustum planes and light space matrix for shadow mapping
+		ExtractVFPlanes(Projection->topMatrix(), View->topMatrix(), planes);
+
+		// ==============================
+		// Second Pass: Render to Screen
+		// ==============================
+		if (Config::DEBUG_LIGHTING) { // Debugging light view from lights perspective
+			if (Config::DEBUG_GEOM) {
+				DepthProgDebug->bind();
+
+				glUniformMatrix4fv(DepthProg->getUniform("LP"), 1, GL_FALSE, value_ptr(LO));
+
+				glUniformMatrix4fv(DepthProg->getUniform("LV"), 1, GL_FALSE, value_ptr(LV));
+
+				drawSceneForShadowMap(DepthProgDebug); // Draw the scene from the lights perspective for debugging
+
+				DepthProgDebug->unbind();
+			}
+			else { // Draw the depth map texture to a quad for visualization
+				DebugProg->bind();
+				glActiveTexture(GL_TEXTURE0);
+				glBindTexture(GL_TEXTURE_2D, depthMap);
+				glUniform1i(DebugProg->getUniform("texBuf"), 0);
+
+				glEnableVertexAttribArray(0); // Now we actually draw the quad
+				glBindBuffer(GL_ARRAY_BUFFER, quad_vertexbuffer);
+				glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
+				glDrawArrays(GL_TRIANGLES, 0, 6);
+				glDisableVertexAttribArray(0);
+				DebugProg->unbind();
+			}
 		}
 		else { // Render the scene like normal with shadow mapping
 			ShadowProg->bind();
@@ -4113,7 +4142,7 @@ public:
 				drawBossHealthBar(View->topMatrix(), Projection->topMatrix());
 			}
 		}
-		
+
 		if (player->getDamageTimer() > 0.0f) {
 			player->setDamageTimer(player->getDamageTimer() - frametime);
 
@@ -4181,47 +4210,6 @@ public:
 			ShadowProg->unbind();
 		}
 
-		/*MINI MAP*/
-		prog2->bind();
-			glClear( GL_DEPTH_BUFFER_BIT);
-			glViewport(0, height-350, 350, 350);
-			SetOrthoMatrix(prog2);
-			SetTopView(prog2); /*MINI MAP*/
-			SetMaterialMan(prog2,6 );
-			//drawScene(prog2, CULL);
-			/* draws */
-			// drawBorder(prog2, Model);
-
-			// drawDoor(prog2, Model);
-			// drawBooks(prog2, Model);
-			// drawEnemies(prog2, Model);
-			drawLibrary(prog2, Model, false);
-			drawBossRoom(prog2, Model, false);
-			drawBossEnemy(prog2, Model);
-			// drawOrbs(prog2, Model);
-			drawMiniPlayer(prog2, Model);
-			drawBorderWalls(prog2, Model);
-			// SetMaterialMan(prog2,6 );
-			drawLibGrnd(prog2, Model);
-			drawBossRoom(prog2, Model, false); //boss room not drawing
-
-
-
-			//stripped down player draw
-
-			// if (SD)
-			// 	drawOccupied(prog2);
-		prog2->unbind();
-
-		prog2_enemy->bind();
-			glClear( GL_DEPTH_BUFFER_BIT);
-			glViewport(0, height-300, 300, 300);
-			SetOrthoMatrix(prog2_enemy);
-			SetTopView(prog2_enemy); /*MINI MAP*/
-			drawEnemies(prog2_enemy, Model);
-
-		prog2_enemy->unbind();
-
 		// --- Cleanup ---
 		Projection->popMatrix();
 		View->popMatrix();
@@ -4229,181 +4217,6 @@ public:
 		// Unbind any VAO or Program that might be lingering (belt-and-suspenders)
 		glBindVertexArray(0);
 		glUseProgram(0);
-	}
-
-	void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods)
-	{
-		if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
-		{
-			glfwSetWindowShouldClose(window, GL_TRUE);
-		}
-
-		if (key == GLFW_KEY_EQUAL && action == GLFW_PRESS) exposure += 0.1f;
-		if (key == GLFW_KEY_MINUS && action == GLFW_PRESS) exposure -= 0.1f;
-
-		if (key == GLFW_KEY_1 && action == GLFW_PRESS) saturation -= 0.1f;
-		if (key == GLFW_KEY_2 && action == GLFW_PRESS) saturation += 0.1f;
-
-		if (key == GLFW_KEY_F11 && action == GLFW_PRESS)
-		{
-			//Fullscreen Mode
-			if (!windowMaximized) {
-				glfwMaximizeWindow(window);
-				windowMaximized = !windowMaximized;
-			}
-			else {
-				glfwRestoreWindow(window);
-				windowMaximized = !windowMaximized;
-			}
-		}
-
-		if (player->isAlive() || debugCamera) {
-			if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_W) != GLFW_RELEASE) {
-				manState = Man_State::WALKING;
-
-				//Movement Variable
-				movingForward = true;
-				if (debug_pos) {
-					cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
-					cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
-				}
-			}
-			else if (key == GLFW_KEY_W && action == GLFW_RELEASE) {
-				manState = Man_State::STANDING;
-				//Movement Variable
-				movingForward = false;
-			}
-			if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_S) != GLFW_RELEASE) {
-				manState = Man_State::WALKING;
-
-				//Movement Variable
-				movingBackward = true;
-
-				if (debug_pos) {
-					cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
-					cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
-				}
-
-			}
-			else if (key == GLFW_KEY_S && action == GLFW_RELEASE) {
-				manState = Man_State::STANDING;
-				//Movement Variable
-				movingBackward = false;
-			}
-			if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_A) != GLFW_RELEASE) {
-				manState = Man_State::WALKING;
-
-				//Movement Variable
-				movingLeft = true;
-
-				if (debug_pos) {
-					cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
-					cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
-				}
-
-			}
-			else if (key == GLFW_KEY_A && action == GLFW_RELEASE) {
-				manState = Man_State::STANDING;
-				//Movement Variable
-				movingLeft = false;
-			}
-			if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_D) != GLFW_RELEASE) {
-				manState = Man_State::WALKING;
-
-				//Movement Variable
-				movingRight = true;
-
-				if (debug_pos) {
-					cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
-					cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
-				}
-			}
-			else if (key == GLFW_KEY_D && action == GLFW_RELEASE) {
-				manState = Man_State::STANDING;
-				//Movement Variable
-				movingRight = false;
-			}
-		}
-		if (key == GLFW_KEY_Z && action == GLFW_PRESS) {
-			glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-		}
-		if (key == GLFW_KEY_Z && action == GLFW_RELEASE) {
-			glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-		}
-		if (key == GLFW_KEY_F && action == GLFW_PRESS) { // Interaction Key
-			interactWithBooks();
-		}
-		if (key == GLFW_KEY_L && action == GLFW_PRESS) {
-			cursor_visable = !cursor_visable;
-			if (cursor_visable) {
-				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-			}
-			else {
-				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-			}
-		}
-		if (key == GLFW_KEY_U && action == GLFW_PRESS) {
-			unlocked = true;
-		}
-		if (key == GLFW_KEY_K && action == GLFW_PRESS) {
-			debugCamera = !debugCamera;
-		}
-
-		// Shoot fireball with SPACEBAR
-		if (key == GLFW_KEY_SPACE && action == GLFW_PRESS) {
-			if (player->isAlive()) { // Only shoot if alive
-				shootSpell();
-			}
-		}
-
-		if (!player->isAlive() && key == GLFW_KEY_R && action == GLFW_PRESS) { // Changed restart to R
-			restartGen = true;
-		}
-
-		if (key == GLFW_KEY_O && action == GLFW_PRESS) Config::DEBUG_LIGHTING = !Config::DEBUG_LIGHTING;
-		if (key == GLFW_KEY_P && action == GLFW_PRESS) Config::DEBUG_GEOM = !Config::DEBUG_GEOM;
-	}
-
-	void scrollCallback(GLFWwindow* window, double deltaX, double deltaY)
-	{
-		theta = theta + deltaX * glm::radians(Config::CAMERA_SCROLL_SENSITIVITY_DEGREES);
-		phi = phi - deltaY * glm::radians(Config::CAMERA_SCROLL_SENSITIVITY_DEGREES);
-
-		if (phi > glm::radians(Config::CAMERA_PHI_MAX_DEGREES)) {
-			phi = glm::radians(Config::CAMERA_PHI_MAX_DEGREES);
-		}
-		if (phi < glm::radians(Config::CAMERA_PHI_MIN_DEGREES)) {
-			phi = glm::radians(Config::CAMERA_PHI_MIN_DEGREES);
-		}
-
-		updateCameraVectors();
-	}
-
-	void mouseMoveCallback(GLFWwindow* window, double xpos, double ypos) {
-		if (!mouseIntialized) {
-			lastX = xpos;
-			lastY = ypos;
-			mouseIntialized = true;
-			return;
-		}
-
-		float deltaX = xpos - lastX;
-		float deltaY = lastY - ypos;
-		lastX = xpos;
-		lastY = ypos;
-
-		theta = theta + deltaX * Config::CAMERA_MOUSE_SENSITIVITY;
-		phi = phi + deltaY * Config::CAMERA_MOUSE_SENSITIVITY;
-
-		if (phi > glm::radians(Config::CAMERA_PHI_MAX_DEGREES)) {
-			phi = glm::radians(Config::CAMERA_PHI_MAX_DEGREES);
-		}
-		if (phi < radians(-80.0f))
-		{
-			phi = radians(-80.0f);
-		}
-
-		updateCameraVectors();
 	}
 };
 
@@ -4463,7 +4276,7 @@ int main(int argc, char* argv[]) {
 
 	glfwSetInputMode(windowManager->getHandle(), GLFW_STICKY_KEYS, GLFW_TRUE);
 
-	cout << "Controls: " << endl << "WASD: Move" << endl << "Mouse: Look around" << endl
+	std::cout << "Controls: " << endl << "WASD: Move" << endl << "Mouse: Look around" << endl
 		<< "'F': Interact with book" << "F11 Fullscreen" << endl << "'L': Toggle cursor mode" << endl;
 
 	// Loop until the user closes the window.

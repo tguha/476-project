@@ -33,7 +33,7 @@ particleGen::particleGen(vec3 source, float r_l, float r_h, float g_l, float g_h
 
 void particleGen::gpuSetup() {
 	glEnable(GL_PROGRAM_POINT_SIZE);
-	//cout << numP << endl;
+	//std::cout << numP << endl;
  	for (int i=0; i < numP; i++) {
 		points[i * 3 + 0] = start.x;
 		points[i * 3 + 1] = start.y;
