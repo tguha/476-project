@@ -1546,7 +1546,7 @@ public:
 		curS->unbind();
 
 		if (curS == ShadowProg) {
-			std::cout << "Drawing particles" << endl;
+			//std::cout << "Drawing particles" << endl;
 			drawParticles(particleSystem, particleProg, Model); // draw particles if full scene render
 		}
 
