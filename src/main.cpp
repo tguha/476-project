@@ -175,7 +175,7 @@ public:
 
 	AssimpModel *stickfigure_running, *stickfigure_standing;
 	Animation *stickfigure_anim, *stickfigure_idle;
-	Animator *stickfigure_animator;
+	Animator *catwizard_animator;
 
 	AssimpModel *CatWizard;
 
@@ -189,7 +189,7 @@ public:
 	int change_mat = 0;
 
 	// vec3 characterMovement = vec3(0, 0, 0);
-	glm::vec3 manScale = glm::vec3(0.01, 0.01, 0.01);
+	glm::vec3 manScale = glm::vec3(0.01f, 0.01f, 0.01f);
 	glm::vec3 manMoveDir = glm::vec3(sin(radians(0.0f)), 0, cos(radians(0.0f)));
 
 	// initial position of light cycles
@@ -206,7 +206,7 @@ public:
 	glm::vec3 eye = glm::vec3(-6, 1.03, 0); /*MINI MAP*/
 	glm::vec3 lookAt = glm::vec3(0, 0, 0); /*MINI MAP*/
 	glm::vec3 up = glm::vec3(0, 1, 0);
-	bool CULL = false;
+	bool CULL = false; 
 
 	vec3 right = normalize(cross(manMoveDir, up));
 
@@ -770,19 +770,22 @@ public:
  		string errStr;
 
 		// load the walking character model
-		stickfigure_running = new AssimpModel(resourceDirectory + "/CatWizard/CatWizardNoTex.fbx");
+		// load the walking character moded
+		stickfigure_running = new AssimpModel(resourceDirectory + "/CatWizard/CatWizardAnimation.fbx");
 		stickfigure_running->assignTexture("texture_diffuse1", resourceDirectory + "/CatWizard/textures/ImphenziaPalette02-Albedo.png");
-		//stickfigure_anim = new Animation(resourceDirectory + "/CatWizard/untitled.fbx", stickfigure_running, 0);
+		//PROBLEM GETTING ANIMATION FROM "Fixed" FBX
+		stickfigure_anim = new Animation(resourceDirectory + "/CatWizard/CatWizardAnimation.fbx", stickfigure_running, 0);
+		//stickfigure_idle = new Animation(resourceDirectory + "/Vanguard/Vanguard.fbx", stickfigure_running, 1);
 		//stickfigure_idle = new Animation(resourceDirectory + "/Vanguard/Vanguard.fbx", stickfigure_running, 1);
 
 		//TEST Load the cat
-		//CatWizard = new AssimpModel(resourceDirectory + "/CatWizard/CatWizardOrange.fbx");
+		//CatWizard = new AssimpModel(resourceDirectory + "/CatWizard/BlendWalkFix.fbx");
 
 
 		// --- Calculate Player Collision Box NOW that model is loaded ---
 		calculatePlayerLocalAABB();
 
-		stickfigure_animator = new Animator(stickfigure_anim);
+		catwizard_animator = new Animator(stickfigure_anim);
 
 		// load the cube (books)
 		cube = new AssimpModel(resourceDirectory + "/cube.obj");
@@ -1220,6 +1223,7 @@ public:
 			glDrawElements(GL_TRIANGLES, libGrnd.GiboLen, GL_UNSIGNED_SHORT, 0);
 			Model->popMatrix();
 
+
 			if (shader == assimptexProg) {
 				libGrnd.texture->unbind(); // Unbind the texture after drawing each library ground
 			}
@@ -1381,40 +1385,45 @@ public:
 	}
 
 	void drawPlayer(shared_ptr<Program> curS, shared_ptr<MatrixStack> Model, float animTime) {
-		if (!curS || !Model || !stickfigure_running || !stickfigure_animator /* || !stickfigure_anim /*|| !stickfigure_idle*/) {
+		if (!curS || !Model || !stickfigure_running || !catwizard_animator || !stickfigure_anim /*|| !stickfigure_idle*/) {
 			cerr << "Error: Null pointer in drawPlayer." << endl;
 			return;
 		}
 		curS->bind();
 
 		// Animation update
-		/*
-		stickfigure_animator->UpdateAnimation(1.5f * animTime);
+		
+		catwizard_animator->SetCurrentAnimation(stickfigure_anim);
+		catwizard_animator->UpdateAnimation(1.5f * animTime);
+
+		/*if (manState == Man_State::WALKING) {
 		if (manState == Man_State::WALKING) {
 			stickfigure_animator->SetCurrentAnimation(stickfigure_anim);
-		if (manState == WALKING) {
-		//stickfigure_animator->SetCurrentAnimation(stickfigure_anim);
 		}
 		else {
 			//stickfigure_animator->SetCurrentAnimation(stickfigure_idle);
 		}
+		*/
 		// Update bone matrices
-		vector<glm::mat4> transforms = stickfigure_animator->GetFinalBoneMatrices();
+		
+		vector<glm::mat4> transforms = catwizard_animator->GetFinalBoneMatrices(); 
+
+
 		int numBones = std::min((int)transforms.size(), Config::MAX_BONES);
 		for (int i = 0; i < numBones; ++i) {
 			string uniformName = "finalBonesMatrices[" + std::to_string(i) + "]";
 			glUniformMatrix4fv(curS->getUniform(uniformName), 1, GL_FALSE, value_ptr(transforms[i]));
 		}
-		*/
+		
 		// Model matrix setup
 		Model->pushMatrix();
 		Model->loadIdentity();
 		// Model->translate(characterMovement); // Use final player position
 		Model->translate(player->getPosition());
 		// *** USE CAMERA ROTATION FOR MODEL ***
-		Model->rotate(glm::radians(-90.0f), vec3(1.0f, 0.0f, 0.0f));
-		Model->rotate(player->getRotY() + 3.14f, vec3(0, 0, 1)); // <<-- FIXED ROTATION
-		Model->scale(1.0f);
+		Model->rotate(glm::radians(90.0f), vec3(1.0f, 0.0f, 0.0f));
+		Model->rotate(( - 1.0f * player->getRotY()), vec3(0, 0, 1)); // <<-- FIXED ROTATION
+		Model->scale(0.01f);
 
 		// Update VISUAL bounding box (can be different from collision box if needed)
 		// Using the same AABB calculation logic as before for consistency
@@ -3746,10 +3755,10 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 
 
-		/*
+		
 		//Test drawing cat model
-		drawCat(assimptexProg, Model);
-		*/
+		//drawCat(assimptexProg, Model);
+		
 
 		// drawSkybox(assimptexProg, Model); // Draw the skybox last
 
