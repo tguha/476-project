@@ -5,6 +5,8 @@ layout(location = 1) in vec3 vertNor;
 layout(location = 2) in vec2 vertTex;
 layout(location = 3) in ivec4 boneIds;
 layout(location = 4) in vec4 weights;
+layout(location = 5) in vec3 vertTan;
+layout(location = 6) in vec3 vertBitan;
 
 uniform mat4 P;
 uniform mat4 V;
@@ -26,6 +28,7 @@ out pass_struct {
 	vec4 fPosLS;	// Position in light space
 	vec3 vColor;	// Basic diffuse color
 	vec3 viewPos;	// View space position for lighting calculations
+	mat3 TBN;
 } info_struct;
 
 void main() {
@@ -57,13 +60,20 @@ void main() {
 
 	info_struct.fPos = (M * finalPosition).xyz; // the position in world coordinates
 	info_struct.fragNor = normalize((M * vec4(finalNormal, 0.0)).xyz); // the normal in world coordinates
-	info_struct.viewPos = (V * M * finalPosition).xyz; // the position in view coordinates)
+	info_struct.viewPos = (V * M * finalPosition).xyz; // the position in view coordinates
 
 	info_struct.vTexCoord = vertTex; // pass through the texture coordinates to be interpolated
 
 	info_struct.fPosLS = LV * M * finalPosition; // The vertex in light space
 
 	info_struct.vColor = vec3(max(dot(info_struct.fragNor, normalize(lightDir)), 0)); // a color that could be blended - or be shading
+
+	mat3 TBN = mat3(
+		normalize(mat3(M) * vertTan),
+		normalize(mat3(M) * vertBitan),
+		normalize(mat3(M) * vertNor)
+	);
+	info_struct.TBN = TBN; // Pass to fragment shader
 
 	gl_Position = P * V * M * finalPosition; // Final vertex position
 }

@@ -48,6 +48,14 @@ void AssimpMesh::setupMesh()
     glEnableVertexAttribArray(4);
     glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, m_Weights));
 
+    // Tangents
+    glEnableVertexAttribArray(5);
+    glVertexAttribPointer(5, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, Tangent));
+
+    // Bitangents
+    glEnableVertexAttribArray(6);
+    glVertexAttribPointer(6, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, Bitangent));
+
     glBindVertexArray(0);
 
     // std::cout << "Mesh setup complete" << std::endl;
@@ -60,7 +68,7 @@ void AssimpMesh::Draw(const std::shared_ptr<Program> prog) const {
 
     // Simple mapping from type to uniform name
     std::map<std::string, std::string> typeToUniform = {
-        {"texture_diffuse", "TexDif"},
+        {"texture_diffuse", "TexAlb"},
         {"texture_specular", "TexSpec"},
         {"texture_normal", "TexNor"},
         {"texture_roughness", "TexRough"},
@@ -70,7 +78,7 @@ void AssimpMesh::Draw(const std::shared_ptr<Program> prog) const {
 
     // Corresponding boolean uniform names
     std::map<std::string, std::string> typeToBoolUniform = {
-        {"texture_diffuse", "hasTexDif"},
+        {"texture_diffuse", "hasTexAlb"},
         {"texture_specular", "hasTexSpec"},
         {"texture_normal", "hasTexNor"},
         {"texture_roughness", "hasTexRough"},

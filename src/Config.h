@@ -17,6 +17,7 @@ namespace Config {
     inline static bool DEBUG_LIGHTING = false;
     inline static bool DEBUG_GEOM = false;
 	constexpr bool DEBUG_SHADER = true; // Sets verbose flag for shaders
+    constexpr bool DEBUG_TEX_LOADING = true;
 
     // Rendering & Shaders
     constexpr int MAX_BONES = 200;

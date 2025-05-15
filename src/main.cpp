@@ -274,12 +274,13 @@ public:
 		ShadowProg->addUniform("lightDir");
 		ShadowProg->addUniform("lightColor");
 		ShadowProg->addUniform("lightIntensity");
+		ShadowProg->addUniform("cameraPos");
 		ShadowProg->addAttribute("vertPos");
 		ShadowProg->addAttribute("vertNor");
 		ShadowProg->addAttribute("vertTex");
 		ShadowProg->addUniform("shadowDepth");
 
-		ShadowProg->addUniform("hasTexDif");
+		ShadowProg->addUniform("hasTexAlb");
 		ShadowProg->addUniform("hasTexSpec");
 		ShadowProg->addUniform("hasTexRough");
 		ShadowProg->addUniform("hasTexMet");
@@ -289,7 +290,7 @@ public:
 		ShadowProg->addUniform("hasMaterial");
 		ShadowProg->addUniform("hasBones");
 
-		ShadowProg->addUniform("TexDif");
+		ShadowProg->addUniform("TexAlb");
 		ShadowProg->addUniform("TexSpec");
 		ShadowProg->addUniform("TexRough");
 		ShadowProg->addUniform("TexMet");
@@ -577,21 +578,21 @@ public:
 				break;
 			case Material::orb_glowing_blue:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.1f, 0.2f, 0.5f);
-				glUniform1f(shader->getUniform("MatRough"), 0.2f);
-				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
-				glUniform3f(shader->getUniform("MatEmit"), 0.2f, 0.6f, 2.0f);
+				glUniform1f(shader->getUniform("MatRough"), 1.0f);
+				glUniform1f(shader->getUniform("MatMetal"), 1.0f);
+				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
 				break;
 			case Material::orb_glowing_red:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.5f, 0.1f, 0.1f);
-				glUniform1f(shader->getUniform("MatRough"), 0.2f);
-				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
-				glUniform3f(shader->getUniform("MatEmit"), 2.0f, 0.3f, 0.2f);
+				glUniform1f(shader->getUniform("MatRough"), 1.0f);
+				glUniform1f(shader->getUniform("MatMetal"), 1.0f);
+				glUniform3f(shader->getUniform("MatEmit"), 0.9f, 0.3f, 0.2f);
 				break;
 			case Material::orb_glowing_yellow:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.5f, 0.4f, 0.1f);
-				glUniform1f(shader->getUniform("MatRough"), 0.2f);
-				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
-				glUniform3f(shader->getUniform("MatEmit"), 2.0f, 1.8f, 0.2f);
+				glUniform1f(shader->getUniform("MatRough"), 1.0f);
+				glUniform1f(shader->getUniform("MatMetal"), 1.0f);
+				glUniform3f(shader->getUniform("MatEmit"), 0.9f, 0.8f, 0.2f);
 				break;
 			case Material::grey:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.8f, 0.8f, 0.8f);
@@ -639,7 +640,7 @@ public:
 
 	void clearProgFlags(shared_ptr<Program> shader) {
 		//shader->bind();
-		if (shader->hasUniform("hasTexDif")) glUniform1i(shader->getUniform("hasTexDif"), 0);
+		if (shader->hasUniform("hasTexAlb")) glUniform1i(shader->getUniform("hasTexAlb"), 0);
 		if (shader->hasUniform("hasTexSpec")) glUniform1i(shader->getUniform("hasTexSpec"), 0);
 		if (shader->hasUniform("hasTexRough")) glUniform1i(shader->getUniform("hasTexRough"), 0);
 		if (shader->hasUniform("hasTexMet")) glUniform1i(shader->getUniform("hasTexMet"), 0);
@@ -867,8 +868,8 @@ public:
 			glBindVertexArray(libGrnd.VAO); // Bind each library ground VAO
 
 			if (isShadowShader) {
-				libGrnd.texture->bind(shader->getUniform("TexDif")); // Bind the texture
-				glUniform1i(shader->getUniform("hasTexDif"), 1); // Set texture uniform
+				libGrnd.texture->bind(shader->getUniform("TexAlb")); // Bind the texture
+				glUniform1i(shader->getUniform("hasTexAlb"), 1); // Set texture uniform
 			}
 
 			Model->pushMatrix();
@@ -991,7 +992,7 @@ public:
 			if (isShadowShader) {
 				glActiveTexture(GL_TEXTURE0);
 				glBindTexture(GL_TEXTURE_2D, border.texture->getID());
-				glUniform1i(shader->getUniform("TexDif"), 0);
+				glUniform1i(shader->getUniform("TexAlb"), 0);
 			}
 
 			Model->pushMatrix();
@@ -2372,14 +2373,7 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		Model->pushMatrix();
 			shader->bind();
 
-			bool isShadowShader = (shader == ShadowProg);
-
-			if (isShadowShader) setProgFlags(shader, false, false); // no material, no bones
-
-			if (isShadowShader) {
-				particleAlphaTex->bind(particleProg->getUniform("alphaTexture"));
-				glUniform1i(particleProg->getUniform("hasTexDif"), 1);
-			}
+			particleAlphaTex->bind(particleProg->getUniform("alphaTexture"));
 
 			// Enable blending for transparency
 			glEnable(GL_BLEND);
@@ -2395,8 +2389,6 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 			glDisable(GL_BLEND);
 
 			particleAlphaTex->unbind();
-
-			if (isShadowShader) clearProgFlags(shader);
 
 			shader->unbind();
 
@@ -2656,6 +2648,8 @@ void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 			glUniform3f(ShadowProg->getUniform("lightDir"), lightDir.x, lightDir.y, lightDir.z); // Set light direction
 			glUniform3f(ShadowProg->getUniform("lightColor"), 1.0f, 1.0f, 1.0f); // White light
 			glUniform1f(ShadowProg->getUniform("lightIntensity"), 1.0f); // Full intensity
+			glUniform3fv(ShadowProg->getUniform("cameraPos"), 1, glm::value_ptr(eye));
+
 
 			setCameraProjectionFromStack(ShadowProg, Projection);
 			setCameraViewFromStack(ShadowProg, View);

@@ -3,7 +3,7 @@
 // Using PBR (Physics Based rendering) for lighting calculations
 // https://learnopengl.com/PBR/Theory
 
-uniform sampler2D TexDif;		// Diffuse texture (color)
+uniform sampler2D TexAlb;		// Diffuse texture (color)
 uniform sampler2D TexSpec;		// Specular texture
 uniform sampler2D TexRough;		// Roughness texture
 uniform sampler2D TexMet;		// Metalness texture
@@ -11,7 +11,7 @@ uniform sampler2D TexNor;		// Normal texture
 uniform sampler2D TexEmit;		// Emission texture
 uniform sampler2D shadowDepth;	// Shadow map texture
 
-uniform bool hasTexDif;
+uniform bool hasTexAlb;
 uniform bool hasTexSpec;
 uniform bool hasTexRough;
 uniform bool hasTexMet;
@@ -29,6 +29,7 @@ uniform bool hasMaterial;
 uniform vec3 lightColor;
 uniform float lightIntensity;
 uniform vec3 lightDir;
+uniform vec3 cameraPos;
 
 in pass_struct {
    vec3 fPos;
@@ -37,62 +38,42 @@ in pass_struct {
    vec4 fPosLS;
    vec3 vColor;
    vec3 viewPos;
+   mat3 TBN;
 } info_struct;
 
-out vec4 Outcolor;
+out vec4 FragColor;
 
 const float PI = 3.14159265359;
 
-// PBR functions
-float DistributionGGX(vec3 N, vec3 H, float roughness) {
-	float a = roughness * roughness;
-	float a2 = a * a;
-	float NdotH = max(dot(N, H), 0.0);
-	float NdotH2 = NdotH * NdotH;
-	float nom = a2;
-	float denom = (NdotH2 * (a2 - 1.0) + 1.0);
-	denom = PI * denom * denom;
-	return nom / denom;
+// --- PBR functions ---
+vec3 fresnelSchlick(float cosTheta, vec3 F0) {
+    return F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
 }
 
-float GeometrySchlickGGX(float NdotV, float roughness) {
-    float r = (roughness + 1.0);
-    float k = (r * r) / 8.0;
-    
-    float num = NdotV;
-    float denom = NdotV * (1.0 - k) + k;
-    
+float DistributionGGX(vec3 N, vec3 H, float roughness) {
+    float a = roughness * roughness;
+    float a2 = a * a;
+    float NdotH = max(dot(N, H), 0.0);
+    float NdotH2 = NdotH * NdotH;
+
+    float num = a2;
+    float denom = (NdotH2 * (a2 - 1.0) + 1.0);
+    denom = 3.14159 * denom * denom;
     return num / denom;
 }
 
 float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness) {
+    float r = roughness + 1.0;
+    float k = (r * r) / 8.0;
+
     float NdotV = max(dot(N, V), 0.0);
     float NdotL = max(dot(N, L), 0.0);
-    float ggx2 = GeometrySchlickGGX(NdotV, roughness);
-    float ggx1 = GeometrySchlickGGX(NdotL, roughness);
-    
+    float ggx1 = NdotV / (NdotV * (1.0 - k) + k);
+    float ggx2 = NdotL / (NdotL * (1.0 - k) + k);
     return ggx1 * ggx2;
 }
 
-vec3 fresnelSchlick(float cosTheta, vec3 F0) {
-    return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
-}
-
-mat3 calculateTBN(vec3 normal, vec3 worldPos, vec2 texCoords) {
-    vec3 Q1 = dFdx(worldPos);
-    vec3 Q2 = dFdy(worldPos);
-    vec2 st1 = dFdx(texCoords);
-    vec2 st2 = dFdy(texCoords);
-    
-    vec3 T = normalize(Q1 * st2.t - Q2 * st1.t);
-    vec3 B = normalize(-Q1 * st2.s + Q2 * st1.s);
-    vec3 N = normalize(normal);
-    
-    mat3 TBN = mat3(T, B, N);
-    return TBN;
-}
-
-float TestShadow(vec4 LSfPos) {
+float ShadowCalculation(vec4 LSfPos) {
 	float bias = .005;
 	vec3 shiftedCords = (LSfPos.xyz + vec3(1.0)) * 0.5; // shift the coordinates from -1, 1 to 0 ,1
 	float lightDepth = texture(shadowDepth, shiftedCords.xy).r; // read off the stored depth (.) from the ShadowDepth, using the shifted.xy
@@ -112,7 +93,6 @@ float TestShadow(vec4 LSfPos) {
 
 void main() {
 	// --- Get material properties ---
-
 	vec3 albedo = info_struct.vColor;
 	float roughness = 0.5;
     vec3 specularTint = vec3(1.0);
@@ -129,8 +109,8 @@ void main() {
         emission = MatEmit;
 	}
 
-    if (hasTexDif) {
-		albedo = texture(TexDif, info_struct.vTexCoord).rgb;
+    if (hasTexAlb) {
+		albedo = texture(TexAlb, info_struct.vTexCoord).rgb;
 	}
 
     if (hasTexRough) {
@@ -142,10 +122,9 @@ void main() {
     }
 
 	if (hasTexNor) {
-		mat3 TBN = calculateTBN(info_struct.fragNor, info_struct.fPos, info_struct.vTexCoord);
-		vec3 tangentNormal = texture(TexNor, info_struct.vTexCoord).xyz * 2.0 - 1.0;
-		normal = normalize(TBN * tangentNormal);
-	}
+        vec3 tangentNormal = texture(TexNor, info_struct.vTexCoord).xyz * 2.0 - 1.0;
+        normal = normalize(info_struct.TBN * tangentNormal);
+    }
     
     if (hasTexEmit) {
         emission = texture(TexEmit, info_struct.vTexCoord).rgb;
@@ -158,50 +137,37 @@ void main() {
 	// --- Ensure normal is normalized after all transforms ---
 
 	vec3 N = normalize(normal);
-    vec3 V = normalize(-info_struct.viewPos); // View direction (from fragment to camera)
-    vec3 L = normalize(lightDir); // Light direction
-    vec3 H = normalize(V + L); // Halfway vector
+    vec3 V = normalize(cameraPos - info_struct.fPos);
+    vec3 L = normalize(lightDir);
+    vec3 H = normalize(V + L);
 
-	// Calculate reflectance at normal incidence
-    vec3 F0 = vec3(0.04); // Default for dielectrics
-    if (hasTexSpec && metallic < 0.5) {
-        F0 = specularTint;
-    }
-    F0 = mix(F0, albedo, metallic);
+	// Base reflectivity
+    vec3 F0 = mix(vec3(0.04), albedo, metallic);
 
 	// Cook-Torrance BRDF
-    float NDF = DistributionGGX(N, H, roughness);
-    float G = GeometrySmith(N, V, L, roughness);
     vec3 F = fresnelSchlick(max(dot(H, V), 0.0), F0);
+    float D = DistributionGGX(N, H, roughness);
+    float G = GeometrySmith(N, V, L, roughness);
 
-	// Calculate specular and diffuse contributions
+	// Specular
+    vec3 numerator = D * G * F;
+    float denom = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.001;
+    vec3 specular = numerator / denom;
+
+    // Diffuse
     vec3 kS = F;
-    vec3 kD = vec3(1.0) - kS;
-    kD *= 1.0 - metallic; // Metals have no diffuse
+    vec3 kD = (1.0 - kS) * (1.0 - metallic);
 
-	vec3 numerator = NDF * G * F;
-    float denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.0001;
-    vec3 specular = numerator / denominator;
-
-	// --- Calculate lighting ---
+	// Final lighting contribution
     float NdotL = max(dot(N, L), 0.0);
-    vec3 radiance = lightColor * lightIntensity;
+    vec3 Lo = (kD * albedo / 3.14159 + specular) * lightColor * NdotL;
     
-    // Combine diffuse and specular
-    vec3 Lo = (kD * albedo / PI + specular) * radiance * NdotL;
-    
-    // Ambient lighting (can be improved with IBL)
-    vec3 ambient = vec3(0.03) * albedo;
-    
-    // Apply shadow
-    float shadow = TestShadow(info_struct.fPosLS);
-    vec3 color = ambient + (1.0 - shadow) * Lo + emission;
-    
-    // HDR tone mapping (Reinhard)
-    color = color / (color + vec3(1.0));
-    
-    // Gamma correction
+    // Shadows
+    float shadow = ShadowCalculation(info_struct.fPosLS);
+    vec3 color = (1.0 - shadow) * Lo + emission;
+
+    // Gamma correction (sRGB)
     color = pow(color, vec3(1.0/2.2));
-    
-    Outcolor = vec4(color, 1.0);
+
+    FragColor = vec4(color, 1.0);
 }
