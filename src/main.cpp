@@ -30,6 +30,7 @@
 #include "Config.h"
 #include "GameObjectTypes.h"
 #include "../particles/particleGen.h"
+#include "TextureManager.h"
 
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -382,24 +383,12 @@ public:
 		ShadowProg->addAttribute("vertPos");
 		ShadowProg->addAttribute("vertNor");
 		ShadowProg->addAttribute("vertTex");
-		ShadowProg->addUniform("shadowDepth");
 
-		ShadowProg->addUniform("hasTexAlb");
-		ShadowProg->addUniform("hasTexSpec");
-		ShadowProg->addUniform("hasTexRough");
-		ShadowProg->addUniform("hasTexMet");
-		ShadowProg->addUniform("hasTexNor");
-		ShadowProg->addUniform("hasTexEmit");
+		ShadowProg->addUniform("uMaps");
+		ShadowProg->addUniform("shadowDepth");
 
 		ShadowProg->addUniform("hasMaterial");
 		ShadowProg->addUniform("hasBones");
-
-		ShadowProg->addUniform("TexAlb");
-		ShadowProg->addUniform("TexSpec");
-		ShadowProg->addUniform("TexRough");
-		ShadowProg->addUniform("TexMet");
-		ShadowProg->addUniform("TexNor");
-		ShadowProg->addUniform("TexEmit");
 
 		ShadowProg->addUniform("MatAlbedo");
 		ShadowProg->addUniform("MatRough");
@@ -408,11 +397,19 @@ public:
 
 		ShadowProg->addUniform("enemyAlpha");
 
+		ShadowProg->addUniform("player");
+
 		for (int i = 0; i < Config::MAX_BONES; i++) {
 			ShadowProg->addUniform("finalBoneMatrices[" + to_string(i) + "]");
 		}
 		ShadowProg->addAttribute("boneIds");
 		ShadowProg->addAttribute("weights");
+
+		ShadowProg->bind();
+		GLint loc = ShadowProg->getUniform("uMaps");
+		GLint units[6] = { 0,1,2,3,4,5 };
+		glUniform1iv(loc, 6, units);
+		ShadowProg->unbind();
 
 		initShadow();
 
@@ -477,6 +474,25 @@ public:
 		// Initialize particle system
 		particleSystem = make_shared<particleGen>(vec3(0.0f), 0.0f, 0.2f, 0.6f, 0.8f, 0.8f, 1.0f, 0.1f, 0.2f);
 		particleSystem->gpuSetup();
+
+		unsigned char white[3] = { 255,255,255 };
+		unsigned char flatN[3] = { 128,128,255 };
+		unsigned char black[3] = { 0,0,0 };
+		GLuint blackTex = genSolidTexture(black, GL_RGB);
+		GLuint whiteTex = genSolidTexture(white, GL_RGB);
+		GLuint normalTex = genSolidTexture(flatN, GL_RGB);
+
+		TextureManager::initFallbacks(whiteTex, normalTex, blackTex);
+	}
+
+	GLuint genSolidTexture(const unsigned char* pixel, GLenum format) {
+		GLuint id;
+		glGenTextures(1, &id);
+		glBindTexture(GL_TEXTURE_2D, id);
+		glTexImage2D(GL_TEXTURE_2D, 0, format, 1, 1, 0, format, GL_UNSIGNED_BYTE, pixel);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		return id;
 	}
 
 	void initMapGen()
@@ -661,6 +677,10 @@ public:
 
 		Good reference values can be found at physicallybased.info. */
 
+		if (!shader->hasUniform("hasMaterial")) return;
+
+		glUniform1i(shader->getUniform("hasMaterial"), GL_TRUE);
+
 		switch (color) {
 		case Material::purple:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.3f, 0.1f, 0.4f);
@@ -762,33 +782,24 @@ public:
 	}
 
 	void setProgFlags(shared_ptr<Program> shader, bool hasMat, bool hasBones) {
-		//shader->bind();
 		if (hasMat && shader->hasUniform("hasMaterial")) {
-			glUniform1i(shader->getUniform("hasMaterial"), 1);
+			glUniform1i(shader->getUniform("hasMaterial"), GL_TRUE);
 		}
 		else if (shader->hasUniform("hasMaterial")) {
-			glUniform1i(shader->getUniform("hasMaterial"), 0);
+			glUniform1i(shader->getUniform("hasMaterial"), GL_FALSE);
 		}
 
 		if (hasBones && shader->hasUniform("hasBones")) {
-			glUniform1i(shader->getUniform("hasBones"), 1);
+			glUniform1i(shader->getUniform("hasBones"), GL_TRUE);
 		}
 		else if (shader->hasUniform("hasBones")) {
-			glUniform1i(shader->getUniform("hasBones"), 0);
+			glUniform1i(shader->getUniform("hasBones"), GL_FALSE);
 		}
 	}
 
 	void clearProgFlags(shared_ptr<Program> shader) {
-		//shader->bind();
-		if (shader->hasUniform("hasTexAlb")) glUniform1i(shader->getUniform("hasTexAlb"), 0);
-		if (shader->hasUniform("hasTexSpec")) glUniform1i(shader->getUniform("hasTexSpec"), 0);
-		if (shader->hasUniform("hasTexRough")) glUniform1i(shader->getUniform("hasTexRough"), 0);
-		if (shader->hasUniform("hasTexMet")) glUniform1i(shader->getUniform("hasTexMet"), 0);
-		if (shader->hasUniform("hasTexNor")) glUniform1i(shader->getUniform("hasTexNor"), 0);
-		if (shader->hasUniform("hasTexEmit")) glUniform1i(shader->getUniform("hasTexEmit"), 0);
-		if (shader->hasUniform("hasMaterial")) glUniform1i(shader->getUniform("hasMaterial"), 0);
-		if (shader->hasUniform("hasBones")) glUniform1i(shader->getUniform("hasBones"), 0);
-		//shader->unbind();
+		if (shader->hasUniform("hasMaterial")) glUniform1i(shader->getUniform("hasMaterial"), GL_FALSE);
+		if (shader->hasUniform("hasBones")) glUniform1i(shader->getUniform("hasBones"), GL_FALSE);
 	}
 
 	/* helper for sending top of the matrix strack to GPU */
@@ -1011,15 +1022,16 @@ public:
 			glBindVertexArray(libGrnd.VAO); // Bind each library ground VAO
 
 			if (secondPass) {
-				libGrnd.texture->bind(shader->getUniform("TexAlb")); // Bind the texture
-				glUniform1i(shader->getUniform("hasTexAlb"), 0); // Set texture uniform
+				// override the albedo slot (uMaps[0]) with ground texture
+				glActiveTexture(GL_TEXTURE0);
+				glBindTexture(GL_TEXTURE_2D, libGrnd.texture->getID());
 			}
 
 			Model->pushMatrix();
 			Model->loadIdentity();
 			setModel(shader, Model);
 
-			if (secondPass) SetMaterial(shader, Material::silver); // set the material
+			if (secondPass) SetMaterial(shader, Material::wood);
 
 			glDrawElements(GL_TRIANGLES, libGrnd.GiboLen, GL_UNSIGNED_SHORT, 0);
 			Model->popMatrix();
@@ -1149,8 +1161,6 @@ public:
 			if (secondPass) { // For shadow shader, explicitly set texture unit
 				glActiveTexture(GL_TEXTURE0);
 				glBindTexture(GL_TEXTURE_2D, border.texture->getID());
-				glUniform1i(shader->getUniform("TexAlb"), 0);
-				glUniform1i(shader->getUniform("hasTexAlb"), 1); // Set texture uniform
 			}
 
 			Model->pushMatrix();
@@ -1175,7 +1185,7 @@ public:
 
 		curS->bind();
 
-		if (secondPass) setProgFlags(curS, false, true); // no material, bones for animation
+		setProgFlags(curS, false, true); // no material, bones for animation
 
 		Model->pushMatrix();
 			Model->loadIdentity();
@@ -1185,9 +1195,14 @@ public:
 			Model->scale(1.0f);
 
 			setModel(curS, Model);
+
+			if (curS->hasUniform("player")) glUniform1i(curS->getUniform("player"), GL_TRUE);
+
 			stickfigure_running->Draw(curS);
 
-			if (secondPass) clearProgFlags(curS); // Clear shader flags
+			if (curS->hasUniform("player")) glUniform1i(curS->getUniform("player"), GL_FALSE);
+
+			clearProgFlags(curS); // Clear shader flags
 
 			curS->unbind();
 
@@ -1201,15 +1216,12 @@ public:
 
 		shader->bind();
 
-		if (secondPass) setProgFlags(shader, true, false); // material, no bones
-
 		for (const auto& book : books) {
 			// Common values for book halves
 			float halfThickness = book.scale.z * 0.5f;
 			glm::vec3 halfScaleVec = glm::vec3(book.scale.x, book.scale.y, halfThickness);
 
-			// Set Material properties - check for uniform existence first
-			if (secondPass) SetMaterial(shader, Material::brown);
+			SetMaterial(shader, Material::brown); // Set Material properties
 
 			// --- Draw Left Cover/Pages ---
 			Model->pushMatrix(); // SAVE current stack state
@@ -1266,7 +1278,7 @@ public:
 			Model->popMatrix(); // RESTORE saved stack state
 		}
 
-		if (secondPass) clearProgFlags(shader); // Clear shader flags
+		clearProgFlags(shader); // Clear shader flags
 
 		shader->unbind();
 	}

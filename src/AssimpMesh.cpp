@@ -1,5 +1,6 @@
 #include "AssimpMesh.h"
 #include "Program.h"
+#include "TextureManager.h"
 
 #include <iostream>
 
@@ -63,55 +64,26 @@ void AssimpMesh::setupMesh()
 
 // render the mesh
 void AssimpMesh::Draw(const std::shared_ptr<Program> prog) const {
-    // Map to keep track of texture types we've already bound
-    std::map<std::string, bool> boundTextures;
-
-    // Simple mapping from type to uniform name
-    std::map<std::string, std::string> typeToUniform = {
-        {"texture_diffuse", "TexAlb"},
-        {"texture_specular", "TexSpec"},
-        {"texture_normal", "TexNor"},
-        {"texture_roughness", "TexRough"},
-        {"texture_metalness", "TexMet"},
-        {"texture_emission", "TexEmit"}
-    };
-
-    // Corresponding boolean uniform names
-    std::map<std::string, std::string> typeToBoolUniform = {
-        {"texture_diffuse", "hasTexAlb"},
-        {"texture_specular", "hasTexSpec"},
-        {"texture_normal", "hasTexNor"},
-        {"texture_roughness", "hasTexRough"},
-        {"texture_metalness", "hasTexMet"},
-        {"texture_emission", "hasTexEmit"}
-    };
-
-    // First, set all texture availability flags to false
-    for (const auto& pair : typeToBoolUniform) {
-        if (prog->hasUniform(pair.second)) {
-            glUniform1i(prog->getUniform(pair.second), GL_FALSE);
-        }
+    // build an ID array in the same order as uMaps[0..5]
+    GLuint ids[6] = { 0,0,0,0,0,0 };
+    for (auto& t : textures) {
+        if (t.type == "texture_diffuse")   ids[0] = t.id;
+        if (t.type == "texture_specular")  ids[1] = t.id;
+        if (t.type == "texture_roughness") ids[2] = t.id;
+        if (t.type == "texture_metalness") ids[3] = t.id;
+        if (t.type == "texture_normal")     ids[4] = t.id;
+        if (t.type == "texture_emission")   ids[5] = t.id;
     }
 
-    int textureUnit = 0;
-    for (const auto& texture : textures) {
-        std::string uniformName = typeToUniform[texture.type];
-        std::string boolUniformName = typeToBoolUniform[texture.type];
-
-        // Only bind the first texture of each type and it exists
-        if (prog->hasUniform(uniformName) && boundTextures.find(texture.type) == boundTextures.end()) {
-            if (textureUnit == 10) ++textureUnit; // Skip shadow map unit
-
-            glActiveTexture(GL_TEXTURE0 + textureUnit);
-            glBindTexture(GL_TEXTURE_2D, texture.id);
-            glUniform1i(prog->getUniform(uniformName), textureUnit);
-
-            
-            glUniform1i(prog->getUniform(boolUniformName), GL_TRUE); // Set the boolean flag to indicate this texture is available
-
-            boundTextures[texture.type] = true;
-            textureUnit++;
-        }
+    // bind each either to the real map or your 1×1 fallback
+    for (int i = 0; i < 6; ++i) {
+        glActiveTexture(GL_TEXTURE0 + i);
+        GLuint toBind = ids[i]
+            ? ids[i]
+            : (i == 4 ? TextureManager::flatNormal()
+                : (i == 5 ? TextureManager::black() // <-- black for emission
+                    : TextureManager::white())); // white for all others
+        glBindTexture(GL_TEXTURE_2D, toBind);
     }
 
     // draw mesh

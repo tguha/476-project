@@ -3,20 +3,8 @@
 // Using PBR (Physics Based rendering) for lighting calculations
 // https://learnopengl.com/PBR/Theory
 
-uniform sampler2D TexAlb;		// Diffuse texture (color)
-uniform sampler2D TexSpec;		// Specular texture
-uniform sampler2D TexRough;		// Roughness texture
-uniform sampler2D TexMet;		// Metalness texture
-uniform sampler2D TexNor;		// Normal texture
-uniform sampler2D TexEmit;		// Emission texture
-uniform sampler2D shadowDepth;	// Shadow map texture
-
-uniform bool hasTexAlb;
-uniform bool hasTexSpec;
-uniform bool hasTexRough;
-uniform bool hasTexMet;
-uniform bool hasTexNor;
-uniform bool hasTexEmit;
+uniform sampler2D uMaps[6]; // 0=albedo,1=spec,2=rough,3=metal,4=normal,5=emission
+uniform sampler2D shadowDepth;
 
 // PBR mat properties
 uniform vec3 MatAlbedo;
@@ -32,6 +20,8 @@ uniform vec3 lightDir;
 uniform vec3 cameraPos;
 
 uniform float enemyAlpha;
+
+uniform bool player;
 
 in pass_struct {
    vec3 fPos;
@@ -93,89 +83,100 @@ float ShadowCalculation(vec4 LSfPos) {
 	return percentShadow / 25.0; // 5x5 = 25 samples
 }
 
+
 void main() {
-	// --- Get material properties ---
-	vec3 albedo = info_struct.vColor;
-	float roughness = 0.5;
-    vec3 specularTint = vec3(1.0);
-	float metallic = 0.0;
-	vec3 emission = vec3(0.0);
-	vec3 normal = normalize(info_struct.fragNor);
+    vec3  spec;
+    vec3  normal;
 
-	// --- Sample material if available, then sample texture properties if available (overwrite material info) ---
-
-	if (hasMaterial) {
-		albedo = MatAlbedo;
-        roughness = MatRough;
-        metallic = MatMetal;
-        emission = MatEmit;
-	}
-
-    if (hasTexAlb) {
-		albedo = texture(TexAlb, info_struct.vTexCoord).rgb;
-	}
-
-    if (hasTexRough) {
-        roughness = texture(TexRough, info_struct.vTexCoord).r;
+    // Albedo
+    vec3 albedo = hasMaterial ? MatAlbedo : vec3(1.0);
+    vec3 sampleA = texture(uMaps[0], info_struct.vTexCoord).rgb;
+    bool hasAlbedoTex = any( lessThan( sampleA, vec3(0.99) ) );
+    if (hasAlbedoTex) {
+        albedo = sampleA;
     }
 
-    if (hasTexMet) {
-        metallic = texture(TexMet, info_struct.vTexCoord).r;
+    // Roughness
+    float rough = hasMaterial ? MatRough : 1.0;
+    float sampleR = texture(uMaps[2], info_struct.vTexCoord).r;
+    if (sampleR < 0.99) {
+        rough = sampleR;
     }
 
-	if (hasTexNor) {
-        vec3 tangentNormal = texture(TexNor, info_struct.vTexCoord).xyz * 2.0 - 1.0;
-        normal = normalize(info_struct.TBN * tangentNormal);
+    // Metalness
+    float metal = hasMaterial ? MatMetal : 0.0;   // <- fixed!
+    float sampleM = texture(uMaps[3], info_struct.vTexCoord).r;
+    if (sampleM < 0.99) {
+        metal = sampleM;
     }
+
+    // Emission
+    vec3 emit = hasMaterial ? MatEmit : vec3(0.0); // <- fixed!
+    vec3 sampleE = texture(uMaps[5], info_struct.vTexCoord).rgb;
+    if (any( greaterThan(sampleE, vec3(0.01)) )) {
+        emit = sampleE;
+    }
+
+    // Specular tint & normal
+    if (hasMaterial) {
+        spec   = mix(vec3(0.04), MatAlbedo, MatMetal);
+        normal = normalize(info_struct.fragNor);
+    } else {
+        spec   = texture(uMaps[1], info_struct.vTexCoord).rgb;
+        normal = normalize(
+                   info_struct.TBN *
+                   (texture(uMaps[4], info_struct.vTexCoord).rgb * 2.0 - 1.0)
+                 );
+    }
+
+    if (player) {
+        albedo = texture(uMaps[0], info_struct.vTexCoord).rgb;
+        spec   = texture(uMaps[1], info_struct.vTexCoord).rgb;
+        rough  = texture(uMaps[2], info_struct.vTexCoord).r;
+        metal  = texture(uMaps[3], info_struct.vTexCoord).r;
+        normal = normalize(
+                   info_struct.TBN *
+                   (texture(uMaps[4], info_struct.vTexCoord).rgb * 2.0 - 1.0)
+                 );
+        emit   = texture(uMaps[5], info_struct.vTexCoord).rgb;
+    }
+
+    // build your base reflectivity using the specular tint map
+    vec3  F0 = mix(spec, albedo, metal);
+
+    // Cook–Torrance lighting
+    vec3  V = normalize(cameraPos - info_struct.fPos);
+    vec3  L = normalize(lightDir);
+    vec3  H = normalize(V + L);
+    vec3  F = fresnelSchlick(max(dot(H, V), 0.0), F0);
+    float D = DistributionGGX(normal, H, rough);
+    float G = GeometrySmith(normal, V, L, rough);
+
+    vec3  numerator = D * G * F;
+    float denom    = 4.0 * max(dot(normal, V), 0.0) * max(dot(normal, L), 0.0) + 0.001;
+    vec3  specular = numerator / denom;
+    vec3  kS       = F;
+    vec3  kD       = (1.0 - kS) * (1.0 - metal);
+    float NdotL    = max(dot(normal, L), 0.0);
+    vec3  Lo       = (kD * albedo / PI + specular) * lightColor * NdotL;
     
-    if (hasTexEmit) {
-        emission = texture(TexEmit, info_struct.vTexCoord).rgb;
-    }
+    float shadow   = ShadowCalculation(info_struct.fPosLS);
+    shadow         = min(shadow, 0.6); // clamps max shadow to 60% to increase visibility in dark
+    vec3  color    = (1.0 - shadow) * Lo + emit;
 
-    if (hasTexSpec) {
-        specularTint = texture(TexSpec, info_struct.vTexCoord).rgb;
-    }
-
-	// --- Ensure normal is normalized after all transforms ---
-
-	vec3 N = normalize(normal);
-    vec3 V = normalize(cameraPos - info_struct.fPos);
-    vec3 L = normalize(lightDir);
-    vec3 H = normalize(V + L);
-
-	// Base reflectivity
-    vec3 F0 = mix(vec3(0.04), albedo, metallic);
-
-	// Cook-Torrance BRDF
-    vec3 F = fresnelSchlick(max(dot(H, V), 0.0), F0);
-    float D = DistributionGGX(N, H, roughness);
-    float G = GeometrySmith(N, V, L, roughness);
-
-	// Specular
-    vec3 numerator = D * G * F;
-    float denom = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.001;
-    vec3 specular = numerator / denom;
-
-    // Diffuse
-    vec3 kS = F;
-    vec3 kD = (1.0 - kS) * (1.0 - metallic);
-
-	// Final lighting contribution
-    float NdotL = max(dot(N, L), 0.0);
-    vec3 Lo = (kD * albedo / 3.14159 + specular) * lightColor * NdotL;
-    
-    // Shadows
-    float shadow = ShadowCalculation(info_struct.fPosLS);
-    vec3 color = (1.0 - shadow) * Lo + emission;
-
-    // Gamma correction (sRGB)
+    // gamma-correct
     color = pow(color, vec3(1.0/2.2));
 
-    // from prev enemy shader
+    // enemy tint
     if (enemyAlpha != 1.0) {
-        vec3 redTint = vec3(0.7, 0.1, 0.1);
-        color = mix(color, redTint, enemyAlpha);
+        color = mix(color, vec3(0.7,0.1,0.1), enemyAlpha);
     }
 
     FragColor = vec4(color, 1.0);
 }
+
+/*
+void main() {
+    FragColor = texture(uMaps[0], info_struct.vTexCoord);
+}
+*/
