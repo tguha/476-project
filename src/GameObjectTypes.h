@@ -28,24 +28,6 @@ enum class Man_State {
     STANDING
 };
 
-enum class Material {
-    purple,
-    black,
-    eye_white,
-    pupil_white,
-    bronze,
-    silver,
-    brown,
-    orb_glowing_blue,
-	orb_glowing_red,
-	orb_glowing_yellow,
-    grey,
-    wood,
-    mini_map,
-    defaultMaterial,
-    blue_body,
-    gold,
-};
 
 // --- Structs ---
 struct SpellProjectile {
@@ -58,61 +40,13 @@ struct SpellProjectile {
     bool active = true;
     AssimpModel* model = nullptr;
 
-    glm::vec3 aabbMin = glm::vec3(0);
-    glm::vec3 aabbMax = glm::vec3(0);
-    glm::mat4 transform = glm::mat4(1);
+    glm::vec3 aabbMin;
+    glm::vec3 aabbMax;
+    glm::mat4 transform;
 
     SpellProjectile(glm::vec3 startPos, glm::vec3 dir, float time, AssimpModel* mdl)
-        : position(startPos), direction(normalize(dir)), spawnTime(time), model(mdl), transform(1.0f) {}
-};
-
-struct WallObject {
-	float length;
-	vec3 position;
-	vec3 direction;
-	float height;
-	float width;
-	GLuint WallVAID;
-	GLuint BuffObj, NorBuffObj, IndxBuffObj;
-	GLuint TexBuffObj;
-	int GiboLen;
-	shared_ptr<Texture> texture; // Texture for the wall
-};
-
-struct LibGrndObject {
-	float length;
-	float width;
-	float height;
-	vec3 center_pos;
-	GLuint VAO;
-	GLuint BuffObj, NorBuffObj, IndxBuffObj;
-	GLuint TexBuffObj;
-	int GiboLen;
-	shared_ptr<Texture> texture; // Texture for the library
-};
-
-struct WallObjKey {
-	glm::vec3 position;
-	glm::vec3 direction;
-	float height;
-	bool operator<(const WallObjKey& other) const {
-		return std::tie(position.x, position.y, position.z, direction.x, direction.y, direction.z, height) <
-			std::tie(other.position.x, other.position.y, other.position.z, other.direction.x, other.direction.y, other.direction.z, other.height);
-	}
-};
-
-struct LibGrndObjKey {
-	glm::vec3 center_pos;
-	float height;
-	bool operator<(const LibGrndObjKey& other) const {
-		return std::tie(center_pos.x, center_pos.y, center_pos.z, height) <
-			std::tie(other.center_pos.x, other.center_pos.y, other.center_pos.z, other.height);
-	}
-};
-
-struct AABB {
-    vec3 min;
-    vec3 max;
+        : position(startPos), direction(normalize(dir)), spawnTime(time), model(mdl), transform(1.0f) {
+    }
 };
 
 // --- Classes ---
@@ -130,13 +64,13 @@ public:
     float openSpeed = glm::radians(120.0f);
     AssimpModel* bookModel;
     AssimpModel* orbModel;
-    Material orbColor;
+    vec3 orbColor;
     float orbScale = 0.1f;
     bool orbSpawned = false;
 
-    Book(AssimpModel* bookMdl, AssimpModel* orbMdl, const glm::vec3& pos, const glm::vec3& scl, const glm::quat& orient, Material orbMat)
+    Book(AssimpModel* bookMdl, AssimpModel* orbMdl, const glm::vec3& pos, const glm::vec3& scl, const glm::quat& orient, const glm::vec3& orbClr)
         : initialPosition(pos), position(pos), scale(scl), orientation(orient),
-        bookModel(bookMdl), orbModel(orbMdl), orbColor(orbMat) {
+        bookModel(bookMdl), orbModel(orbMdl), orbColor(orbClr) {
     }
 
     ~Book() {
@@ -215,18 +149,18 @@ public:
     glm::vec3 AABBmin;
     glm::vec3 AABBmax;
     bool collected;
-    Material material;
+    glm::vec3 color;
     OrbState state = OrbState::SPAWNING;
     // KeyState key_state = KeyState::SPAWNING;
     glm::vec3 spawnPosition;
     glm::vec3 idlePosition;
     float levitationHeight = 0.6f;
-    float levitationStartTime;
+    float levitationStartTime = 0.0f;
     float levitationDuration = 0.75f;
 
-    Collectible(AssimpModel* mdl, const glm::vec3& spawnPos, float scl, Material orbMat)
-        : model(mdl), position(spawnPos), scale(scl), collected(false), material(orbMat),
-        state(OrbState::LEVITATING), spawnPosition(spawnPos)
+    Collectible(AssimpModel* mdl, const glm::vec3& spawnPos, float scl, const glm::vec3& clr)
+        : model(mdl), position(spawnPos), scale(scl), collected(false), color(clr),
+        state(OrbState::LEVITATING),  spawnPosition(spawnPos) //KeyState::LEVITATING  key_state(KeyState::LEVITATING),
     {
         idlePosition = spawnPosition + glm::vec3(0.0f, levitationHeight, 0.0f);
         levitationStartTime = glfwGetTime();

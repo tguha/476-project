@@ -5,6 +5,9 @@
 
 #pragma once
 
+#ifndef LAB471_PARTICLE_H_INCLUDED
+#define LAB471_PARTICLE_H_INCLUDED
+
 #include <vector>
 #include <memory>
 
@@ -20,6 +23,9 @@ class MatrixStack;
 class Program;
 class Texture;
 class Entity;
+
+// External declaration of randFloat
+extern float randFloat(float l, float h);
 
 class Particle
 {
@@ -50,3 +56,5 @@ private:
 	Entity* attachedEntity;
 	float camDist;
 };
+
+#endif // LAB471_PARTICLE_H_INCLUDED

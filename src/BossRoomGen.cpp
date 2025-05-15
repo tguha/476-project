@@ -1,5 +1,4 @@
 #include "BossRoomGen.h"
-#include "Config.h"
 
 void BossRoomGen::generate(glm::ivec2 bossGridSize, glm::ivec2 libraryGridSize, glm::vec3 libraryOrigin, glm::ivec2 librarybossEntrDir) {
     grid = Grid<Cell>(bossGridSize, Cell(CellType::NONE));
@@ -18,18 +17,15 @@ void BossRoomGen::generate(glm::ivec2 bossGridSize, glm::ivec2 libraryGridSize, 
         BossroomworldOrigin = libraryOrigin + glm::vec3(0, 0, -libraryGridSize.y - bossGridSize.y);
     }
 
-    if (Config::DEBUG_ROOM_PLACEMENT) {
-        std::cout << "Boss room world origin: " << BossroomworldOrigin.x << ", " << BossroomworldOrigin.y << ", " << BossroomworldOrigin.z << std::endl;
-    }
+    std::cout << "Boss room world origin: " << BossroomworldOrigin.x << ", " << BossroomworldOrigin.y << ", " << BossroomworldOrigin.z << std::endl;
     placeBorder();
     placeEntrance(); // Place the entrance in the boss room
     placeExit();
 }
 
 void BossRoomGen::placeBorder() {
-    if (Config::DEBUG_ROOM_PLACEMENT) {
-        std::cout << "[BossRoomGen] Placing circular border..." << std::endl;
-    }
+    std::cout << "[BossRoomGen] Placing circular border..." << std::endl;
+
     const glm::ivec2 size = this->gridSize; // Size of the grid
     const glm::vec2 center = glm::vec2(size.x / 2.0f, size.y / 2.0f);
 
@@ -107,9 +103,7 @@ void BossRoomGen::placeBorder() {
                 borderCell.transformData.rotation = -angleDegrees; // Adjust rotation to match the tangent direction
 
                 // Place border cell
-                if (Config::DEBUG_ROOM_PLACEMENT) {
-                    std::cout << "Placing border at: " << x << ", " << y << std::endl;
-                }
+                std::cout << "Placing border at: " << x << ", " << y << std::endl;
                 grid[glm::ivec2(x, y)] = borderCell; // Set the cell in the grid
             }
         }
@@ -120,9 +114,7 @@ void BossRoomGen::placeBorder() {
 
 void BossRoomGen::placeEntrance() {
     // Place the entrance in the boss room
-    if (Config::DEBUG_ROOM_PLACEMENT) {
-        std::cout << "[BossRoomGen] Placing entrance..." << std::endl;
-    }
+    std::cout << "[BossRoomGen] Placing entrance..." << std::endl;
     const glm::ivec2 size = this->gridSize; // Size of the grid
 
     for (const auto& center : EntranceCenters) {
@@ -162,9 +154,7 @@ void BossRoomGen::placeEntrance() {
 
 void BossRoomGen::placeExit() {
     // Place the exit in the boss room
-    if (Config::DEBUG_ROOM_PLACEMENT) {
-        std::cout << "[BossRoomGen] Placing exit..." << std::endl;
-    }
+    std::cout << "[BossRoomGen] Placing exit..." << std::endl;
     const glm::ivec2 size = this->gridSize; // Size of the grid
 
     for (const auto& center : ExitCenters) {
@@ -199,7 +189,6 @@ void BossRoomGen::placeExit() {
             }
         }
     }
-    std::cout << "[BossRoomGen] Exit placed.\n";
 }
 
 bool BossRoomGen::isInsideBossArea(const glm::ivec2& gridPos) {

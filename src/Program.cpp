@@ -142,13 +142,3 @@ GLint Program::getUniform(const std::string &name) const
 	}
 	return uniform->second;
 }
-
-bool Program::hasUniform(const std::string& name) const
-{
-	std::map<std::string, GLint>::const_iterator uniform = uniforms.find(name.c_str());
-	if (uniform == uniforms.end())
-	{
-		return false;
-	}
-	return true;
-}

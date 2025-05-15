@@ -40,78 +40,70 @@ void AssimpMesh::setupMesh()
     glEnableVertexAttribArray(2);
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, TexCoords));
 
-    // Bone IDs
+    // Vertex tangent
     glEnableVertexAttribArray(3);
-    glVertexAttribIPointer(3, 4, GL_INT, sizeof(Vertex), (void*)offsetof(Vertex, m_BoneIDs));
+    glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, Tangent));
+
+    // Vertex bitangent
+    glEnableVertexAttribArray(4);
+    glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, Bitangent));
+
+    // Bone IDs
+    glEnableVertexAttribArray(5);
+    // glVertexAttribIPointer(5, 4, GL_INT, sizeof(Vertex), (void*)offsetof(Vertex, m_BoneIDs));
+    // glVertexAttribPointer(5, 4, GL_INT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, m_BoneIDs));
+    glVertexAttribIPointer(5, 4, GL_INT, sizeof(Vertex), (void*)offsetof(Vertex, m_BoneIDs));
 
     // Weights
-    glEnableVertexAttribArray(4);
-    glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, m_Weights));
-
-    // Tangents
-    glEnableVertexAttribArray(5);
-    glVertexAttribPointer(5, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, Tangent));
-
-    // Bitangents
     glEnableVertexAttribArray(6);
-    glVertexAttribPointer(6, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, Bitangent));
+    glVertexAttribPointer(6, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, m_Weights));
 
     glBindVertexArray(0);
 
     // std::cout << "Mesh setup complete" << std::endl;
 }
 
+// each diffuse texture should be named as texture_diffuseN, where N is a number
+// each specular texture should be named as texture_specularN, where N is a number
+// uniform sampler2D texture_diffuseN
+// uniform sampler2D texture_specularN
+
+// by this naming convention we can define as many texture samplers as we want in the shaders and
+// if a mesh actually does contain (so many) tetxures it will be loaded and applied
+
 // render the mesh
 void AssimpMesh::Draw(const std::shared_ptr<Program> prog) const {
-    // Map to keep track of texture types we've already bound
-    std::map<std::string, bool> boundTextures;
+    unsigned int diffuseNr = 1;
+    unsigned int specularNr = 1;
+    unsigned int normalNr = 1;
+    unsigned int heightNr = 1;
+    unsigned int roughnessNr = 1;
+    unsigned int metalnessNr = 1;
+    unsigned int emissionNr = 1;
 
-    // Simple mapping from type to uniform name
-    std::map<std::string, std::string> typeToUniform = {
-        {"texture_diffuse", "TexAlb"},
-        {"texture_specular", "TexSpec"},
-        {"texture_normal", "TexNor"},
-        {"texture_roughness", "TexRough"},
-        {"texture_metalness", "TexMet"},
-        {"texture_emission", "TexEmit"}
-    };
-
-    // Corresponding boolean uniform names
-    std::map<std::string, std::string> typeToBoolUniform = {
-        {"texture_diffuse", "hasTexAlb"},
-        {"texture_specular", "hasTexSpec"},
-        {"texture_normal", "hasTexNor"},
-        {"texture_roughness", "hasTexRough"},
-        {"texture_metalness", "hasTexMet"},
-        {"texture_emission", "hasTexEmit"}
-    };
-
-    // First, set all texture availability flags to false
-    for (const auto& pair : typeToBoolUniform) {
-        if (prog->hasUniform(pair.second)) {
-            glUniform1i(prog->getUniform(pair.second), GL_FALSE);
+    for (unsigned int i = 0; i < textures.size(); i++) {
+        glActiveTexture(GL_TEXTURE0 + i); // activate proper texture unit before binding
+        // retrieve texture number (the N in diffuse_textureN)
+        std::string number;
+        std::string name = textures[i].type;
+        if (name == "texture_diffuse") {
+            number = std::to_string(diffuseNr++);
+        } else if (name == "texture_specular") {
+            number = std::to_string(specularNr++);
+        } else if (name == "texture_normal") {
+            number = std::to_string(normalNr++);
+        } else if (name == "texture_height") {
+            number = std::to_string(heightNr++);
+        } else if (name == "texture_roughness") {
+            number = std::to_string(roughnessNr++);
+        } else if (name == "texture_metalness") {
+            number = std::to_string(metalnessNr++);
+        } else if (name == "texture_emission") {
+            number = std::to_string(emissionNr++);
         }
-    }
 
-    int textureUnit = 0;
-    for (const auto& texture : textures) {
-        std::string uniformName = typeToUniform[texture.type];
-        std::string boolUniformName = typeToBoolUniform[texture.type];
-
-        // Only bind the first texture of each type and it exists
-        if (prog->hasUniform(uniformName) && boundTextures.find(texture.type) == boundTextures.end()) {
-            if (textureUnit == 10) ++textureUnit; // Skip shadow map unit
-
-            glActiveTexture(GL_TEXTURE0 + textureUnit);
-            glBindTexture(GL_TEXTURE_2D, texture.id);
-            glUniform1i(prog->getUniform(uniformName), textureUnit);
-
-            
-            glUniform1i(prog->getUniform(boolUniformName), GL_TRUE); // Set the boolean flag to indicate this texture is available
-
-            boundTextures[texture.type] = true;
-            textureUnit++;
-        }
+        glUniform1i(glGetUniformLocation(prog->getPid(), (name + number).c_str()), i);
+        glBindTexture(GL_TEXTURE_2D, textures[i].id);
     }
 
     // draw mesh
@@ -119,6 +111,6 @@ void AssimpMesh::Draw(const std::shared_ptr<Program> prog) const {
     glDrawElements(GL_TRIANGLES, indices.size(), GL_UNSIGNED_INT, 0);
     glBindVertexArray(0);
 
-    // Reset to default texture unit
+    // always good practice to set everything back to defaults once configured.
     glActiveTexture(GL_TEXTURE0);
 }

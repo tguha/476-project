@@ -1,14 +1,16 @@
-//======================================
-// The start of our wizarding adventure
-//======================================
+/*
+ * The start of our wizarding adventure
+ */
 
 #include <iostream>
 #include <glad/glad.h>
 #include <chrono>
 #include <thread>
+
+// #include <windows.h>
+// #include <mmsystem.h>
 #include <set>
 #pragma comment(lib, "winmm.lib")
-
 #include "GLSL.h"
 #include "Program.h"
 #include "MatrixStack.h"
@@ -27,73 +29,111 @@
 #include "BossRoomGen.h"
 #include "FrustumCulling.h"
 #include "BossEnemy.h"
+
 #include "Config.h"
 #include "GameObjectTypes.h"
+
 #include "../particles/particleGen.h"
 
+// value_ptr for glm
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtx/quaternion.hpp>
-#include <glm/gtx/vector_angle.hpp>
-#include <algorithm>
-#include <limits>
+#include <glm/gtx/quaternion.hpp> // For glm::quat and glm::rotation
+#include <glm/gtx/vector_angle.hpp> // Also sometimes needed for glm::rotation
+#include <algorithm>              // For std::remove_if
+#include <limits>                 // For std::numeric_limits (used in updateBoundingBox)
 
 using namespace std;
 using namespace glm;
 
+#define SHOW_HEALTHBAR 1 // 1 = show health bar, 0 = hide health bar
+#define ENEMY_MOVEMENT 1 // 1 = enable enemy movement, 0 = disable enemy movement
+
 class Application : public EventCallbacks {
 public:
-	// Setup window and context
+	std::shared_ptr<Player> player;
 	WindowManager * windowManager = nullptr;
+
 	bool windowMaximized = false;
 	int window_width = Config::DEFAULT_WINDOW_WIDTH;
 	int window_height = Config::DEFAULT_WINDOW_HEIGHT;
 
 	// Our shader programs
-	shared_ptr<Program> particleProg;
-	shared_ptr<Program> DepthProg;
-	shared_ptr<Program> DepthProgDebug;
-	shared_ptr<Program> ShadowProg;
-	shared_ptr<Program> DebugProg;
-	shared_ptr<Program> hudProg;
-	shared_ptr<Program> prog2_enemy;
-	shared_ptr<Program> redFlashProg;
-
-	// Shadows
-	GLuint depthMapFBO;
-	const GLuint S_WIDTH = 2048, S_HEIGHT = 2048;
-	GLuint depthMap;
-
-	// PLayer
-	std::shared_ptr<Player> player;
+	std::shared_ptr<Program> texProg, hudProg, prog2, prog2_enemy, assimptexProg, redFlashProg;
+	std::shared_ptr<Program> particleProg; // Add particle program
 
 	// ground data - Reused for all flat ground planes
-	GLuint GrndBuffObj, GrndNorBuffObj, GrndTexBuffObj, GIndxBuffObj;
-	int g_GiboLen;
-	// Geometry for texture render
-	GLuint quad_VertexArrayID;
-	GLuint quad_vertexbuffer;
+	GLuint GrndBuffObj = 0, GrndNorBuffObj = 0, GIndxBuffObj = 0; // Initialize to 0
+	int g_GiboLen = 0;
+	GLuint GroundVertexArrayID = 0; // Initialize to 0
+	float groundSize = 20.0f; // Half-size of the main library ground square
+	float groundY = Config::GROUND_Y_LEVEL;     // Y level for all ground planes
 
-	// Textures
-	shared_ptr<Texture> borderWallTex;
-	shared_ptr<Texture> libraryGroundTex;
+	struct WallObject {
+		float length;
+		vec3 position;
+		vec3 direction;
+		float height;
+		float width;
+		GLuint WallVAID;
+		GLuint BuffObj, NorBuffObj, IndxBuffObj;
+		GLuint TexBuffObj;
+		int GiboLen;
 
-	shared_ptr<Texture> carpetTex;
-	shared_ptr<Texture> particleAlphaTex;
+		shared_ptr<Texture> texture; // Texture for the wall
+	};
+
+	struct WallObjKey {
+		glm::vec3 position;
+		glm::vec3 direction;
+		float height;
+
+		bool operator<(const WallObjKey& other) const {
+			return std::tie(position.x, position.y, position.z, direction.x, direction.y, direction.z, height) <
+				std::tie(other.position.x, other.position.y, other.position.z, other.direction.x, other.direction.y, other.direction.z, other.height);
+		}
+	};
+
+	struct LibGrndObject {
+		float length;
+		float width;
+		float height;
+		vec3 center_pos;
+		GLuint VAO;
+		GLuint BuffObj, NorBuffObj, IndxBuffObj;
+		GLuint TexBuffObj;
+		int GiboLen;
+
+		shared_ptr<Texture> texture; // Texture for the library
+	};
+
+	struct LibGrndObjKey {
+		glm::vec3 center_pos;
+		float height;
+
+		bool operator<(const LibGrndObjKey& other) const {
+			return std::tie(center_pos.x, center_pos.y, center_pos.z, height) <
+				std::tie(other.center_pos.x, other.center_pos.y, other.center_pos.z, other.height);
+		}
+	};
 
 	vector<WallObject> borderWalls;
-	vector<LibGrndObject> libraryGrounds;
-	
+	shared_ptr<Texture> borderWallTex;
+	// std::unordered_set<int> borderWallIDs; // Set to track unique IDs
 	std::set<WallObjKey> borderWallKeys; // Set to track unique keys
+
+	vector<LibGrndObject> libraryGrounds;
+	shared_ptr<Texture> libraryGroundTex;
+	// std::unordered_set<int> libraryGroundIDs; // Set to track unique IDs
 	std::set<LibGrndObjKey> libraryGroundKeys; // Set to track unique keys
-	
-	//std::unordered_set<int> borderWallIDs; // Set to track unique IDs
-	//std::unordered_set<int> libraryGroundIDs; // Set to track unique IDs
+
+	shared_ptr<Texture> carpetTex;
+	shared_ptr<Texture> particleAlphaTex; // Add particle alpha texture
 
 	// Scene layout parameters
-	vec3 libraryCenter = vec3(0.0f, Config::GROUND_HEIGHT, 0.0f);
-	vec3 bossAreaCenter = vec3(0.0f, Config::GROUND_HEIGHT, 60.0f); // Further away
-	vec3 doorPosition = vec3(0.0f, 1.5f, Config::GROUND_SIZE); // Center of door at library edge
+	vec3 libraryCenter = vec3(0.0f, groundY, 0.0f);
+	vec3 bossAreaCenter = vec3(0.0f, groundY, 60.0f); // Further away
+	vec3 doorPosition = vec3(0.0f, 1.5f, groundSize); // Center of door at library edge
 	vec3 doorScale = vec3(1.5f, 3.0f, 0.2f); // Width, Height, Thickness
 	float pathWidth = 4.0f; // Width of the path connecting areas
 
@@ -111,6 +151,9 @@ public:
 
 	// -- Boss Enemy Spell Projectiles --
 	std::vector<SpellProjectile> bossActiveSpells;
+
+	// character bounding box
+	glm::vec3 manAABBmin, manAABBmax;
 
 	AssimpModel *book_shelf1, *book_shelf2;
 	AssimpModel *candelabra, *chest, *library_bench, *low_poly_bookshelf, *table_chairs1, *table_chairs2, *grandfather_clock, *bookstand, *door;
@@ -148,7 +191,11 @@ public:
 	// vec3 characterMovement = vec3(0, 0, 0);
 	glm::vec3 manScale = glm::vec3(0.01, 0.01, 0.01);
 	glm::vec3 manMoveDir = glm::vec3(sin(radians(0.0f)), 0, cos(radians(0.0f)));
-	AABB playerAABB; // Contains <vec3>min and <vec3>max
+
+	// initial position of light cycles
+	glm::vec3 start_lightcycle1_pos = glm::vec3(-384, -11, 31);
+	glm::vec3 start_lightcycle2_pos = glm::vec3(-365, -11, 9.1);
+
 
 	float theta = glm::radians(Config::CAMERA_DEFAULT_THETA_DEGREES); // controls yaw
 	float phi = glm::radians(Config::CAMERA_DEFAULT_PHI_DEGREES); // controls pitch
@@ -166,6 +213,7 @@ public:
 	bool mouseIntialized = false;
 	double lastX, lastY;
 
+
 	int debug = 0;
 	int debug_pos = 0;
 
@@ -180,7 +228,7 @@ public:
 	bool movingRight = false;
 
 	//unlock bool
-	bool unlocked = false;
+	bool unlock = false;
 	float lTheta = 0;
 
 	float characterRotation = 0.0f;
@@ -220,27 +268,181 @@ public:
 	float cameraVisibleCooldown = 0.0f; // Cooldown for camera visibility check
 	bool wasVisibleLastFrame = true;
 
-	// Set up the FBO for storing the light's depth map
-	void initShadow() {
-		glGenFramebuffers(1, &depthMapFBO); // Generate FBO for shadow depth
-		glGenTextures(1, &depthMap); // Generate texture for shadow depth
-		glBindTexture(GL_TEXTURE_2D, depthMap);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, S_WIDTH, S_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+	void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods)
+	{
+		if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
+		{
+			glfwSetWindowShouldClose(window, GL_TRUE);
+		}
 
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+		if (key == GLFW_KEY_F11 && action == GLFW_PRESS)
+		{
+			//Fullscreen Mode
+			if (!windowMaximized) {
+				glfwMaximizeWindow(window);
+				windowMaximized = !windowMaximized;
+			}
+			else {
+				glfwRestoreWindow(window);
+				windowMaximized = !windowMaximized;
+			}
+		}
 
-		glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO); // bind with framebuffer's depth buffer
-		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthMap, 0); // attach the texture to the framebuffer
-		glDrawBuffer(GL_NONE);
-		glReadBuffer(GL_NONE);
-		glBindFramebuffer(GL_FRAMEBUFFER, 0); // Unbind the framebuffer
+		if (player->isAlive() || debugCamera) {
+			if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_W) != GLFW_RELEASE) {
+				manState = Man_State::WALKING;
+
+				//Movement Variable
+				movingForward = true;
+				if (debug_pos) {
+					cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
+					cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
+				}
+			} else if (key == GLFW_KEY_W && action == GLFW_RELEASE) {
+				manState = Man_State::STANDING;
+				//Movement Variable
+				movingForward = false;
+			}
+			if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_S) != GLFW_RELEASE) {
+				manState = Man_State::WALKING;
+
+				//Movement Variable
+				movingBackward = true;
+
+				if (debug_pos) {
+					cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
+					cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
+				}
+
+			} else if (key == GLFW_KEY_S && action == GLFW_RELEASE) {
+				manState = Man_State::STANDING;
+				//Movement Variable
+				movingBackward = false;
+			}
+			if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_A) != GLFW_RELEASE) {
+				manState = Man_State::WALKING;
+
+				//Movement Variable
+				movingLeft = true;
+
+				if (debug_pos) {
+					cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
+					cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
+				}
+
+			} else if (key == GLFW_KEY_A && action == GLFW_RELEASE) {
+				manState = Man_State::STANDING;
+				//Movement Variable
+				movingLeft = false;
+			}
+			if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_D) != GLFW_RELEASE) {
+				manState = Man_State::WALKING;
+
+				//Movement Variable
+				movingRight = true;
+
+				if (debug_pos) {
+					cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
+					cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
+				}
+			} else if (key == GLFW_KEY_D && action == GLFW_RELEASE) {
+				manState = Man_State::STANDING;
+				//Movement Variable
+				movingRight = false;
+			}
+		}
+		if (key == GLFW_KEY_Z && action == GLFW_PRESS) {
+			glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
+		}
+		if (key == GLFW_KEY_Z && action == GLFW_RELEASE) {
+			glPolygonMode( GL_FRONT_AND_BACK, GL_FILL );
+		}
+		if (key == GLFW_KEY_F && action == GLFW_PRESS) { // Interaction Key
+			interactWithBooks();
+    	}
+		if (key == GLFW_KEY_L && action == GLFW_PRESS){
+			cursor_visable = !cursor_visable;
+			if (cursor_visable) {
+				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+			}
+			else {
+				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+			}
+		}
+		if(key == GLFW_KEY_U && action == GLFW_PRESS){
+			unlock = true;
+		}
+		if (key == GLFW_KEY_K && action == GLFW_PRESS) {
+			debugCamera = !debugCamera;
+		}
+		if (!player->isAlive() && key == GLFW_KEY_SPACE && action == GLFW_PRESS) {
+			restartGen = true;
+		}
+	}
+
+	void scrollCallback(GLFWwindow *window, double deltaX, double deltaY)
+	{
+			theta = theta + deltaX * glm::radians(Config::CAMERA_SCROLL_SENSITIVITY_DEGREES);
+			phi = phi - deltaY * glm::radians(Config::CAMERA_SCROLL_SENSITIVITY_DEGREES);
+
+			if (phi > glm::radians(Config::CAMERA_PHI_MAX_DEGREES)) {
+				phi = glm::radians(Config::CAMERA_PHI_MAX_DEGREES);
+			}
+			if (phi < glm::radians(Config::CAMERA_PHI_MIN_DEGREES)) {
+				phi = glm::radians(Config::CAMERA_PHI_MIN_DEGREES);
+			}
+
+			updateCameraVectors();
+	}
+
+	void mouseMoveCallback(GLFWwindow* window, double xpos, double ypos) {
+		if (!mouseIntialized) {
+			lastX = xpos;
+			lastY = ypos;
+			mouseIntialized = true;
+			return;
+		}
+
+		float deltaX = xpos - lastX;
+		float deltaY = lastY - ypos;
+		lastX = xpos;
+		lastY = ypos;
+
+		theta = theta + deltaX * Config::CAMERA_MOUSE_SENSITIVITY;
+		phi = phi + deltaY * Config::CAMERA_MOUSE_SENSITIVITY;
+
+		if (phi > glm::radians(Config::CAMERA_PHI_MAX_DEGREES)) {
+			phi = glm::radians(Config::CAMERA_PHI_MAX_DEGREES);
+		}
+		if (phi < radians(-80.0f))
+		{
+			phi = radians(-80.0f);
+		}
+
+		updateCameraVectors();
 	}
 
 	void updateCameraVectors() {
 		if (!debugCamera) {
+			//Activate Player Camera
+			// vec3 front;
+			// front.x = radius * cos(phi) * cos(theta);
+			// front.y = radius * sin(phi);
+			// front.z = radius * cos(phi) * cos((pi<float>()/2) - theta);
+
+			// eye = player->getPosition() - front;
+			// lookAt = player->getPosition();
+
+			// // manRot.y = theta + radians(-90.0f);
+			// // manRot.y = - manRot.y;
+			// // manRot.x = phi;
+
+			// player->setRotY(-(theta + radians(-90.0f)));
+			// player->setRotX(phi);
+
+			// // cout << "Theta: " << theta << " Phi: " << phi << endl;
+			// manMoveDir = vec3(sin(player->getRotY()), 0, cos(player->getRotY()));
+			// right = normalize(cross(manMoveDir, up));
 			// 1. Compute the desired front vector
 			glm::vec3 front;
 			front.x = cos(phi) * cos(theta);
@@ -250,6 +452,7 @@ public:
 			// 2. Store current desired eye (before occlusion check)
 			glm::vec3 playerPos = glm::vec3(player->getPosition().x, player->getPosition().y + 1.0f, player->getPosition().z);
 			glm::vec3 desiredEye = playerPos - front * radius;
+
 
 			// 3. Adjust radius if needed
 			float desiredRadius = Config::CAMERA_DEFAULT_RADIUS;
@@ -276,8 +479,6 @@ public:
 				radius = glm::min(desiredRadius, radius + step);
 				wasVisibleLastFrame = true; // Mark as visible
 			}
-			if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_A) != GLFW_RELEASE) {
-				manState = Man_State::WALKING;
 
 			radius = glm::mix(radius, finalRadius, 0.5f); // Smoothly interpolate radius
 
@@ -289,10 +490,10 @@ public:
 			player->setRotY(-(theta + radians(-90.0f)));
 			player->setRotX(phi);
 
-			manMoveDir = vec3(sin(player->getRotY()), 0, cos(player->getRotY()));
+		manMoveDir = vec3(sin(player->getRotY()), 0, cos(player->getRotY()));
 			right = normalize(cross(manMoveDir, up));
 
-			// lookAt = eye + front;
+				// lookAt = eye + front;
 		}
 		else {
 			//Activate Debug Camera
@@ -320,107 +521,150 @@ public:
 			eye = debugEye;
 			lookAt = debugEye + targetPos;
 		}
+
 	}
 
-	void mouseCallback(GLFWwindow *window, int button, int action, int mods) {
-		if (action == GLFW_PRESS) {
+	void mouseCallback(GLFWwindow *window, int button, int action, int mods)
+	{
+		double posX, posY;
+
+		if (action == GLFW_PRESS)
+		{
 			shootSpell();
 		}
 	}
 
-	void resizeCallback(GLFWwindow *window, int width, int height) {
+	void resizeCallback(GLFWwindow *window, int width, int height)
+	{
 		glViewport(0, 0, width, height);
 	}
 
-	void init(const std::string& resourceDirectory) {
+
+	void init(const std::string& resourceDirectory)
+	{
 		GLSL::checkVersion();
 
 		// Set background color and enable z-buffer test
 		glClearColor(.12f, .34f, .56f, 1.0f);
 		glEnable(GL_DEPTH_TEST);
 
-		// Initialize GLSL programs for shadow mapping
-		DepthProg = make_shared<Program>();
-		DepthProg->setVerbose(Config::DEBUG_SHADER);
-		DepthProg->setShaderNames(resourceDirectory + "/depth_vert.glsl", resourceDirectory + "/depth_frag.glsl");
-		DepthProg->init();
-
-		DepthProgDebug = make_shared<Program>();
-		DepthProgDebug->setVerbose(Config::DEBUG_SHADER);
-		DepthProgDebug->setShaderNames(resourceDirectory + "/depth_vertDebug.glsl", resourceDirectory + "/depth_fragDebug.glsl");
-		DepthProgDebug->init();
-
-		ShadowProg = make_shared<Program>();
-		ShadowProg->setVerbose(Config::DEBUG_SHADER);
-		ShadowProg->setShaderNames(resourceDirectory + "/shadow_vert.glsl", resourceDirectory + "/shadow_frag.glsl");
-		ShadowProg->init();
-
-		DebugProg = make_shared<Program>();
-		DebugProg->setVerbose(Config::DEBUG_SHADER);
-		DebugProg->setShaderNames(resourceDirectory + "/pass_vert.glsl", resourceDirectory + "/pass_texfrag.glsl");
-		DebugProg->init();
-
-		// Add unfigorm and attrubutes to each of the programs
-		DepthProg->addUniform("LP");
-		DepthProg->addUniform("LV");
-		DepthProg->addUniform("M");
-		DebugProg->addUniform("texBuf");
-		DepthProg->addAttribute("vertPos");
-
-		DepthProgDebug->addUniform("LP");
-		DepthProgDebug->addUniform("LV");
-		DepthProgDebug->addUniform("M");
-		DepthProgDebug->addAttribute("vertPos");
-		DepthProgDebug->addAttribute("vertNor");
-		DepthProgDebug->addAttribute("vertTex");
-
-		ShadowProg->addUniform("P");
-		ShadowProg->addUniform("V");
-		ShadowProg->addUniform("M");
-		ShadowProg->addUniform("LV");
-		ShadowProg->addUniform("lightDir");
-		ShadowProg->addUniform("lightColor");
-		ShadowProg->addUniform("lightIntensity");
-		ShadowProg->addUniform("cameraPos");
-		ShadowProg->addAttribute("vertPos");
-		ShadowProg->addAttribute("vertNor");
-		ShadowProg->addAttribute("vertTex");
-		ShadowProg->addUniform("shadowDepth");
-
-		ShadowProg->addUniform("hasTexAlb");
-		ShadowProg->addUniform("hasTexSpec");
-		ShadowProg->addUniform("hasTexRough");
-		ShadowProg->addUniform("hasTexMet");
-		ShadowProg->addUniform("hasTexNor");
-		ShadowProg->addUniform("hasTexEmit");
-
-		ShadowProg->addUniform("hasMaterial");
-		ShadowProg->addUniform("hasBones");
-
-		ShadowProg->addUniform("TexAlb");
-		ShadowProg->addUniform("TexSpec");
-		ShadowProg->addUniform("TexRough");
-		ShadowProg->addUniform("TexMet");
-		ShadowProg->addUniform("TexNor");
-		ShadowProg->addUniform("TexEmit");
-
-		ShadowProg->addUniform("MatAlbedo");
-		ShadowProg->addUniform("MatRough");
-		ShadowProg->addUniform("MatMetal");
-		ShadowProg->addUniform("MatEmit");
-
-		ShadowProg->addUniform("enemyAlpha");
-
-		for (int i = 0; i < Config::MAX_BONES; i++) {
-			ShadowProg->addUniform("finalBoneMatrices[" + to_string(i) + "]");
+		// Initialize the GLSL program that we will use for texture mapping
+		texProg = make_shared<Program>();
+		texProg->setVerbose(true);
+		texProg->setShaderNames(resourceDirectory + "/tex_vert.glsl", resourceDirectory + "/tex_frag0.glsl");
+		texProg->init();
+		texProg->addUniform("P");
+		texProg->addUniform("V");
+		texProg->addUniform("M");
+		texProg->addUniform("Texture0");
+		texProg->addUniform("MatAmb");
+		texProg->addUniform("MatSpec");
+		texProg->addUniform("MatShine");
+		texProg->addUniform("numLights");
+		for (int i = 0; i < Config::NUM_LIGHTS; i++) {
+			texProg->addUniform("lightPos[" + to_string(i) + "]");
+			texProg->addUniform("lightColor[" + to_string(i) + "]");
+			texProg->addUniform("lightIntensity[" + to_string(i) + "]");
 		}
-		ShadowProg->addAttribute("boneIds");
-		ShadowProg->addAttribute("weights");
+		texProg->addAttribute("vertPos");
+		texProg->addAttribute("vertNor");
+		texProg->addAttribute("vertTex");
 
-		initShadow();
+		// Initialize the GLSL program that we will use for rendering
+		prog2 = make_shared<Program>();
+		prog2->setVerbose(true);
+		prog2->setShaderNames(resourceDirectory + "/simple_light_vert.glsl", resourceDirectory + "/simple_light_frag.glsl");
+		prog2->init();
+		prog2->addUniform("P");
+		prog2->addUniform("V");
+		prog2->addUniform("M");
+		prog2->addUniform("MatAmb");
+		prog2->addAttribute("vertPos");
+		prog2->addAttribute("vertNor");
+		prog2->addUniform("MatDif");
+		prog2->addUniform("MatSpec");
+		prog2->addUniform("MatShine");
+		for (int i = 0; i < Config::NUM_LIGHTS; i++) {
+			prog2->addUniform("lightPos[" + to_string(i) + "]");
+			prog2->addUniform("lightColor[" + to_string(i) + "]");
+			prog2->addUniform("lightIntensity[" + to_string(i) + "]");
+		}
+		prog2->addUniform("numLights");
+		prog2->addUniform("hasEmittance");
+		prog2->addUniform("MatEmitt");
+		prog2->addUniform("MatEmittIntensity");
+		prog2->addUniform("discardCounter");
+		prog2->addUniform("activateDiscard");
+		prog2->addUniform("randFloat1");
+		prog2->addUniform("randFloat2");
+		prog2->addUniform("randFloat3");
+		prog2->addUniform("randFloat4");
+
+		prog2_enemy = make_shared<Program>();
+		prog2_enemy->setVerbose(true);
+		prog2_enemy->setShaderNames(resourceDirectory + "/simple_light_vert_enemy.glsl", resourceDirectory + "/simple_light_frag_enemy.glsl");
+		prog2_enemy->init();
+		prog2_enemy->addUniform("P");
+		prog2_enemy->addUniform("V");
+		prog2_enemy->addUniform("M");
+		prog2_enemy->addUniform("MatAmb");
+		prog2_enemy->addAttribute("vertPos");
+		prog2_enemy->addAttribute("vertNor");
+		prog2_enemy->addUniform("MatDif");
+		prog2_enemy->addUniform("MatSpec");
+		prog2_enemy->addUniform("MatShine");
+		for (int i = 0; i < Config::NUM_LIGHTS; i++) {
+			prog2_enemy->addUniform("lightPos[" + to_string(i) + "]");
+			prog2_enemy->addUniform("lightColor[" + to_string(i) + "]");
+			prog2_enemy->addUniform("lightIntensity[" + to_string(i) + "]");
+		}
+		prog2_enemy->addUniform("numLights");
+		prog2_enemy->addUniform("hasEmittance");
+		prog2_enemy->addUniform("MatEmitt");
+		prog2_enemy->addUniform("MatEmittIntensity");
+		prog2_enemy->addUniform("discardCounter");
+		prog2_enemy->addUniform("activateDiscard");
+		prog2_enemy->addUniform("randFloat1");
+		prog2_enemy->addUniform("randFloat2");
+		prog2_enemy->addUniform("randFloat3");
+		prog2_enemy->addUniform("randFloat4");
+		prog2_enemy->addUniform("alpha");
+
+		// Initialize the GLSL program that we will use for assimp models
+		assimptexProg = make_shared<Program>();
+		assimptexProg->setVerbose(true);
+		assimptexProg->setShaderNames(resourceDirectory + "/assimp_tex_vert.glsl", resourceDirectory + "/assimp_tex_frag.glsl");
+		assimptexProg->init();
+		assimptexProg->addUniform("P");
+		assimptexProg->addUniform("V");
+		assimptexProg->addUniform("M");
+		assimptexProg->addUniform("texture_diffuse1");
+		assimptexProg->addUniform("texture_specular1");
+		assimptexProg->addUniform("texture_roughness1");
+		assimptexProg->addUniform("texture_metalness1");
+		assimptexProg->addUniform("texture_emission1");
+		assimptexProg->addAttribute("vertPos");
+		assimptexProg->addAttribute("vertNor");
+		assimptexProg->addAttribute("vertTex");
+		assimptexProg->addAttribute("boneIds");
+		assimptexProg->addAttribute("weights");
+		for (int i = 0; i < Config::MAX_BONES; i++) {
+			assimptexProg->addUniform("finalBonesMatrices[" + to_string(i) + "]");
+		}
+		assimptexProg->addUniform("MatAmb");
+		assimptexProg->addUniform("MatDif");
+		assimptexProg->addUniform("MatSpec");
+		assimptexProg->addUniform("MatShine");
+		for (int i = 0; i < Config::NUM_LIGHTS; i++) {
+			assimptexProg->addUniform("lightPos[" + to_string(i) + "]");
+			assimptexProg->addUniform("lightColor[" + to_string(i) + "]");
+			assimptexProg->addUniform("lightIntensity[" + to_string(i) + "]");
+		}
+		assimptexProg->addUniform("numLights");
+		assimptexProg->addUniform("hasTexture");
 
 		hudProg = make_shared<Program>();
-		hudProg->setVerbose(Config::DEBUG_SHADER);
+		hudProg->setVerbose(true);
 		hudProg->setShaderNames(resourceDirectory + "/hud_vert.glsl", resourceDirectory + "/hud_frag.glsl");
 		hudProg->init();
 		hudProg->addUniform("projection");
@@ -431,7 +675,7 @@ public:
 
 		// Initialize the particle program
 		particleProg = make_shared<Program>();
-		particleProg->setVerbose(Config::DEBUG_SHADER);
+		particleProg->setVerbose(true);
 		particleProg->setShaderNames(resourceDirectory + "/particle_vert.glsl", resourceDirectory + "/particle_frag.glsl");
 		particleProg->init();
 		particleProg->addUniform("P");
@@ -442,7 +686,7 @@ public:
 		particleProg->addAttribute("vertColor");
 
 		redFlashProg = make_shared<Program>();
-		redFlashProg->setVerbose(Config::DEBUG_SHADER);
+		redFlashProg->setVerbose(true);
 		redFlashProg->setShaderNames(resourceDirectory + "/red_flash_vert.glsl", resourceDirectory + "/red_flash_frag.glsl");
 		redFlashProg->init();
 		redFlashProg->addUniform("projection");
@@ -521,17 +765,19 @@ public:
 		addLibGrnd(bossGridSize.x * 2, bossGridSize.y * 2, 0.0f, bossRoom->getWorldOrigin(), libraryGroundTex);
 	}
 
-	void initGeom(const std::string& resourceDirectory) {
+	void initGeom(const std::string& resourceDirectory)
+	{
  		string errStr;
 
 		// load the walking character model
 		stickfigure_running = new AssimpModel(resourceDirectory + "/CatWizard/CatWizardNoTex.fbx");
-		stickfigure_running->assignTexture("texture_diffuse", resourceDirectory + "/CatWizard/textures/ImphenziaPalette02-Albedo.png");
+		stickfigure_running->assignTexture("texture_diffuse1", resourceDirectory + "/CatWizard/textures/ImphenziaPalette02-Albedo.png");
 		//stickfigure_anim = new Animation(resourceDirectory + "/CatWizard/untitled.fbx", stickfigure_running, 0);
 		//stickfigure_idle = new Animation(resourceDirectory + "/Vanguard/Vanguard.fbx", stickfigure_running, 1);
 
 		//TEST Load the cat
 		//CatWizard = new AssimpModel(resourceDirectory + "/CatWizard/CatWizardOrange.fbx");
+
 
 		// --- Calculate Player Collision Box NOW that model is loaded ---
 		calculatePlayerLocalAABB();
@@ -541,54 +787,68 @@ public:
 		// load the cube (books)
 		cube = new AssimpModel(resourceDirectory + "/cube.obj");
 
+		// book_shelf1 = new AssimpModel(resourceDirectory + "/book_shelf/source/bookshelf_cluster.obj");
+
+		// book_shelf1->assignTexture("texture_diffuse1", resourceDirectory + "/book_shelf/textures/bookstack_textures_2.jpg");
+		// book_shelf1->assignTexture("texture_specular1", resourceDirectory + "/book_shelf/textures/bookstack_specular.jpg");
+
 		book_shelf1 = new AssimpModel(resourceDirectory + "/cluster_assets/bookshelf_texture2.obj");
 
-		book_shelf1->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/darker_bookshelf_diffuse.png");
+		book_shelf1->assignTexture("texture_diffuse1", resourceDirectory + "/cluster_assets/darker_bookshelf_diffuse.png");
 
 		book_shelf2 = new AssimpModel(resourceDirectory + "/cluster_assets/bookshelf_texture2.obj");
 
-		book_shelf2->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/glowing_bookshelf_bake_diffuse.png");
+		book_shelf2->assignTexture("texture_diffuse1", resourceDirectory + "/cluster_assets/glowing_bookshelf_bake_diffuse.png");
 
 		candelabra = new AssimpModel(resourceDirectory + "/cluster_assets/candelabrum/Candelabrum.obj");
 
-		candelabra->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/candelabrum/textures/defaultobject_gloss.png");
-		candelabra->assignTexture("texture_specular", resourceDirectory + "/cluster_assets/candelabrum/textures/defaultobject_specular.png");
-		candelabra->assignTexture("texture_normal", resourceDirectory + "/cluster_assets/candelabrum/textures/defaultobject_normal.png");
+		candelabra->assignTexture("texture_diffuse1", resourceDirectory + "/cluster_assets/candelabrum/textures/defaultobject_gloss.png");
+		candelabra->assignTexture("texture_specular1", resourceDirectory + "/cluster_assets/candelabrum/textures/defaultobject_specular.png");
+		candelabra->assignTexture("texture_normal1", resourceDirectory + "/cluster_assets/candelabrum/textures/defaultobject_normal.png");
 
 		chest = new AssimpModel(resourceDirectory + "/cluster_assets/chest/Chest.obj");
 
-		chest->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/chest/textures/TreasureChestDiffuse_2.png");
-		chest->assignTexture("texture_roughness", resourceDirectory + "/cluster_assets/chest/textures/TreasureChestRoughness_2.png");
-		chest->assignTexture("texture_metalness", resourceDirectory + "/cluster_assets/chest/textures/TreasureChestMetal_2.png");
-		chest->assignTexture("texture_normal", resourceDirectory + "/cluster_assets/chest/textures/TreasureChestNormal_2.png");
+		chest->assignTexture("texture_diffuse1", resourceDirectory + "/cluster_assets/chest/textures/TreasureChestDiffuse_2.png");
+		chest->assignTexture("texture_roughness1", resourceDirectory + "/cluster_assets/chest/textures/TreasureChestRoughness_2.png");
+		chest->assignTexture("texture_metalness1", resourceDirectory + "/cluster_assets/chest/textures/TreasureChestMetal_2.png");
+		chest->assignTexture("texture_normal1", resourceDirectory + "/cluster_assets/chest/textures/TreasureChestNormal_2.png");
 
 		library_bench = new AssimpModel(resourceDirectory + "/cluster_assets/library_bench/library_bench.obj");
 
-		library_bench->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/library_bench/textures/bench_diffuse.png");
+		library_bench->assignTexture("texture_diffuse1", resourceDirectory + "/cluster_assets/library_bench/textures/bench_diffuse.png");
+
+		// low_poly_bookshelf = new AssimpModel(resourceDirectory + "/cluster_assets/low_poly_bookshelf/Low_poly_bookshelf.obj");
+
+		// low_poly_bookshelf->assignTexture("texture_diffuse1", resourceDirectory + "/cluster_assets/low_poly_bookshelf/textures/Plane_Bake1_pbr_diffuse.png");
+		// low_poly_bookshelf->assignTexture("texture_metalness1", resourceDirectory + "/cluster_assets/low_poly_bookshelf/textures/Plane_Bake1_pbr_metalness.png");
+		// low_poly_bookshelf->assignTexture("texture_roughness1", resourceDirectory + "/cluster_assets/low_poly_bookshelf/textures/Plane_Bake1_pbr_roughness.png");
+		// low_poly_bookshelf->assignTexture("texture_normal1", resourceDirectory + "/cluster_assets/low_poly_bookshelf/textures/Plane_Bake1_pbr_normal.jpg");
 
 		table_chairs1 = new AssimpModel(resourceDirectory + "/cluster_assets/table_chairs/table_chairs_3.obj");
 
-		table_chairs1->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/table_chairs/textures/table_chairs_3_diffuse.png");
+		table_chairs1->assignTexture("texture_diffuse1", resourceDirectory + "/cluster_assets/table_chairs/textures/table_chairs_3_diffuse.png");
 
 		table_chairs2 = new AssimpModel(resourceDirectory + "/cluster_assets/table_chairs/table_chairs_4.obj");
 
-		table_chairs2->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/table_chairs/textures/table_chairs_4_diffuse.png");
+		table_chairs2->assignTexture("texture_diffuse1", resourceDirectory + "/cluster_assets/table_chairs/textures/table_chairs_4_diffuse.png");
 
 		grandfather_clock = new AssimpModel(resourceDirectory + "/cluster_assets/grandfather_clock/grandfather_clock.obj");
 
-		grandfather_clock->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/grandfather_clock/textures/Clock_L_lambert1_BaseColor.tga.png");
-		grandfather_clock->assignTexture("texture_metalness", resourceDirectory + "/cluster_assets/grandfather_clock/textures/Clock_L_lambert1_Metallic.tga.png");
-		grandfather_clock->assignTexture("texture_roughness", resourceDirectory + "/cluster_assets/grandfather_clock/textures/Clock_L_lambert1_Roughness.tga.png");
-		grandfather_clock->assignTexture("texture_normal", resourceDirectory + "/cluster_assets/grandfather_clock/textures/Clock_L_lambert1_Normal.tga.jpg");
+		grandfather_clock->assignTexture("texture_diffuse1", resourceDirectory + "/cluster_assets/grandfather_clock/textures/Clock_L_lambert1_BaseColor.tga.png");
+		grandfather_clock->assignTexture("texture_metalness1", resourceDirectory + "/cluster_assets/grandfather_clock/textures/Clock_L_lambert1_Metallic.tga.png");
+		grandfather_clock->assignTexture("texture_roughness1", resourceDirectory + "/cluster_assets/grandfather_clock/textures/Clock_L_lambert1_Roughness.tga.png");
+		grandfather_clock->assignTexture("texture_normal1", resourceDirectory + "/cluster_assets/grandfather_clock/textures/Clock_L_lambert1_Normal.tga.jpg");
 
 		bookstand = new AssimpModel(resourceDirectory + "/cluster_assets/bookstand/bookstand.obj");
-		bookstand->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/bookstand/textures/bookstand_diffuse.png");
+		bookstand->assignTexture("texture_diffuse1", resourceDirectory + "/cluster_assets/bookstand/textures/bookstand_diffuse.png");
 
 		door = new AssimpModel(resourceDirectory + "/cluster_assets/door/door.obj");
-		door->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/door/Door_diffuse.png");
+		door->assignTexture("texture_diffuse1", resourceDirectory + "/cluster_assets/door/Door_diffuse.png");
 
 		sky_sphere = new AssimpModel(resourceDirectory + "/sky_sphere/skybox_sphere.obj");
-		sky_sphere->assignTexture("texture_diffuse", resourceDirectory + "/sky_sphere/sky_sphere.fbm/infinite_lib2.png");
+		sky_sphere->assignTexture("texture_diffuse1", resourceDirectory + "/sky_sphere/sky_sphere.fbm/infinite_lib2.png");
+
+		// border = new AssimpModel(resourceDirectory + "/border.obj");
 
 		// load the sphere (spell)
 		sphere = new AssimpModel(resourceDirectory + "/SmoothSphere.obj");
@@ -598,14 +858,7 @@ public:
 
 		// health bar
 		healthBar = new AssimpModel(resourceDirectory + "/Quad/hud_quad.obj");
-		healthBar->assignTexture("texture_diffuse", resourceDirectory + "/healthbar.bmp");
-
-		//key
-		key = new AssimpModel(resourceDirectory + "/Key_and_Lock/key.obj");
-
-		//lock
-		lock = new AssimpModel(resourceDirectory + "/Key_and_Lock/lockCopy.obj");
-		lockHandle = new AssimpModel(resourceDirectory + "/Key_and_Lock/lockHandle.obj");
+		healthBar->assignTexture("texture_diffuse1", resourceDirectory + "/healthbar.bmp");
 
 		//key
 		key = new AssimpModel(resourceDirectory + "/Key_and_Lock/key.obj");
@@ -646,160 +899,66 @@ public:
 			cerr << "ERROR: Sphere model not loaded, cannot create enemies." << endl;
 		}
 	}
-	
-	void SetMaterial(shared_ptr<Program> shader, Material color) {
-		/* Some important notes about PBR materials:
 
-		Albedo (Base Color):
-		Never use pure black (0,0,0) or pure white (1,1,1)
-		Realistic materials range from about 0.04 to 0.95
-		For metals, this is the actual metal color
-
-		Roughness:
-		0.0 = perfectly smooth (mirror-like)
-		1.0 = completely rough (diffuse)
-		Most materials fall between 0.2-0.8
-
-		Metalness:
-		0.0 = non-metallic (dielectric)
-		1.0 = metallic
-		Should almost always be 0 or 1, rarely in between
-
-		Emission:
-		Only for materials that emit light
-		Values can exceed 1.0 for strong emission
-		Most materials have (0,0,0) emission
-
-		Good reference values can be found at physicallybased.info. */
-
-		switch (color) {
-		case Material::purple:
-				glUniform3f(shader->getUniform("MatAlbedo"), 0.3f, 0.1f, 0.4f);
-				glUniform1f(shader->getUniform("MatRough"), 0.7f);
-				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
-				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
-				break;
-			case Material::black:
-				glUniform3f(shader->getUniform("MatAlbedo"), 0.04f, 0.04f, 0.04f);
-				glUniform1f(shader->getUniform("MatRough"), 0.8f);
-				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
-				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
-				break;
-			case Material::eye_white:
-				glUniform3f(shader->getUniform("MatAlbedo"), 0.95f, 0.95f, 0.95f);
-				glUniform1f(shader->getUniform("MatRough"), 0.2f);
-				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
-				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
-				break;
-			case Material::pupil_white:
-				glUniform3f(shader->getUniform("MatAlbedo"), 0.85f, 0.85f, 0.9f);
-				glUniform1f(shader->getUniform("MatRough"), 0.1f);
-				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
-				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
-				break;
-			case Material::bronze:
-				glUniform3f(shader->getUniform("MatAlbedo"), 0.714f, 0.4284f, 0.181f);
-				glUniform1f(shader->getUniform("MatRough"), 0.4f);
-				glUniform1f(shader->getUniform("MatMetal"), 1.0f);
-				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
-				break;
-			case Material::silver:
-				glUniform3f(shader->getUniform("MatAlbedo"), 0.972f, 0.960f, 0.915f);
-				glUniform1f(shader->getUniform("MatRough"), 0.2f);
-				glUniform1f(shader->getUniform("MatMetal"), 1.0f);
-				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
-				break;
-			case Material::brown:
-				glUniform3f(shader->getUniform("MatAlbedo"), 0.25f, 0.15f, 0.08f);
-				glUniform1f(shader->getUniform("MatRough"), 0.7f);
-				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
-				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
-				break;
-			case Material::orb_glowing_blue:
-				glUniform3f(shader->getUniform("MatAlbedo"), 0.1f, 0.2f, 0.5f);
-				glUniform1f(shader->getUniform("MatRough"), 1.0f);
-				glUniform1f(shader->getUniform("MatMetal"), 1.0f);
-				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
-				break;
-			case Material::orb_glowing_red:
-				glUniform3f(shader->getUniform("MatAlbedo"), 0.5f, 0.1f, 0.1f);
-				glUniform1f(shader->getUniform("MatRough"), 1.0f);
-				glUniform1f(shader->getUniform("MatMetal"), 1.0f);
-				glUniform3f(shader->getUniform("MatEmit"), 0.9f, 0.3f, 0.2f);
-				break;
-			case Material::orb_glowing_yellow:
-				glUniform3f(shader->getUniform("MatAlbedo"), 0.5f, 0.4f, 0.1f);
-				glUniform1f(shader->getUniform("MatRough"), 1.0f);
-				glUniform1f(shader->getUniform("MatMetal"), 1.0f);
-				glUniform3f(shader->getUniform("MatEmit"), 0.9f, 0.8f, 0.2f);
-				break;
-			case Material::grey:
-				glUniform3f(shader->getUniform("MatAlbedo"), 0.8f, 0.8f, 0.8f);
-				glUniform1f(shader->getUniform("MatRough"), 0.6f);
-				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
-				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
-				break;
-			case Material::wood:
-				glUniform3f(shader->getUniform("MatAlbedo"), 0.65f, 0.45f, 0.25f);
-				glUniform1f(shader->getUniform("MatRough"), 0.8f);
-				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
-				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
-				break;
-			case Material::mini_map:
-				glUniform3f(shader->getUniform("MatAlbedo"), 0.65f, 0.45f, 0.25f);
-				glUniform1f(shader->getUniform("MatRough"), 0.0f);
-				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
-				glUniform3f(shader->getUniform("MatEmit"), 1.0f, 1.0f, 1.0f);
-				break;
-			case Material::defaultMaterial:
-				glUniform3f(shader->getUniform("MatAlbedo"), 0.5f, 0.5f, 0.5f);
-				glUniform1f(shader->getUniform("MatRough"), 0.0f);
-				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
-				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
-				break;
-			case Material::blue_body:
-				glUniform3f(shader->getUniform("MatAlbedo"), 0.35f, 0.4f, 0.914f);
-				glUniform1f(shader->getUniform("MatRough"), 0.8f);
-				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
-				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
-				break;
-			case Material::gold:
-				glUniform3f(shader->getUniform("MatAlbedo"), 1.0f, 0.766f, 0.336f);
-				glUniform1f(shader->getUniform("MatRough"), 0.2f);
-				glUniform1f(shader->getUniform("MatMetal"), 1.0f);
-				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
-				break;
+	void SetMaterialMan(shared_ptr<Program> curS, int i) {
+		switch (i) {
+			case 0:
+			// gold
+				glUniform3f(curS->getUniform("MatAmb"), 0.24725f, 0.1995f, 0.0745f);
+				glUniform3f(curS->getUniform("MatDif"), 0.75164f, 0.60648f, 0.22648f);
+				glUniform3f(curS->getUniform("MatSpec"), 0.628281f, 0.555802f, 0.366065f);
+				glUniform1f(curS->getUniform("MatShine"), 51.2f);
+			break;
+			case 1:
+			// silver
+				glUniform3f(curS->getUniform("MatAmb"), 0.19225f, 0.19225f, 0.19225f);
+				glUniform3f(curS->getUniform("MatDif"), 0.50754f, 0.50754f, 0.50754f);
+				glUniform3f(curS->getUniform("MatSpec"), 0.508273f, 0.508273f, 0.508273f);
+				glUniform1f(curS->getUniform("MatShine"), 51.2f);
+			break;
+			case 2:
+			// bronze
+				glUniform3f(curS->getUniform("MatAmb"), 0.2125f, 0.1275f, 0.054f);
+				glUniform3f(curS->getUniform("MatDif"), 0.714f, 0.4284f, 0.18144f);
+				glUniform3f(curS->getUniform("MatSpec"), 0.393548f, 0.271906f, 0.166721f);
+				glUniform1f(curS->getUniform("MatShine"), 25.6f);
+			break;
+			case 3:
+			// black
+				glUniform3f(curS->getUniform("MatAmb"), 0.01f, 0.01f, 0.01f);
+				glUniform3f(curS->getUniform("MatDif"), 0.07f, 0.07f, 0.07f);
+				glUniform3f(curS->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f);
+				glUniform1f(curS->getUniform("MatShine"), 10.0f);
+			break;
+			case 4:
+			// dark white
+				glUniform3f(curS->getUniform("MatAmb"), 0.05f, 0.05f, 0.05f);
+				glUniform3f(curS->getUniform("MatDif"), 0.5f, 0.5f, 0.5f);
+				glUniform3f(curS->getUniform("MatSpec"), 0.7f, 0.7f, 0.7f);
+				glUniform1f(curS->getUniform("MatShine"), 10.0f);
+			break;
+			case 5:
+			//yellow (Madeline' key and lock color)
+				glUniform3f(curS->getUniform("MatAmb"), 0.95f , 0.78f , 0.14f );
+				glUniform3f(curS->getUniform("MatDif"), 0.95f, 0.78f, 0.14f);
+				glUniform3f(curS->getUniform("MatSpec"), 0.3f, 0.3f, 0.3f);
+				glUniform1f(curS->getUniform("MatShine"), 8.0f);
+			break;
+			case 6:
+			//brown
+				glUniform3f(curS->getUniform("MatAmb"), 0.15f, 0.08f, 0.03f);
+				glUniform3f(curS->getUniform("MatDif"), 0.6f, 0.3f, 0.1f);
+				glUniform3f(curS->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f);
+				glUniform1f(curS->getUniform("MatShine"), 4.0f);
+			break;
+			case 7:
+			// lighter brown/grey
+				glUniform3f(curS->getUniform("MatAmb"), 0.70f, 0.68f, 0.55f);
+				glUniform3f(curS->getUniform("MatDif"), 0.6f, 0.3f, 0.1f);
+				glUniform3f(curS->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f);
+				glUniform1f(curS->getUniform("MatShine"), 4.0f);
+			break;
 		}
-	}
-
-	void setProgFlags(shared_ptr<Program> shader, bool hasMat, bool hasBones) {
-		//shader->bind();
-		if (hasMat && shader->hasUniform("hasMaterial")) {
-			glUniform1i(shader->getUniform("hasMaterial"), 1);
-		}
-		else if (shader->hasUniform("hasMaterial")) {
-			glUniform1i(shader->getUniform("hasMaterial"), 0);
-		}
-
-		if (hasBones && shader->hasUniform("hasBones")) {
-			glUniform1i(shader->getUniform("hasBones"), 1);
-		}
-		else if (shader->hasUniform("hasBones")) {
-			glUniform1i(shader->getUniform("hasBones"), 0);
-		}
-	}
-
-	void clearProgFlags(shared_ptr<Program> shader) {
-		//shader->bind();
-		if (shader->hasUniform("hasTexAlb")) glUniform1i(shader->getUniform("hasTexAlb"), 0);
-		if (shader->hasUniform("hasTexSpec")) glUniform1i(shader->getUniform("hasTexSpec"), 0);
-		if (shader->hasUniform("hasTexRough")) glUniform1i(shader->getUniform("hasTexRough"), 0);
-		if (shader->hasUniform("hasTexMet")) glUniform1i(shader->getUniform("hasTexMet"), 0);
-		if (shader->hasUniform("hasTexNor")) glUniform1i(shader->getUniform("hasTexNor"), 0);
-		if (shader->hasUniform("hasTexEmit")) glUniform1i(shader->getUniform("hasTexEmit"), 0);
-		if (shader->hasUniform("hasMaterial")) glUniform1i(shader->getUniform("hasMaterial"), 0);
-		if (shader->hasUniform("hasBones")) glUniform1i(shader->getUniform("hasBones"), 0);
-		//shader->unbind();
 	}
 
 	/* helper for sending top of the matrix strack to GPU */
@@ -844,16 +1003,16 @@ public:
 
 	void initGround() {
 		// Check if already initialized
-		if (quad_VertexArrayID != 0) {
+		if (GroundVertexArrayID != 0) {
 			cout << "Warning: initGround() called more than once." << endl;
 			return;
 		}
-		// Ground plane from -Config::GROUND_SIZE to +Config::GROUND_SIZE in X and Z at Config::GROUND_HEIGHT
+		// Ground plane from -groundSize to +groundSize in X and Z at groundY
 		float GrndPos[] = {
-			-Config::GROUND_SIZE, Config::GROUND_HEIGHT, -Config::GROUND_SIZE, // top-left
-			-Config::GROUND_SIZE, Config::GROUND_HEIGHT,  Config::GROUND_SIZE, // bottom-left
-			 Config::GROUND_SIZE, Config::GROUND_HEIGHT,  Config::GROUND_SIZE, // bottom-right
-			 Config::GROUND_SIZE, Config::GROUND_HEIGHT, -Config::GROUND_SIZE  // top-right
+			-groundSize, groundY, -groundSize, // top-left
+			-groundSize, groundY,  groundSize, // bottom-left
+			 groundSize, groundY,  groundSize, // bottom-right
+			 groundSize, groundY, -groundSize  // top-right
 		};
 		// Normals point straight up
 		float GrndNorm[] = {
@@ -864,8 +1023,8 @@ public:
 		g_GiboLen = 6; // Number of indices
 
 		// Generate VAO
-		glGenVertexArrays(1, &quad_VertexArrayID);
-		glBindVertexArray(quad_VertexArrayID);
+		glGenVertexArrays(1, &GroundVertexArrayID);
+		glBindVertexArray(GroundVertexArrayID);
 
 		// Position buffer (Attribute 0)
 		glGenBuffers(1, &GrndBuffObj);
@@ -891,34 +1050,59 @@ public:
 		glBindBuffer(GL_ARRAY_BUFFER, 0);
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 
-		cout << "Ground Initialized: VAO ID " << quad_VertexArrayID << endl;
+		cout << "Ground Initialized: VAO ID " << GroundVertexArrayID << endl;
 	}
 
 	// Draw the ground sections (library, boss area, path)
 	void drawGroundSections(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
-		if (!shader || !Model || quad_VertexArrayID == 0) return;
+		if (!shader || !Model || GroundVertexArrayID == 0) { // Check if ground is initialized
+			// cerr << "Error: Cannot draw ground sections - shader, model, or ground VAO invalid." << endl;
+			return;
+		}
 
-		shader->bind();
+		shader->bind(); // Bind the simple shader
 
-		bool isShadowShader = (shader == ShadowProg);
+		glBindVertexArray(GroundVertexArrayID); // Bind ground VAO
 
-		if (isShadowShader) setProgFlags(shader, true, false); // materials, no bones
+		// 1. Draw Library Ground
+		// Model->pushMatrix();
+		// Model->loadIdentity();
+		// Model->translate(libraryCenter); // Center the ground plane
+		// No scaling needed if initGround used groundSize correctly relative to its vertices
+		// setModel(shader, Model);
+		// SetMaterialMan(shader, 6); // brown material
+		// glDrawElements(GL_TRIANGLES, g_GiboLen, GL_UNSIGNED_SHORT, 0);
+		// Model->popMatrix();
 
-		glBindVertexArray(quad_VertexArrayID); // Bind ground VAO
-
-		// Draw Boss Area Ground
+		// 2. Draw Boss Area Ground
 		Model->pushMatrix();
 		Model->loadIdentity();
 		Model->translate(bossAreaCenter); // Position the boss ground plane
 		setModel(shader, Model);
-		if (isShadowShader) SetMaterial(shader, Material::bronze);
+		SetMaterialMan(shader, 2); // Bronze material
 		glDrawElements(GL_TRIANGLES, g_GiboLen, GL_UNSIGNED_SHORT, 0);
 		Model->popMatrix();
 
+		// 3. Draw Path (Scaled ground geometry)
+		// Model->pushMatrix();
+		// Model->loadIdentity();
+		// // Calculate path dimensions and position
+		// float pathLength = bossAreaCenter.z - libraryCenter.z - 2 * groundSize;
+		// if (pathLength < 0) pathLength = 0; // Avoid negative length if areas overlap
+		// float pathCenterZ = libraryCenter.z + groundSize + pathLength * 0.5f;
+		// // Calculate scaling factors based on the original ground quad size (groundSize * 2)
+		// float scaleX = pathWidth / (groundSize * 2.0f);
+		// float scaleZ = pathLength / (groundSize * 2.0f);
+
+		// Model->translate(vec3(libraryCenter.x, groundY, pathCenterZ)); // Center the path segment
+		// Model->scale(vec3(scaleX, 1.0f, scaleZ)); // Scale ground quad to path dimensions
+		// setModel(shader, Model);
+		// SetMaterialMan(shader, 4); // Dark white material
+		// glDrawElements(GL_TRIANGLES, g_GiboLen, GL_UNSIGNED_SHORT, 0);
+		// Model->popMatrix();
+
 		// Unbind VAO after drawing all ground parts
 		glBindVertexArray(0);
-
-		if (isShadowShader) clearProgFlags(shader); // Clear shader flags
 
 		shader->unbind(); // Unbind the simple shader
 	}
@@ -1011,39 +1195,41 @@ public:
 		libraryGroundKeys.insert(key); // Add key to set to avoid duplicates
 	}
 
-	void drawLibGrnd(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model, bool secondPass) {
-		if (!shader || !Model) return; // safety check
+	void drawLibGrnd(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
+		if (!shader || !Model) {
+			cerr << "Error: Null pointer in drawLibGrnd." << endl;
+			return;
+		}
 
 		shader->bind(); // Bind the simple shader
 
-		if (secondPass) setProgFlags(shader, true, false); // materials, no bones
+		// glUniform1i(shader->getUniform("hasTexture"), 1); // Set texture uniform
 
 		for (const auto& libGrnd : libraryGrounds) {
 			glBindVertexArray(libGrnd.VAO); // Bind each library ground VAO
 
-			if (secondPass) {
-				libGrnd.texture->bind(shader->getUniform("TexAlb")); // Bind the texture
-				glUniform1i(shader->getUniform("hasTexAlb"), 0); // Set texture uniform
+			if (shader == assimptexProg) {
+				libGrnd.texture->bind(shader->getUniform("texture_diffuse1")); // Bind the texture
+				glUniform1i(shader->getUniform("hasTexture"), 1); // Set texture uniform
 			}
 
 			Model->pushMatrix();
 			Model->loadIdentity();
 			setModel(shader, Model);
-
-			if (secondPass) SetMaterial(shader, Material::silver); // set the material
-
+			SetMaterialMan(shader, 7); // Brown material
 			glDrawElements(GL_TRIANGLES, libGrnd.GiboLen, GL_UNSIGNED_SHORT, 0);
 			Model->popMatrix();
 
-			if (secondPass) libGrnd.texture->unbind(); // Unbind the texture after drawing each library ground
+			if (shader == assimptexProg) {
+				libGrnd.texture->unbind(); // Unbind the texture after drawing each library ground
+			}
 		}
 
 		glBindVertexArray(0); // Unbind VAO after drawing all library grounds
 
-		if (secondPass) clearProgFlags(shader); // Clear shader flags
-
 		shader->unbind(); // Unbind the simple shader
 	}
+
 
 	void initWall(float length, vec3 pos, vec3 dir, float height,
 	GLuint &WallVertexArrayID, GLuint &WallBuffObj, GLuint &WallNormBuffObj, GLuint &WIndxBuffObj, GLuint &WallTexBuffObj, int &w_GiboLen) {
@@ -1161,81 +1347,110 @@ public:
 		}
 	}
 
-	void drawBorderWalls(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model, bool secondPass) {
-		if (!shader || !Model) return; // safety checks
+	void drawBorderWalls(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
+		if (!shader || !Model) {
+			cerr << "Error: Null pointer in drawBorderWalls." << endl;
+			return;
+		}
 
-		shader->bind(); // Bind the shader
-
-		if (secondPass) setProgFlags(shader, false, false); // no material, no bones
+		shader->bind(); // Bind the simple shader
 
 		for (const auto& border : borderWalls) {
 			glBindVertexArray(border.WallVAID); // Bind each border VAO
-			
-			if (secondPass) { // For shadow shader, explicitly set texture unit
-				glActiveTexture(GL_TEXTURE0);
-				glBindTexture(GL_TEXTURE_2D, border.texture->getID());
-				glUniform1i(shader->getUniform("TexAlb"), 0);
-				glUniform1i(shader->getUniform("hasTexAlb"), 1); // Set texture uniform
 
+			if (shader == assimptexProg) {
+				border.texture->bind(shader->getUniform("texture_diffuse1")); // Bind the texture
+				glUniform1i(shader->getUniform("hasTexture"), 1); // Set texture uniform
 			}
 
 			Model->pushMatrix();
 			Model->loadIdentity();
 			setModel(shader, Model);
-			// SetMaterial(shader, Material::black); // set the material
+			// SetMaterialMan(shader, 3); // Black material
 			glDrawElements(GL_TRIANGLES, border.GiboLen, GL_UNSIGNED_SHORT, 0);
 			Model->popMatrix();
 
-			if (secondPass) border.texture->unbind(); // Unbind the texture after drawing each border
+			if (shader == assimptexProg) {
+				border.texture->unbind(); // Unbind the texture after drawing each border
+			}
 		}
 
 		glBindVertexArray(0); // Unbind VAO after drawing all borders
 
-		if (secondPass) clearProgFlags(shader); // Clear shader flags
-
 		shader->unbind(); // Unbind the simple shader
 	}
 
-	void drawPlayer(shared_ptr<Program> curS, shared_ptr<MatrixStack> Model, float animTime, bool secondPass) {
-		if (!curS || !Model || !stickfigure_running || !stickfigure_animator) return;
-
+	void drawPlayer(shared_ptr<Program> curS, shared_ptr<MatrixStack> Model, float animTime) {
+		if (!curS || !Model || !stickfigure_running || !stickfigure_animator /* || !stickfigure_anim /*|| !stickfigure_idle*/) {
+			cerr << "Error: Null pointer in drawPlayer." << endl;
+			return;
+		}
 		curS->bind();
 
-		if (secondPass) setProgFlags(curS, false, true); // no material, bones for animation
-
+		// Animation update
+		/*
+		stickfigure_animator->UpdateAnimation(1.5f * animTime);
+		if (manState == Man_State::WALKING) {
+			stickfigure_animator->SetCurrentAnimation(stickfigure_anim);
+		if (manState == WALKING) {
+		//stickfigure_animator->SetCurrentAnimation(stickfigure_anim);
+		}
+		else {
+			//stickfigure_animator->SetCurrentAnimation(stickfigure_idle);
+		}
+		// Update bone matrices
+		vector<glm::mat4> transforms = stickfigure_animator->GetFinalBoneMatrices();
+		int numBones = std::min((int)transforms.size(), Config::MAX_BONES);
+		for (int i = 0; i < numBones; ++i) {
+			string uniformName = "finalBonesMatrices[" + std::to_string(i) + "]";
+			glUniformMatrix4fv(curS->getUniform(uniformName), 1, GL_FALSE, value_ptr(transforms[i]));
+		}
+		*/
+		// Model matrix setup
 		Model->pushMatrix();
-			Model->loadIdentity();
-			Model->translate(player->getPosition());
-			Model->rotate(glm::radians(-90.0f), vec3(1.0f, 0.0f, 0.0f));
-			Model->rotate(player->getRotY() + 3.14f, vec3(0, 0, 1));
-			Model->scale(1.0f);
+		Model->loadIdentity();
+		// Model->translate(characterMovement); // Use final player position
+		Model->translate(player->getPosition());
+		// *** USE CAMERA ROTATION FOR MODEL ***
+		Model->rotate(glm::radians(-90.0f), vec3(1.0f, 0.0f, 0.0f));
+		Model->rotate(player->getRotY() + 3.14f, vec3(0, 0, 1)); // <<-- FIXED ROTATION
+		Model->scale(1.0f);
 
-			setModel(curS, Model);
-			stickfigure_running->Draw(curS);
+		// Update VISUAL bounding box (can be different from collision box if needed)
+		// Using the same AABB calculation logic as before for consistency
+		glm::mat4 manTransform = Model->topMatrix();
+		updateBoundingBox(stickfigure_running->getBoundingBoxMin(),
+			stickfigure_running->getBoundingBoxMax(),
+			manTransform,
+			manAABBmin, // This is the visual/interaction AABB
+			manAABBmax);
 
-			if (secondPass) clearProgFlags(curS); // Clear shader flags
+		// Set uniforms and draw
+		glUniform1i(curS->getUniform("hasTexture"), 1);
+		setModel(curS, Model);
+		stickfigure_running->Draw(curS);
+		curS->unbind();
 
-			curS->unbind();
-
-			if (secondPass) drawParticles(particleSystem, particleProg, Model); // draw particles if full scene render
-			
+		drawParticles(particleSystem, particleProg, Model);
 		Model->popMatrix();
 	}
 
-	void drawBooks(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model, bool secondPass) {
-		if (!shader || !Model) return; // Check if shader and model stack are valid
 
+
+	void drawBooks(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		shader->bind();
-
-		if (secondPass) setProgFlags(shader, true, false); // material, no bones
 
 		for (const auto& book : books) {
 			// Common values for book halves
 			float halfThickness = book.scale.z * 0.5f;
 			glm::vec3 halfScaleVec = glm::vec3(book.scale.x, book.scale.y, halfThickness);
 
-			// Set Material properties - check for uniform existence first
-			if (secondPass) SetMaterial(shader, Material::brown);
+			// Set Material (e.g., brown for cover) - Apply once if same for both halves
+			glUniform3f(shader->getUniform("MatAmb"), 0.15f, 0.08f, 0.03f);
+			glUniform3f(shader->getUniform("MatDif"), 0.6f, 0.3f, 0.1f);
+			glUniform3f(shader->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f);
+			glUniform1f(shader->getUniform("MatShine"), 4.0f);
+			glUniform1i(shader->getUniform("hasEmittance"), 0);
 
 			// --- Draw Left Cover/Pages ---
 			Model->pushMatrix(); // SAVE current stack state
@@ -1292,36 +1507,58 @@ public:
 			Model->popMatrix(); // RESTORE saved stack state
 		}
 
-		if (secondPass) clearProgFlags(shader); // Clear shader flags
-
 		shader->unbind();
 	}
 
-	//TODO: Add particle effects to orbs
-	void drawOrbs(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model, bool secondPass) {
+	void drawSkybox(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
+		shader->bind(); // Use prog2 for simple colored shapes
+
+		Model->pushMatrix();
+		Model->loadIdentity();
+		Model->translate(vec3(bossAreaCenter.x, bossAreaCenter.y, bossAreaCenter.z - 20)); // Center the sky sphere at the player position
+		Model->scale(vec3(5.0f)); // Scale up the sky sphere to cover the scene
+
+		setModel(shader, Model);
+		sky_sphere->Draw(shader);
+
+    Model->popMatrix();
+    shader->unbind();
+  }
+
+	// void drawBorder(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model){
+	// 	shader->bind();
+
+	// 	glUniform3f(shader->getUniform("MatAmb"), 0.15f, 0.08f, 0.03f);
+	// 	glUniform3f(shader->getUniform("MatDif"), 0.6f, 0.3f, 0.1f);
+	// 	glUniform3f(shader->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f);
+	// 	glUniform1f(shader->getUniform("MatShine"), 4.0f);
+	// 	glUniform1i(shader->getUniform("hasEmittance"), 0);
+
+	// 	Model->pushMatrix();
+	// 		Model->translate(bossAreaCenter);
+	// 		Model->scale(0.28f);
+	// 		setModel(shader, Model);
+	// 		border->Draw(shader);
+	// 	Model->popMatrix();
+	// 	shader->unbind();
+	// }
+
+//TODO: Add particle effects to orbs
+void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		// --- Collision Check Logic ---
 		for (auto& orb : orbCollectibles) {
 			// Perform collision check ONLY if not collected AND in the IDLE state
-			if (!orb.collected && orb.state == OrbState::IDLE) {//&& // <<<--- ADD STATE CHECK
-				if (Config::DEBUG_ORB_PICKUP) {
-					cout << "player position min: " << (playerAABB.min + player->getPosition()).x << " " << (playerAABB.min + player->getPosition()).y << " " << (playerAABB.min + player->getPosition()).z << endl;
-					cout << "player position max: " << (playerAABB.max + player->getPosition()).x << " " << (playerAABB.max + player->getPosition()).y << " " << (playerAABB.max + player->getPosition()).z << endl;
-					cout << "orb position min: " << orb.AABBmin.x << " " << orb.AABBmin.y << " " << orb.AABBmin.z << endl;
-					cout << "orb position max: " << orb.AABBmax.x << " " << orb.AABBmax.y << " " << orb.AABBmax.z << endl;
-				}
-				if (checkAABBCollision(playerAABB.min + player->getPosition(), playerAABB.max + player->getPosition(), orb.AABBmin, orb.AABBmax)) {
-					orb.collected = true;
-					orb.state = OrbState::COLLECTED;
-					orbsCollectedCount++;
-					std::cout << "Collected a Spell Orb! (" << orbsCollectedCount << ")\n";
-				}
+			if (!orb.collected && orb.state == OrbState::IDLE && // <<<--- ADD STATE CHECK
+				checkAABBCollision(manAABBmin, manAABBmax, orb.AABBmin, orb.AABBmax)) {
+				orb.collected = true;
+				// orb.state = OrbState::COLLECTED; // Optionally set state
+				orbsCollectedCount++;
+				std::cout << "Collected a Spell Orb! (" << orbsCollectedCount << ")\n";
 			}
 		}
 
 		// --- Drawing Logic ---
-		shader->bind();
-
-		if (secondPass) setProgFlags(shader, true, false); // material, no bones
+		simpleShader->bind();
 
 		int collectedOrbDrawIndex = 0;
 
@@ -1331,7 +1568,7 @@ public:
 			float currentDrawScale = orb.scale; // Use base scale
 
 			if (orb.collected) {
-				// Calculate position behind the player
+				// Calculate position behind the player (same logic as before)
 				float backOffset = 0.4f;
 				float upOffsetBase = 0.6f;
 				float stackOffset = orb.scale * 2.5f;
@@ -1341,10 +1578,11 @@ public:
 				glm::vec3 playerRight = normalize(cross(playerForward, playerUp));
 				float currentUpOffset = upOffsetBase + (collectedOrbDrawIndex * stackOffset);
 				float currentSideOffset = (collectedOrbDrawIndex % 2 == 0 ? -sideOffset : sideOffset);
-				currentDrawPosition = player->getPosition() - playerForward * backOffset
+				currentDrawPosition = charMove() - playerForward * backOffset
 					+ playerUp * currentUpOffset
 					+ playerRight * currentSideOffset;
 				collectedOrbDrawIndex++;
+				// currentDrawScale = orb.scale * 0.8f; // Optional: shrink collected orbs
 			}
 			else {
 				// Use the orb's current position (potentially animated by updateOrbs)
@@ -1353,28 +1591,33 @@ public:
 
 			// --- Set up transformations ---
 			Model->pushMatrix();
-				Model->loadIdentity();
-				Model->translate(currentDrawPosition);
-				Model->scale(currentDrawScale); // Use current scale
+			Model->loadIdentity();
+			Model->translate(currentDrawPosition);
+			Model->scale(currentDrawScale); // Use current scale
 
-				// --- Set Material & Draw ---
-				if (secondPass) SetMaterial(shader, orb.material); // Set material for shadow shader
-				setModel(shader, Model);
-				orb.model->Draw(shader);
+			// --- Set Material & Draw ---
+			// (Material setting code remains the same)
+			glUniform3f(simpleShader->getUniform("MatAmb"), orb.color.r * 0.2f, orb.color.g * 0.2f, orb.color.b * 0.2f);
+			glUniform3f(simpleShader->getUniform("MatDif"), orb.color.r * 0.8f, orb.color.g * 0.8f, orb.color.b * 0.8f);
+			glUniform3f(simpleShader->getUniform("MatSpec"), 0.8f, 0.8f, 0.8f);
+			glUniform1f(simpleShader->getUniform("MatShine"), 32.0f);
+			glUniform1i(simpleShader->getUniform("hasEmittance"), 0);
+
+			setModel(simpleShader, Model);
+			orb.model->Draw(simpleShader);
+
 			Model->popMatrix();
 		} // End drawing loop
 
-		if (secondPass) clearProgFlags(shader); // Clear shader flags
-
-		shader->unbind();
+		simpleShader->unbind();
 	}
 
-	void drawCat(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model, bool secondPass) {
+	void drawCat(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		if (!CatWizard) return; //Need Cat Model
-
-		shader->bind(); // Texture
-
-		if (secondPass) setProgFlags(shader, false, false); // no material, no bones
+		shader->bind(); //Texture
+		if (shader == assimptexProg) {
+			glUniform1i(shader->getUniform("hasTexture"), 1);
+		}
 
 		Model->pushMatrix();
 			Model->loadIdentity();
@@ -1384,7 +1627,6 @@ public:
 			setModel(shader, Model);
 			CatWizard->Draw(shader);
 		Model->popMatrix();
-		if (secondPass) clearProgFlags(shader); // Clear shader flags
 		shader->unbind();
 
 	}
@@ -1453,19 +1695,33 @@ public:
 		}
 	}
 
-	void drawEnemies(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model, bool secondPass) {
-		if (!shader || !Model || !sphere) return; // safety checks
+	void drawEnemies(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
+		if (!sphere) return; // Need the sphere model
 
-		shader->bind(); // bind shader
+		shader->bind(); // Use prog2 for simple colored shapes
 
-		if (secondPass) setProgFlags(shader, true, false); // material, no bones
+		// --- Material Settings ---
+		// glm::vec3 bodyColor = glm::vec3(0.6f, 0.2f, 0.8f); // Purple-ish body
+		glm::vec3 bodyColor = glm::vec3(0.35f, 0.4f, 0.914f); // Blue body
+		glm::vec3 eyeWhiteColor = glm::vec3(1.0f, 1.0f, 1.0f);
+		glm::vec3 eyePupilColor = glm::vec3(0.1f, 0.1f, 0.1f);
+
+		// --- Common Eye Parameters ---
+		float bodyBaseScaleY = 0.8f; // Base height factor before pill stretch
+		glm::vec3 eyeOffsetBase = glm::vec3(0.0f, bodyBaseScaleY * 0.4f, 0.45f); // Y up, Z forward from body center
+		float eyeSeparation = 0.25f; // Distance between eye centers
+		float whiteScale = 0.18f;
+		float pupilScale = 0.1f;
+		float pupilOffsetForward = 0.02f; // Push pupil slightly in front of white
+
 
 		for (const auto* enemy : enemies) {
-			if (!enemy || !enemy->isAlive()) {
-				keyCollectibles.emplace_back(key, enemy->getPosition(), 0.1f, Material::gold);
-				drawKey(shader, Model, secondPass);
+			if (!enemy || !enemy->isAlive()){
+				keyCollectibles.emplace_back(key, enemy->getPosition(), 0.1f,  vec3(0.9, 0.9, 0.9));
+				drawKey(shader, Model );
 				continue; // Skip null or dead enemies
 			}
+
 
 			glm::vec3 enemyPos = enemy->getPosition();
 
@@ -1479,36 +1735,119 @@ public:
 				// rotate 90 around z
 				Model->rotate(glm::radians(-90.0f), glm::vec3(1, 0, 0));
 
-				if (secondPass) SetMaterial(shader, Material::blue_body);
-
-				if (secondPass) glUniform1f(shader->getUniform("enemyAlpha"), enemy->getDamageTimer() / Config::ENEMY_HIT_DURATION);
+				// Set body material
+				glUniform3f(shader->getUniform("MatAmb"), bodyColor.r * 0.3f, bodyColor.g * 0.3f, bodyColor.b * 0.3f);
+				glUniform3f(shader->getUniform("MatDif"), bodyColor.r, bodyColor.g, bodyColor.b);
+				glUniform3f(shader->getUniform("MatSpec"), 0.3f, 0.3f, 0.3f);
+				glUniform1f(shader->getUniform("MatShine"), 8.0f);
+				glUniform1f(shader->getUniform("alpha"), enemy->getDamageTimer() / Config::ENEMY_HIT_DURATION);
 
 				setModel(shader, Model);
 				iceElemental->Draw(shader); // Draw the scaled sphere as the body
 			}
 			Model->popMatrix();
+
+
+			// --- Draw Eyes (Relative to Enemy Center) ---
+
+			// Set Eye Materials Once
+			// White Material Setup (done inside loop per part for clarity now)
+			// Black Material Setup (done inside loop per part for clarity now)
+
+			// Left Eye
+			// Model->pushMatrix();
+			// {
+			// 	// Go to enemy center, then offset to eye position
+			// 	Model->translate(enemyPos);
+			// 	Model->translate(eyeOffsetBase + glm::vec3(-eyeSeparation, 0, 0));
+
+			// 	// White Part
+			// 	Model->pushMatrix();
+			// 	{
+			// 		Model->scale(glm::vec3(whiteScale));
+			// 		// Set white material
+			// 		glUniform3f(shader->getUniform("MatAmb"), eyeWhiteColor.r * 0.3f, eyeWhiteColor.g * 0.3f, eyeWhiteColor.b * 0.3f);
+			// 		glUniform3f(shader->getUniform("MatDif"), eyeWhiteColor.r, eyeWhiteColor.g, eyeWhiteColor.b);
+			// 		glUniform3f(shader->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f);
+			// 		glUniform1f(shader->getUniform("MatShine"), 4.0f);
+			// 		setModel(shader, Model);
+			// 		sphere->Draw(shader);
+			// 	}
+			// 	Model->popMatrix(); // Pop white scale
+
+			// 	// Pupil Part
+			// 	Model->pushMatrix();
+			// 	{
+			// 		// Move slightly forward from white surface and scale down
+			// 		Model->translate(glm::vec3(0, 0, whiteScale * 0.5f + pupilOffsetForward)); // Offset relative to white scale
+			// 		Model->scale(glm::vec3(pupilScale));
+			// 		// Set black material
+			// 		glUniform3f(shader->getUniform("MatAmb"), eyePupilColor.r * 0.3f, eyePupilColor.g * 0.3f, eyePupilColor.b * 0.3f);
+			// 		glUniform3f(shader->getUniform("MatDif"), eyePupilColor.r, eyePupilColor.g, eyePupilColor.b);
+			// 		glUniform3f(shader->getUniform("MatSpec"), 0.5f, 0.5f, 0.5f); // Some specular highlight
+			// 		glUniform1f(shader->getUniform("MatShine"), 32.0f);
+			// 		setModel(shader, Model);
+			// 		sphere->Draw(shader);
+			// 	}
+			// 	Model->popMatrix(); // Pop pupil transform
+			// }
+			// Model->popMatrix(); // Pop left eye transform
+
+
+			// // Right Eye (Similar to Left)
+			// Model->pushMatrix();
+			// {
+			// 	Model->translate(enemyPos);
+			// 	Model->translate(eyeOffsetBase + glm::vec3(+eyeSeparation, 0, 0)); // Offset to the right
+
+			// 	// White Part
+			// 	Model->pushMatrix();
+			// 	{
+			// 		Model->scale(glm::vec3(whiteScale));
+			// 		// Set white material
+			// 		glUniform3f(shader->getUniform("MatAmb"), eyeWhiteColor.r * 0.3f, eyeWhiteColor.g * 0.3f, eyeWhiteColor.b * 0.3f);
+			// 		glUniform3f(shader->getUniform("MatDif"), eyeWhiteColor.r, eyeWhiteColor.g, eyeWhiteColor.b);
+			// 		glUniform3f(shader->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f);
+			// 		glUniform1f(shader->getUniform("MatShine"), 4.0f);
+			// 		setModel(shader, Model);
+			// 		sphere->Draw(shader);
+			// 	}
+			// 	Model->popMatrix();
+
+			// 	// Pupil Part
+			// 	Model->pushMatrix();
+			// 	{
+			// 		Model->translate(glm::vec3(0, 0, whiteScale * 0.5f + pupilOffsetForward));
+			// 		Model->scale(glm::vec3(pupilScale));
+			// 		// Set black material
+			// 		glUniform3f(shader->getUniform("MatAmb"), eyePupilColor.r * 0.3f, eyePupilColor.g * 0.3f, eyePupilColor.b * 0.3f);
+			// 		glUniform3f(shader->getUniform("MatDif"), eyePupilColor.r, eyePupilColor.g, eyePupilColor.b);
+			// 		glUniform3f(shader->getUniform("MatSpec"), 0.5f, 0.5f, 0.5f);
+			// 		glUniform1f(shader->getUniform("MatShine"), 32.0f);
+			// 		setModel(shader, Model);
+			// 		sphere->Draw(shader);
+			// 	}
+			// 	Model->popMatrix();
+			// }
+			// Model->popMatrix(); // Pop right eye transform
+
 		} // End loop through enemies
 
-		if (secondPass) {
-			glUniform1f(shader->getUniform("enemyAlpha"), 1.0f); // reset enemyAlpha
-			clearProgFlags(shader); // Clear shader flags
-		}
+
 
 		shader->unbind();
 	}
 
-	void drawLibrary(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model, bool cullFlag, bool secondPass) {
+	void drawLibrary(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model, bool cullFlag) {
 		if (!shader || !Model || !book_shelf1 || grid.getSize().x == 0 || grid.getSize().y == 0) return; // Safety checks
 
 		shader->bind();
-		
-		if (secondPass) {
-			setProgFlags(shader, true, false); // material, no bones
-			SetMaterial(shader, Material::grey);
+		if (shader == assimptexProg) {
+			glUniform1i(shader->getUniform("hasTexture"), 1); // Bookshelves should use texture
 		}
 
-		float gridWorldWidth = Config::GROUND_SIZE * 2.0f; // The world space the grid should occupy (library floor width)
-		float gridWorldDepth = Config::GROUND_SIZE * 2.0f; // The world space the grid should occupy (library floor depth)
+		float gridWorldWidth = groundSize * 2.0f; // The world space the grid should occupy (library floor width)
+		float gridWorldDepth = groundSize * 2.0f; // The world space the grid should occupy (library floor depth)
 		float cellWidth = gridWorldWidth / (float)grid.getSize().x;
 		float cellDepth = gridWorldDepth / (float)grid.getSize().y;
 		float shelfScaleFactor = 1.8f; // Adjust scale of the bookshelf model itself
@@ -1697,18 +2036,15 @@ public:
 				}
 			}
 		}
-
-		if (secondPass) clearProgFlags(shader); // Clear shader flags
-
 		shader->unbind();
 	}
 
-	void drawBossRoom(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model, bool cullFlag, bool secondPass) {
+	void drawBossRoom(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model, bool cullFlag) {
 		if (!shader || !Model) return;
 		shader->bind();
-		
-		if (secondPass) setProgFlags(shader, false, false); // no material, no bones
-
+		if (shader == assimptexProg) {
+			glUniform1i(shader->getUniform("hasTexture"), 1);
+		}
 		for (int z = 0; z < bossGrid.getSize().y; ++z) {
 			for (int x = 0; x < bossGrid.getSize().x; ++x) {
 				glm::ivec2 gridPos(x, z);
@@ -1742,7 +2078,7 @@ public:
 							Model->rotate(glm::radians(bossGrid[gridPos].transformData.rotation), vec3(0, 1, 0)); // Rotate for left/right walls
 							Model->scale(1.0f);
 							setModel(shader, Model);
-							if(unlocked == false){
+							if(unlock == false){
 								door->Draw(shader); // Use the door model for the entrance
 							}
 
@@ -1781,18 +2117,18 @@ public:
 				}
 			}
 		}
-
-		if (secondPass) clearProgFlags(shader); // Clear shader flags
-
 		shader->unbind();
 	}
 
-	void drawBossEnemy(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model, bool secondPass) {
-		if (!shader || !Model || !bossEnemy) return; // Need boss enemy model (safety checks)
+	void drawBossEnemy(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
+		if (!shader || !Model || !bossEnemy) return; // Need boss enemy model
 
-		shader->bind();
+		shader->bind(); // Use prog2 for simple colored shapes
 
-		if (secondPass) setProgFlags(shader, true, false); // material, no bones
+		// --- Material Settings ---
+		glm::vec3 bodyColor = glm::vec3(0.6f, 0.2f, 0.8f); // Purple-ish body
+		glm::vec3 eyeWhiteColor = glm::vec3(1.0f, 1.0f, 1.0f);
+		glm::vec3 eyePupilColor = glm::vec3(0.1f, 0.1f, 0.1f);
 
 		// --- Common Eye Parameters ---
 		float bodyBaseScaleY = 0.8f; // Base height factor before pill stretch
@@ -1820,7 +2156,11 @@ public:
 					// Scale for pill shape ( taller in Y, squished in X/Z )
 					Model->scale(glm::vec3(0.5f, bodyBaseScaleY * 1.6f, 0.5f)); // Adjust scale factors as needed
 
-					if (secondPass) SetMaterial(shader, Material::purple);
+					// Set body material
+					glUniform3f(shader->getUniform("MatAmb"), bodyColor.r * 0.3f, bodyColor.g * 0.3f, bodyColor.b * 0.3f);
+					glUniform3f(shader->getUniform("MatDif"), bodyColor.r, bodyColor.g, bodyColor.b);
+					glUniform3f(shader->getUniform("MatSpec"), 0.3f, 0.3f, 0.3f);
+					glUniform1f(shader->getUniform("MatShine"), 8.0f);
 
 					setModel(shader, Model);
 					sphere->Draw(shader); // Draw the scaled sphere as the body
@@ -1829,6 +2169,10 @@ public:
 
 
 				// --- Draw Eyes (Relative to Enemy Center) ---
+
+				// Set Eye Materials Once
+				// White Material Setup (done inside loop per part for clarity now)
+				// Black Material Setup (done inside loop per part for clarity now)
 
 				// Left Eye
 				Model->pushMatrix();
@@ -1841,9 +2185,11 @@ public:
 					Model->pushMatrix();
 					{
 						Model->scale(glm::vec3(whiteScale));
-
-						if (secondPass) SetMaterial(shader, Material::eye_white);
-
+						// Set white material
+						glUniform3f(shader->getUniform("MatAmb"), eyeWhiteColor.r * 0.3f, eyeWhiteColor.g * 0.3f, eyeWhiteColor.b * 0.3f);
+						glUniform3f(shader->getUniform("MatDif"), eyeWhiteColor.r, eyeWhiteColor.g, eyeWhiteColor.b);
+						glUniform3f(shader->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f);
+						glUniform1f(shader->getUniform("MatShine"), 4.0f);
 						setModel(shader, Model);
 						sphere->Draw(shader);
 					}
@@ -1855,9 +2201,11 @@ public:
 						// Move slightly forward from white surface and scale down
 						Model->translate(glm::vec3(0, 0, whiteScale * 0.5f + pupilOffsetForward)); // Offset relative to white scale
 						Model->scale(glm::vec3(pupilScale));
-
-						if (secondPass) SetMaterial(shader, Material::black);
-
+						// Set black material
+						glUniform3f(shader->getUniform("MatAmb"), eyePupilColor.r * 0.3f, eyePupilColor.g * 0.3f, eyePupilColor.b * 0.3f);
+						glUniform3f(shader->getUniform("MatDif"), eyePupilColor.r, eyePupilColor.g, eyePupilColor.b);
+						glUniform3f(shader->getUniform("MatSpec"), 0.5f, 0.5f, 0.5f); // Some specular highlight
+						glUniform1f(shader->getUniform("MatShine"), 32.0f);
 						setModel(shader, Model);
 						sphere->Draw(shader);
 					}
@@ -1876,9 +2224,11 @@ public:
 					Model->pushMatrix();
 					{
 						Model->scale(glm::vec3(whiteScale));
-
-						if (secondPass) SetMaterial(shader, Material::eye_white);
-
+						// Set white material
+						glUniform3f(shader->getUniform("MatAmb"), eyeWhiteColor.r * 0.3f, eyeWhiteColor.g * 0.3f, eyeWhiteColor.b * 0.3f);
+						glUniform3f(shader->getUniform("MatDif"), eyeWhiteColor.r, eyeWhiteColor.g, eyeWhiteColor.b);
+						glUniform3f(shader->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f);
+						glUniform1f(shader->getUniform("MatShine"), 4.0f);
 						setModel(shader, Model);
 						sphere->Draw(shader);
 					}
@@ -1889,9 +2239,11 @@ public:
 					{
 						Model->translate(glm::vec3(0, 0, whiteScale * 0.5f + pupilOffsetForward));
 						Model->scale(glm::vec3(pupilScale));
-
-						if (secondPass) SetMaterial(shader, Material::black);
-
+						// Set black material
+						glUniform3f(shader->getUniform("MatAmb"), eyePupilColor.r * 0.3f, eyePupilColor.g * 0.3f, eyePupilColor.b * 0.3f);
+						glUniform3f(shader->getUniform("MatDif"), eyePupilColor.r, eyePupilColor.g, eyePupilColor.b);
+						glUniform3f(shader->getUniform("MatSpec"), 0.5f, 0.5f, 0.5f);
+						glUniform1f(shader->getUniform("MatShine"), 32.0f);
 						setModel(shader, Model);
 						sphere->Draw(shader);
 					}
@@ -1901,36 +2253,33 @@ public:
 			}
 			Model->popMatrix(); // Pop boss body transform
 		}
-		if (secondPass) clearProgFlags(shader); // Clear shader flags
 
 		shader->unbind();
+
+
 	}
 
-	void drawDoor(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model, bool secondPass) {
+	void drawDoor(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		if (!shader || !Model || !cube) return; // Need cube model
 
 		shader->bind();
-
-		if (secondPass) setProgFlags(shader, true, false); // material, no bones
 
 		Model->pushMatrix();
 		Model->loadIdentity();
 		Model->translate(doorPosition); // Position set in class members
 		Model->scale(doorScale);      // Scale set in class members
 
-		if (secondPass) SetMaterial(shader, Material::wood);
+		SetMaterialMan(shader, 5); // Use Wood material
 		setModel(shader, Model);
 		cube->Draw(shader);
 
 		Model->popMatrix();
-
-		if (secondPass) clearProgFlags(shader); // Clear shader flags
-
 		shader->unbind();
 	}
 
 	bool checkAABBCollision(const glm::vec3& minA, const glm::vec3& maxA,
-		const glm::vec3& minB, const glm::vec3& maxB) {
+		const glm::vec3& minB, const glm::vec3& maxB)
+	{
 		return (minA.x <= maxB.x && maxA.x >= minB.x) &&
 			(minA.y <= maxB.y && maxA.y >= minB.y) &&
 			(minA.z <= maxB.z && maxA.z >= minB.z);
@@ -1967,8 +2316,8 @@ public:
 		float interactionRadius = 5.0f;
 		float interactionRadiusSq = interactionRadius * interactionRadius;
 
-		float gridWorldWidth = Config::GROUND_SIZE * 2.0f;
-		float gridWorldDepth = Config::GROUND_SIZE * 2.0f;
+		float gridWorldWidth = groundSize * 2.0f;
+		float gridWorldDepth = groundSize * 2.0f;
 		float cellWidth = gridWorldWidth / (float)grid.getSize().x;
 		float cellDepth = gridWorldDepth / (float)grid.getSize().y;
 
@@ -1982,7 +2331,7 @@ public:
 					// float shelfWorldZ = libraryCenter.z - gridWorldDepth * 0.5f + (z + 0.5f) * cellDepth;
 					float shelfWorldX = library->mapGridXtoWorldX(x); // Center the shelf in the cell
 					float shelfWorldZ = library->mapGridYtoWorldZ(z); // Center the shelf in the cell
-					glm::vec3 shelfCenterPos = glm::vec3(shelfWorldX, Config::GROUND_HEIGHT + 1.0f, shelfWorldZ);
+					glm::vec3 shelfCenterPos = glm::vec3(shelfWorldX, groundY + 1.0f, shelfWorldZ);
 
 					// glm::vec3 diff = shelfCenterPos - characterMovement;
 					glm::vec3 diff = shelfCenterPos - player->getPosition();
@@ -1992,39 +2341,23 @@ public:
 					if (distSq <= interactionRadiusSq) {
 
 						// --- ADJUST Spawn Height ---
-						float minSpawnHeight = 1.8f; // Minimum height above Config::GROUND_HEIGHT
-						float maxSpawnHeight = 2.8f; // Maximum height above Config::GROUND_HEIGHT
-						float spawnHeight = Config::GROUND_HEIGHT + Config::randFloat(minSpawnHeight, maxSpawnHeight); // <-- ADJUSTED height range
+						float minSpawnHeight = 1.8f; // Minimum height above groundY
+						float maxSpawnHeight = 2.8f; // Maximum height above groundY
+						float spawnHeight = groundY + Config::randFloat(minSpawnHeight, maxSpawnHeight); // <-- ADJUSTED height range
 
 						glm::vec3 spawnPos = glm::vec3(shelfWorldX, spawnHeight, shelfWorldZ);
 
 						glm::vec3 bookScale = glm::vec3(0.7f, 0.9f, 0.2f);
 						glm::quat bookOrientation = glm::angleAxis(glm::radians(Config::randFloat(-10.f, 10.f)), glm::vec3(0, 1, 0));
-
-						// Select one of the 3 orb materials
-						Material orbColor;
-						int randomChoice = Config::randInt(0, 2);
-						switch (randomChoice) {
-						case 0:
-							orbColor = Material::orb_glowing_blue;
-							break;
-						case 1:
-							orbColor = Material::orb_glowing_red;
-							break;
-						case 2:
-							orbColor = Material::orb_glowing_yellow;
-							break;
-						default:
-							orbColor = Material::orb_glowing_blue; // Fallback
-						}
+						glm::vec3 orbColor = glm::vec3(Config::randFloat(0.2f, 1.0f), Config::randFloat(0.2f, 1.0f), Config::randFloat(0.2f, 1.0f));
 
 						books.emplace_back(cube, sphere, spawnPos, bookScale, bookOrientation, orbColor);
 
 						Book& newBook = books.back();
 
 						// --- PASS Player Position to startFalling ---
-						// newBook.startFalling(Config::GROUND_HEIGHT, characterMovement); // <<-- MODIFIED call
-						newBook.startFalling(Config::GROUND_HEIGHT, player->getPosition());
+						// newBook.startFalling(groundY, characterMovement); // <<-- MODIFIED call
+						newBook.startFalling(groundY, player->getPosition());
 
 						interacted = true;
 						break;
@@ -2054,59 +2387,66 @@ public:
 		int screenWidth, screenHeight;
 		glfwGetFramebufferSize(windowManager->getHandle(), &screenWidth, &screenHeight);
 		// TODO: Add enemy movement, AI, attack logic later
-		for (auto* enemy : enemies) enemy->update(player.get(), deltaTime);
+		for (auto* enemy : enemies) {
+			enemy->update(player.get(), deltaTime);
+		}
 	}
 
-	// Player Collision Calc
+	// --- Player Collision ---
+	// Store player's local AABB (scaled) for easier access
+	glm::vec3 playerLocalAABBMin;
+	glm::vec3 playerLocalAABBMax;
+	bool playerAABBCalculated = false; // Flag to calculate once
+
+	// Helper to calculate player's local AABB
 	void calculatePlayerLocalAABB() {
-		// Get base AABB from player model
+		if (!stickfigure_running || playerAABBCalculated) return;
+
+		// Get base AABB from the *standing* or *running* model (choose one representative)
+		// Using stickfigure_running as it's loaded first
 		glm::vec3 baseMin = stickfigure_running->getBoundingBoxMin();
 		glm::vec3 baseMax = stickfigure_running->getBoundingBoxMax();
 
 		// Apply the player's base scale
-		playerAABB.min = baseMin * manScale.x;
-		playerAABB.max = baseMax * manScale.x;
+		playerLocalAABBMin = baseMin * manScale.x; // Assuming uniform scale for collision box
+		playerLocalAABBMax = baseMax * manScale.x;
 
-		// Alin box with ground
-		float yOffset = 0.0f - playerAABB.min.y;
-		playerAABB.min.y += yOffset;
-		playerAABB.max.y = 2.0f;
+		// Optional: Add padding or adjust Y if needed
+		// Example: Make collision box slightly taller or ensure base is at y=0 locally
+		// playerLocalAABBMin.y = 0.0f; // If player origin is at feet
 
-		if (Config::DEBUG_PLAYER_AABB) {
-			cout << "Calculated Player AABB Min: (" << playerAABB.min.x << "," << playerAABB.min.y << "," << playerAABB.min.z << ")" << endl;
-			cout << "Calculated Player AABB Max: (" << playerAABB.max.x << "," << playerAABB.max.y << "," << playerAABB.max.z << ")" << endl;
-		}
+		playerAABBCalculated = true;
+		// cout << "[DEBUG] Calculated Player Local AABB Min: (" << playerLocalAABBMin.x << "," << playerLocalAABBMin.y << "," << playerLocalAABBMin.z << ")" << endl;
+		// cout << "[DEBUG] Calculated Player Local AABB Max: (" << playerLocalAABBMax.x << "," << playerLocalAABBMax.y << "," << playerLocalAABBMax.z << ")" << endl;
 	}
 
-	// Collision Checking Helper
+
+	// --- Collision Checking Helper ---
 	bool checkCollisionAt(const glm::vec3& checkPos, const glm::quat& playerOrientation) {
-		if (!book_shelf1 || grid.getSize().x == 0) return false; // safety checks
+		if (!playerAABBCalculated || !book_shelf1 || grid.getSize().x == 0) return false; // Need data
 
-		// first, collide against any border walls
-		for (const auto& w : borderWalls) {
-			// compute the two corners of the wall�s rectangle
-			glm::vec3 p0 = w.position;
-			glm::vec3 p1 = w.position + w.direction * w.length;
-			glm::vec3 minCorner = glm::min(p0, p1);
-			glm::vec3 maxCorner = glm::max(p0, p1) + glm::vec3(0.0f, w.height, 0.0f);
-			if (checkAABBCollision(
-				playerAABB.min + player->getPosition(),
-				playerAABB.max + player->getPosition(),
-				minCorner, maxCorner)) return true;
-		}
+		// 1. Calculate Player's World AABB at checkPos
+		glm::mat4 playerTransform = glm::translate(glm::mat4(1.0f), checkPos) * glm::mat4_cast(playerOrientation);
+		// Note: We use the PRE-SCALED local AABB calculated earlier
+		glm::vec3 playerWorldMin, playerWorldMax;
+		updateBoundingBox(playerLocalAABBMin, playerLocalAABBMax, playerTransform, playerWorldMin, playerWorldMax);
 
-		// Iterate through grid for shelves
-		float gridWorldWidth = Config::GROUND_SIZE * 2.0f;
-		float gridWorldDepth = Config::GROUND_SIZE * 2.0f;
+		// 2. Iterate through grid for shelves
+		float gridWorldWidth = groundSize * 2.0f;
+		float gridWorldDepth = groundSize * 2.0f;
 		float cellWidth = gridWorldWidth / (float)grid.getSize().x;
 		float cellDepth = gridWorldDepth / (float)grid.getSize().y;
 		// Use the same scale factor as drawLibrary
 		float shelfScaleFactor = 1.8f;
+		// glm::vec3 shelfVisScale = vec3(shelfScaleFactor * cellWidth * 1.5f,
+		// 	shelfScaleFactor * 1.8f,
+		// 	shelfScaleFactor * cellDepth * 1.5f);
 		glm::vec3 shelfVisScale = vec3(1.0f);
-		// Get shelf model's local AABB
+		// --- Get shelf model's local AABB ONCE ---
 		glm::vec3 shelfLocalMin = book_shelf1->getBoundingBoxMin();
 		glm::vec3 shelfLocalMax = book_shelf1->getBoundingBoxMax();
-		// Apply visual scale to shelf local AABB for collision
+		// --- Apply visual scale to shelf local AABB for collision ---
+		// Important: Scale the AABB min/max points correctly
 		glm::vec3 collisionShelfLocalMin = shelfLocalMin * shelfVisScale;
 		glm::vec3 collisionShelfLocalMax = shelfLocalMax * shelfVisScale;
 		// Handle potential inversion if scale is negative (unlikely here)
@@ -2115,6 +2455,7 @@ public:
 		}
 
 		// spatial detection for library grid
+
 		int gridX = library->mapXtoGridX(checkPos.x);
 		int gridZ = library->mapZtoGridY(checkPos.z);
 
@@ -2123,11 +2464,38 @@ public:
 		float gridtoworldX = library->mapGridXtoWorldX(gridPos.x); // check back against the specific world position
 		float gridtoworldZ = library->mapGridYtoWorldZ(gridPos.y);
 
+		// gridX = library->mapXtoGridX(gridtoworldX);
+		// gridZ = library->mapZtoGridY(gridtoworldZ);
+
+		// gridPos = glm::ivec2(gridX, gridZ);
+
+
+		// gridX = library->mapXtoGridX(gridtoworldX);
+		// gridZ = library->mapZtoGridY(gridtoworldZ);
+
 		if (grid.inBounds(glm::ivec2(gridX, gridZ))) {
+			// std::cout << "[DEBUG] Player Position: (" << checkPos.x << "," << checkPos.y << "," << checkPos.z << ")" << std::endl;
+			// std::cout << "[DEBUG] Grid Position: (" << gridX << "," << gridZ << ")" << std::endl;
+			// std::cout << "[DEBUG] Grid to World Position: (" << gridtoworldX << "," << libraryCenter.y << "," << gridtoworldZ << ")" << std::endl;
+			// std::cout << "Grid Cell Value: " << static_cast<int>(grid[gridPos].type) << std::endl;
 			if (grid[gridPos].type == LibraryGen::CellType::CLUSTER) {
+				// std::cout << "[DEBUG] Collision DETECTED with OBSTACLE at grid (" << gridX << "," << gridZ << ")" << std::endl;
+				// // return true; // No collision with walls
+				// glm::vec3 shelfWorldMin = book_shelf1->getBoundingBoxMin() * shelfVisScale;
+				// glm::vec3 shelfWorldMax = book_shelf1->getBoundingBoxMax() * shelfVisScale;
+				// std::cout << "Initial Bounding Box Min: (" << shelfWorldMin.x << "," << shelfWorldMin.y << "," << shelfWorldMin.z << ")" << std::endl;
+				// std::cout << "Initial Bounding Box Max: (" << shelfWorldMax.x << "," << shelfWorldMax.y << "," << shelfWorldMax.z << ")" << std::endl;
+				// shelfWorldMin = glm::vec3(shelfWorldMin.x + gridtoworldX,
+				// 	shelfWorldMin.y + libraryCenter.y,
+				// 	shelfWorldMin.z + gridtoworldZ);
+				// shelfWorldMax = glm::vec3(shelfWorldMax.x + gridtoworldX,
+				// 	shelfWorldMax.y + libraryCenter.y,
+				// 	shelfWorldMax.z + gridtoworldZ);
+				// std::cout << "[DEBUG] Shelf World Min: (" << shelfWorldMin.x << "," << shelfWorldMin.y << "," << shelfWorldMin.z << ")" << std::endl;
+				// std::cout << "[DEBUG] Shelf World Max: (" << shelfWorldMax.x << "," << shelfWorldMax.y << "," << shelfWorldMax.z << ")" << std::endl;
 				glm::vec3 shelfPos = glm::vec3(gridtoworldX, libraryCenter.y, gridtoworldZ); // Base position on ground
 
-				if (checkSphereCollision(shelfPos, 1.5f, playerAABB.min + player->getPosition(), playerAABB.max + player->getPosition())) {
+				if (checkSphereCollision(shelfPos, 1.5f, playerWorldMin, playerWorldMax)) {
 					std::cout << "[DEBUG] Collision DETECTED with shelf at grid (" << gridX << "," << gridZ << ")" << std::endl;
 					return true; // Collision found
 				}
@@ -2137,6 +2505,7 @@ public:
 		}
 
 		// spatial detection for boss room grid
+
 		gridX = bossRoom->mapXtoGridX(checkPos.x);
 		gridZ = bossRoom->mapZtoGridY(checkPos.z);
 
@@ -2146,11 +2515,15 @@ public:
 		gridtoworldZ = bossRoom->mapGridYtoWorldZ(gridPos.y);
 
 		if (bossGrid.inBounds(glm::ivec2(gridX, gridZ))) {
+			// std::cout << "[DEBUG] Player Position: (" << checkPos.x << "," << checkPos.y << "," << checkPos.z << ")" << std::endl;
+			// std::cout << "[DEBUG] Grid Position: (" << gridX << "," << gridZ << ")" << std::endl;
+			// std::cout << "[DEBUG] Grid to World Position: (" << gridtoworldX << "," << libraryCenter.y << "," << gridtoworldZ << ")" << std::endl;
+			// std::cout << "Grid Cell Value: " << static_cast<int>(grid[gridPos].type) << std::endl;
 
 			if (bossGrid[gridPos].borderType == BossRoomGen::BorderType::ENTRANCE_SIDE) {
 				glm::vec3 pos = glm::vec3(gridtoworldX, libraryCenter.y, gridtoworldZ); // Base position on ground
 
-				if (checkSphereCollision(pos, 2.0f, playerAABB.min + player->getPosition(), playerAABB.max + player->getPosition())) {
+				if (checkSphereCollision(pos, 2.0f, playerWorldMin, playerWorldMax)) {
 					std::cout << "[DEBUG] Collision DETECTED with shelf at grid (" << gridX << "," << gridZ << ")" << std::endl;
 					return true; // Collision found
 				}
@@ -2169,7 +2542,7 @@ public:
 			if (bossGrid[gridPos].borderType == BossRoomGen::BorderType::ENTRANCE_SIDE) {
 				glm::vec3 pos = glm::vec3(gridtoworldX, libraryCenter.y, gridtoworldZ); // Base position on ground
 
-				if (checkSphereCollision(pos, 3.0f, playerAABB.min + player->getPosition(), playerAABB.max + player->getPosition())) {
+				if (checkSphereCollision(pos, 3.0f, playerWorldMin, playerWorldMax)) {
 					std::cout << "[DEBUG] Collision DETECTED with shelf at grid (" << gridX << "," << gridZ << ")" << std::endl;
 					return true; // Collision found
 				}
@@ -2177,7 +2550,7 @@ public:
 			// prevents entering the boss room
 			else if ((bossGrid[gridPos].borderType == BossRoomGen::BorderType::ENTRANCE_MIDDLE && !canFightboss)) {
 				glm::vec3 pos = glm::vec3(gridtoworldX, libraryCenter.y, gridtoworldZ); // Base position on ground
-				if (checkSphereCollision(pos, 2.0f, playerAABB.min + player->getPosition(), playerAABB.max + player->getPosition())) {
+				if (checkSphereCollision(pos, 2.0f, playerWorldMin, playerWorldMax)) {
 					std::cout << "[DEBUG] Collision DETECTED with shelf at grid (" << gridX << "," << gridZ << ")" << std::endl;
 					return true; // Collision found
 				}
@@ -2185,6 +2558,14 @@ public:
 			else if (bossfightstarted && !bossRoom->isInsideBossArea(gridPos)) {
 				return true;
 			}
+			// else if (bossRoom->isInsideBossArea(gridPos) && canFightboss) {
+			// 	return true;
+			// }
+			// // prevents player from leaving the boss room
+			// else if ((canFightboss && bossEnemy->isAlive() && bossGrid[gridPos].borderType == BossRoomGen::BorderType::EXIT_MIDDLE) ||
+			// 	(bossRoom->isInsideBossArea(gridPos) && canFightboss && bossEnemy->isAlive() && bossGrid[gridPos].borderType == BossRoomGen::BorderType::ENTRANCE_MIDDLE)) {
+			// 	return true;
+			// }
 			// when boss is dead player is able to leave the boss room and will restart the generation
 			else if ((bossfightended && !bossEnemy->isAlive() && bossGrid[gridPos].borderType == BossRoomGen::BorderType::EXIT_MIDDLE)) {
 				bossfightended = false;
@@ -2192,11 +2573,78 @@ public:
 				return true;
 			}
 		}
+
+		// for (int z = 0; z < grid.getSize().y; ++z) {
+		// 	for (int x = 0; x < grid.getSize().x; ++x) {
+		// 		glm::ivec2 gridPos(x, z);
+		// 		if (grid[gridPos] == LibraryGen::SHELF) {
+		// 			// 3. Calculate this shelf's World AABB
+		// 			float worldX = libraryCenter.x - gridWorldWidth * 0.5f + (x + 0.5f) * cellWidth;
+		// 			float worldZ = libraryCenter.z - gridWorldDepth * 0.5f + (z + 0.5f) * cellDepth;
+		// 			glm::vec3 shelfPos = vec3(worldX, libraryCenter.y, worldZ); // Base position on ground
+
+		// 			// Shelf transform (Position only, assuming no rotation for collision)
+		// 			// The scale is applied to the local AABB above
+		// 			glm::mat4 shelfTransform = glm::translate(glm::mat4(1.0f), shelfPos);
+
+		// 			glm::vec3 shelfWorldMin, shelfWorldMax;
+		// 			updateBoundingBox(collisionShelfLocalMin, collisionShelfLocalMax, shelfTransform, shelfWorldMin, shelfWorldMax);
+
+		// 			// 4. Check for Overlap
+		// 			if (checkAABBCollision(playerWorldMin, playerWorldMax, shelfWorldMin, shelfWorldMax)) {
+		// 				// cout << "[DEBUG] Collision DETECTED with shelf at grid (" << x << "," << z << ")" << endl;
+		// 				return true; // Collision found
+		// 			}
+		// 		} else if (grid[gridPos] == LibraryGen::TOP_BORDER || grid[gridPos] == LibraryGen::BOTTOM_BORDER) {
+		// 			// 3. Calculate this shelf's World AABB
+		// 			float worldX = libraryCenter.x - gridWorldWidth * 0.5f + (x + 0.5f) * cellWidth;
+		// 			float worldZ = libraryCenter.z - gridWorldDepth * 0.5f + (z + 0.5f) * cellDepth;
+		// 			glm::vec3 shelfPos = vec3(worldX, libraryCenter.y, worldZ); // Base position on ground
+
+		// 			// Shelf transform (Position only, assuming no rotation for collision)
+		// 			// The scale is applied to the local AABB above
+		// 			glm::mat4 shelfTransform = glm::translate(glm::mat4(1.0f), shelfPos);
+
+		// 			glm::vec3 shelfWorldMin, shelfWorldMax;
+		// 			updateBoundingBox(collisionShelfLocalMin, collisionShelfLocalMax, shelfTransform, shelfWorldMin, shelfWorldMax);
+
+		// 			// 4. Check for Overlap
+		// 			if (checkAABBCollision(playerWorldMin, playerWorldMax, shelfWorldMin, shelfWorldMax)) {
+		// 				// cout << "[DEBUG] Collision DETECTED with shelf at grid (" << x << "," << z << ")" << endl;
+		// 				return true; // Collision found
+		// 			}
+		// 		} else if (grid[gridPos] == LibraryGen::LEFT_BORDER || grid[gridPos] == LibraryGen::RIGHT_BORDER) {
+		// 			// 3. Calculate this shelf's World AABB
+		// 			float worldX = libraryCenter.x - gridWorldWidth * 0.5f + (x + 0.5f) * cellWidth;
+		// 			float worldZ = libraryCenter.z - gridWorldDepth * 0.5f + (z + 0.5f) * cellDepth;
+		// 			glm::vec3 shelfPos = vec3(worldX, libraryCenter.y, worldZ); // Base position on ground
+
+		// 			// Shelf transform (Position only, assuming no rotation for collision)
+		// 			// The scale is applied to the local AABB above
+		// 			glm::mat4 shelfTransform = glm::translate(glm::mat4(1.0f), shelfPos) * glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), vec3(0, 1, 0)); // Rotate for left/right walls
+
+		// 			glm::vec3 shelfWorldMin, shelfWorldMax;
+		// 			updateBoundingBox(collisionShelfLocalMin, collisionShelfLocalMax, shelfTransform, shelfWorldMin, shelfWorldMax);
+
+		// 			// 4. Check for Overlap
+		// 			if (checkAABBCollision(playerWorldMin, playerWorldMax, shelfWorldMin, shelfWorldMax)) {
+		// 				// cout << "[DEBUG] Collision DETECTED with shelf at grid (" << x << "," << z << ")" << endl;
+		// 				return true; // Collision found
+		// 			}
+		// 		}
+		// 	}
+		// }
+
 		return false; // No collision found
 	}
 
-	// handle player movement
+	// --- Modified charMove ---
 	vec3 charMove() {
+		// Calculate player's local AABB once if not done yet
+		if (!playerAABBCalculated) {
+			calculatePlayerLocalAABB();
+		}
+
 		float moveSpeed = 4.5f * AnimDeltaTime; // Use frame-rate independent speed
 		vec3 desiredMoveDelta = vec3(0.0f);
 
@@ -2212,17 +2660,36 @@ public:
 			desiredMoveDelta = (desiredMoveDelta / moveLength) * moveSpeed;
 		}
 		else {
+			// return characterMovement; // No movement input, stay put
 			return player->getPosition();
 		}
 
+		// --- Collision Detection and Resolution ---
+		// vec3 currentPos = characterMovement;
+		// vec3 nextPos = currentPos + desiredMoveDelta;
+		// nextPos.y = groundY; // Keep player on the ground plane
+
 		vec3 currentPos = player->getPosition();
 		vec3 nextPos = currentPos + desiredMoveDelta;
-		nextPos.y = Config::GROUND_HEIGHT; // Keep player on the ground plane
+		nextPos.y = groundY; // Keep player on the ground plane
 
 		// Player orientation for AABB calculation
+		// glm::quat playerOrientation = glm::angleAxis(manRot.y, glm::vec3(0, 1, 0));
 		glm::quat playerOrientation = glm::angleAxis(player->getRotY(), glm::vec3(0, 1, 0));
 
-		// Sliding (Separate Axes)
+		// --- Simple Stop Method ---
+		/*
+		if (checkCollisionAt(nextPos, playerOrientation)) {
+			 // Don't update characterMovement, effectively stopping before collision
+			 cout << "[DEBUG] Collision prevented movement." << endl;
+			 return currentPos; // Return current position
+		} else {
+			 // No collision detected, allow full movement
+			 characterMovement = nextPos;
+		}
+		*/
+
+		// --- Sliding Method (Separate Axes) ---
 		vec3 allowedPos = currentPos; // Start with current position
 
 		// Try moving along X only
@@ -2244,12 +2711,20 @@ public:
 			cout << "[DEBUG] Z-Collision prevented." << endl;
 		}
 
-		player->setPosition(vec3(allowedPos.x, Config::GROUND_HEIGHT, allowedPos.z)); // Update player position
 
+		// Final position is the allowed position after checking both axes
+		// characterMovement = allowedPos;
+		// characterMovement.y = groundY; // Ensure Y stays correct
+
+		player->setPosition(vec3(allowedPos.x, groundY, allowedPos.z)); // Update player position
+
+
+		// Update camera based on final position (done in render)
+		// return characterMovement; // Return the final, potentially adjusted, position
 		return player->getPosition(); // Return the final position
 	}
 
-	// Shoot a spell
+	// --- Shooting Function ---
 	void shootSpell() {
 		cout << "[DEBUG] shootSpell() called. Orbs: " << orbsCollectedCount << endl;
 		if (orbsCollectedCount <= 0 || !sphere || !sphereAABBCalculated) {
@@ -2267,15 +2742,24 @@ public:
 			}
 		}
 
+		// *** Use Character's Forward Direction ***
+		// 'manMoveDir' is updated in updateCameraVectors based on manRot.y (which matches theta)
 		vec3 shootDir = manMoveDir; // Already normalized and horizontal
 
+		// *** Use Character's Right Vector ***
 		// Calculate the horizontal right vector based on manMoveDir
 		vec3 playerRight = normalize(cross(manMoveDir, vec3(0.0f, 1.0f, 0.0f)));
 
+
 		// Spawn Position Calculation (relative to character's position and orientation)
 		float forwardOffset = 0.5f; // How far in front of player center
-		float upOffset = 0.8f;      // Height relative to player base (Config::GROUND_HEIGHT)
+		float upOffset = 0.8f;      // Height relative to player base (groundY)
 		float rightOffset = 0.2f;   // Offset to the side (e.g., right hand)
+
+		// vec3 spawnPos = characterMovement
+		// 	+ vec3(0.0f, upOffset, 0.0f) // Vertical offset from base
+		// 	+ shootDir * forwardOffset   // Forward offset along character's facing direction
+		// 	+ playerRight * rightOffset; // Sideways offset along character's right
 
 		vec3 spawnPos = player->getPosition()
 		+ vec3(0.0f, upOffset, 0.0f) // Vertical offset from base
@@ -2322,8 +2806,15 @@ public:
 			for (auto* enemy : enemies) {
 				if (!enemy || !enemy->isAlive()) continue;
 
+				// Ensure enemy AABB is up-to-date (call if they move)
+				// enemy->updateAABB();
+
 				if (checkAABBCollision(proj.aabbMin, proj.aabbMax, enemy->getAABBMin(), enemy->getAABBMax())) {
 					cout << "[DEBUG] Spell HIT enemy!" << endl;
+
+					// if (!enemy->isHit()) {
+					// 	enemy->setHit(true); // Mark enemy as hit
+					// }
 
 					enemy->takeDamage(damageAmount);
 					proj.active = false; // Deactivate projectile
@@ -2336,6 +2827,10 @@ public:
 				if (checkAABBCollision(proj.aabbMin, proj.aabbMax, bossEnemy->getAABBMin(), bossEnemy->getAABBMax())) {
 					cout << "[DEBUG] Spell HIT boss!" << endl;
 					damageAmount = 500.0f; // Boss takes more damage
+
+					// if (!bossEnemy->isHit()) {
+					// 	bossEnemy->setHit(true); // Mark enemy as hit
+					// }
 
 					bossEnemy->takeDamage(damageAmount);
 					proj.active = false; // Deactivate projectile
@@ -2352,17 +2847,62 @@ public:
 		);
 	}
 
-	void drawProjectiles(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model, bool secondPass) {
+	void drawProjectiles(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		if (!shader || !Model || !sphere) return; // Need shader, stack, model
 
 		shader->bind();
-
-		if (secondPass) setProgFlags(shader, true, false); // material, no bones
-
-		// Set Material properties - check for uniform existence first
-		if (secondPass) SetMaterial(shader, Material::orb_glowing_yellow);
+		// Set material for projectiles (e.g., bright yellow/white, maybe emissive if shader supports)
+		SetMaterialMan(shader, 0); // Gold material for now
+		glUniform3f(shader->getUniform("MatAmb"), 0.8f, 0.8f, 0.1f);
+		glUniform3f(shader->getUniform("MatDif"), 1.0f, 1.0f, 0.5f);
+		glUniform3f(shader->getUniform("MatSpec"), 1.0f, 1.0f, 1.0f);
+		glUniform1f(shader->getUniform("MatShine"), 64.0f);
+		// Optional: Emissive properties if shader supports them
+		// if(shader->hasUniform("hasEmittance")) glUniform1i(shader->getUniform("hasEmittance"), 1);
+		// if(shader->hasUniform("MatEmitt")) glUniform3f(shader->getUniform("MatEmitt"), 1.0f, 1.0f, 0.8f);
 
 		for (const auto& proj : activeSpells) {
+			if (!proj.active) continue;
+
+			Model->pushMatrix();
+			Model->loadIdentity(); // Start from identity for projectile
+
+			// Use the pre-calculated transform from updateAABB
+			Model->multMatrix(proj.transform);
+
+			/* // --- Manual Transform Calculation (Alternative to using proj.transform) ---
+			Model->translate(proj.position);
+			// Calculate rotation to align local Z with direction
+			glm::quat rotation = glm::rotation(glm::vec3(0.0f, 0.0f, 1.0f), proj.direction);
+			Model->multMatrix(glm::mat4_cast(rotation));
+			Model->scale(proj.scale);
+			*/
+
+			setModel(shader, Model);
+			proj.model->Draw(shader); // Draw the sphere model
+
+			Model->popMatrix();
+		}
+
+		shader->unbind();
+	}
+
+	/* boss projectiles */
+	void drawBossProjectiles(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
+		if (!shader || !Model || !sphere) return; // Need shader, stack, model
+
+		shader->bind();
+		// Set material for projectiles (e.g., bright yellow/white, maybe emissive if shader supports)
+		SetMaterialMan(shader, 0); // Gold material for now
+		glUniform3f(shader->getUniform("MatAmb"), 0.8f, 0.8f, 0.1f);
+		glUniform3f(shader->getUniform("MatDif"), 1.0f, 1.0f, 0.5f);
+		glUniform3f(shader->getUniform("MatSpec"), 1.0f, 1.0f, 1.0f);
+		glUniform1f(shader->getUniform("MatShine"), 64.0f);
+		// Optional: Emissive properties if shader supports them
+		// if(shader->hasUniform("hasEmittance")) glUniform1i(shader->getUniform("hasEmittance"), 1);
+		// if(shader->hasUniform("MatEmitt")) glUniform3f(shader->getUniform("MatEmitt"), 1.0f, 1.0f, 0.8f);
+
+		for (const auto& proj : bossActiveSpells) {
 			if (!proj.active) continue;
 
 			Model->pushMatrix();
@@ -2376,33 +2916,6 @@ public:
 
 			Model->popMatrix();
 		}
-
-		if (secondPass) clearProgFlags(shader);
-
-		shader->unbind();
-	}
-
-	/* boss projectiles */
-	void drawBossProjectiles(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model, bool secondPass) {
-		if (!shader || !Model || !sphere) return; // safety checks
-
-		shader->bind();
-
-		if (secondPass) setProgFlags(shader, true, false); // material, no bones
-
-		if (secondPass) SetMaterial(shader, Material::gold); //TODO UPDATE MATERIAL
-
-		for (const auto& proj : bossActiveSpells) {
-			if (!proj.active) continue;
-			Model->pushMatrix();
-			Model->loadIdentity(); // Start from identity for projectile
-			Model->multMatrix(proj.transform); // Use the pre-calculated transform from updateAABB
-			setModel(shader, Model);
-			proj.model->Draw(shader); // Draw the sphere model
-			Model->popMatrix();
-		}
-
-		if (secondPass) clearProgFlags(shader);
 
 		shader->unbind();
 	}
@@ -2494,35 +3007,52 @@ public:
 		return Cam;
 	}
 
-	mat4 SetOrthoMatrixMiniMap(shared_ptr<Program> curShade) {/*MINI MAP*/
+	mat4 SetOrthoMatrix(shared_ptr<Program> curShade) {/*MINI MAP*/
 		float wS = 1.5;
 		mat4 ortho = glm::ortho(-15.0f*wS, 15.0f*wS, -15.0f*wS, 15.0f*wS, 2.1f, 100.f);
 		glUniformMatrix4fv(curShade->getUniform("P"), 1, GL_FALSE, value_ptr(ortho));
 		return ortho;
-	}
+  }
 
-  void drawMiniPlayer(shared_ptr<Program> curS, shared_ptr<MatrixStack> Model, bool secondPass) { /*MINI MAP*/
+  void drawMiniPlayer(shared_ptr<Program> curS, shared_ptr<MatrixStack> Model) { /*MINI MAP*/
+
+  //sphere->Draw(shader);
 		curS->bind();
-
-		if (secondPass) setProgFlags(curS, true, false); // material, no bones
 
 		// Model matrix setup
 		Model->pushMatrix();
-			Model->loadIdentity();
-			Model->translate(player->getPosition()); // Use final player position
-			// *** USE CAMERA ROTATION FOR MODEL ***
-			Model->scale(1.0);
-			if (secondPass) SetMaterial(curS, Material::mini_map);
-			setModel(curS, Model);
-			sphere->Draw(curS);
+		Model->loadIdentity();
+		Model->translate(player->getPosition()); // Use final player position
+		// *** USE CAMERA ROTATION FOR MODEL ***
+		// Model->rotate(manRot.y, vec3(0, 1, 0)); // <<-- FIXED ROTATION
+		Model->scale(1.0);
+
+		// Update VISUAL bounding box (can be different from collision box if needed)
+		// Using the same AABB calculation logic as before for consistency
+		glm::mat4 manTransform = Model->topMatrix();
+		updateBoundingBox(stickfigure_running->getBoundingBoxMin(),
+			stickfigure_running->getBoundingBoxMax(),
+			manTransform,
+			manAABBmin, // This is the visual/interaction AABB
+			manAABBmax);
+
+		// Set uniforms and draw
+		//glUniform1i(curS->getUniform("hasTexture"), 1); //0.6f, 0.2f, 0.8f
+		//0.8f, 0.4f, 0.2f
+		// 0.95, 0.78, 0.14
+		glUniform3f(curS->getUniform("MatAmb"), 0.95f , 0.78f , 0.14f );
+		glUniform3f(curS->getUniform("MatDif"), 0.95f, 0.78f, 0.14f);
+		glUniform3f(curS->getUniform("MatSpec"), 0.3f, 0.3f, 0.3f);
+		glUniform1f(curS->getUniform("MatShine"), 8.0f);
+		setModel(curS, Model);
+		//stickfigure_running->Draw(curS);
+		sphere->Draw(curS);
+
 		Model->popMatrix();
-
-		if (secondPass) clearProgFlags(curS);
-
 		curS->unbind();
 	}
 
-	void drawHealthBar(shared_ptr<Program> curShade) {
+	void drawHealthBar() {
 		float heatlhBarWidth = 350.0f;
 		float healthBarHeight = 25.0f;
 		float healthBarStartX = 100.0f;
@@ -2535,39 +3065,45 @@ public:
 		glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(healthBarStartX, healthBarStartY, 0.0f));  // HUD position
 		model = glm::scale(model, glm::vec3(heatlhBarWidth, healthBarHeight, 1.0f));                          // HUD size
 
-		curShade->bind();
+		hudProg->bind();
+		glUniformMatrix4fv(hudProg->getUniform("projection"), 1, GL_FALSE, value_ptr(projection));
+		glUniformMatrix4fv(hudProg->getUniform("model"), 1, GL_FALSE, value_ptr(model));
+		glUniform1f(hudProg->getUniform("healthPercent"), player->getHitpoints() / Config::PLAYER_HP_MAX); // Pass health value
+		glUniform1f(hudProg->getUniform("BarStartX"), healthBarStartX); // Pass max health value
+		glUniform1f(hudProg->getUniform("BarWidth"), heatlhBarWidth); // Pass max health value
 
-		glUniformMatrix4fv(curShade->getUniform("projection"), 1, GL_FALSE, value_ptr(projection));
-		glUniformMatrix4fv(curShade->getUniform("model"), 1, GL_FALSE, value_ptr(model));
-		glUniform1f(curShade->getUniform("healthPercent"), player->getHitpoints() / Config::PLAYER_HP_MAX); // Pass health value
-		glUniform1f(curShade->getUniform("BarStartX"), healthBarStartX); // Pass max health value
-		glUniform1f(curShade->getUniform("BarWidth"), heatlhBarWidth); // Pass max health value
-
-		healthBar->Draw(curShade);
-		curShade->unbind();
+		healthBar->Draw(hudProg);
+		hudProg->unbind();
 	}
 
-	// Draw particles (TODO: sort them by z value)
+	// Draw particles
 	void drawParticles(shared_ptr<particleGen> gen, shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
-		shader->bind();
 		Model->pushMatrix();
-			glPointSize(10.0f);
+			shader->bind();
 			particleAlphaTex->bind(particleProg->getUniform("alphaTexture"));
 
 			// Enable blending for transparency
 			glEnable(GL_BLEND);
 			glBlendFunc(GL_SRC_ALPHA, GL_ONE);
 
-			glUniformMatrix4fv(shader->getUniform("M"), 1, GL_FALSE, value_ptr(Model->topMatrix()));
+			// Disable depth writing but keep depth testing
+			//glDepthMask(GL_FALSE);
+      glUniformMatrix4fv(shader->getUniform("M"), 1, GL_FALSE, value_ptr(Model->topMatrix()));
 			gen->drawMe(shader);
 
-			glDisable(GL_BLEND); // Restore state
+			// Restore state
+			//glDepthMask(GL_TRUE);
+			glDisable(GL_BLEND);
+
+
+			shader->unbind();
 			particleAlphaTex->unbind();
+
+
 		Model->popMatrix();
-		shader->unbind();
 	}
 
-	void drawEnemyHealthBars(shared_ptr<Program> curShade, glm::mat4 viewMatrix, glm::mat4 projMatrix) {
+	void drawEnemyHealthBars(glm::mat4 viewMatrix, glm::mat4 projMatrix) {
 		float healthBarWidth = 100.0f;
 		float healthBarHeight = 10.0f;
 		float healthBarOffsetY = 15.0f;  // Offset above enemy head
@@ -2603,30 +3139,34 @@ public:
 			glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(screenPos.x - (healthBarWidth / 2.0f), screenPos.y, 0.0f));
 			model = glm::scale(model, glm::vec3(healthBarWidth, healthBarHeight, 1.0f));
 
-			curShade->bind();
-			glUniformMatrix4fv(curShade->getUniform("projection"), 1, GL_FALSE, glm::value_ptr(hudProjection));
-			glUniformMatrix4fv(curShade->getUniform("model"), 1, GL_FALSE, glm::value_ptr(model));
-			glUniform1f(curShade->getUniform("healthPercent"), enemy->getHitpoints() / ENEMY_HP_MAX);
-			glUniform1f(curShade->getUniform("BarStartX"), screenPos.x - (healthBarWidth / 2.0f));
-			glUniform1f(curShade->getUniform("BarWidth"), healthBarWidth);
+			hudProg->bind();
+			glUniformMatrix4fv(hudProg->getUniform("projection"), 1, GL_FALSE, glm::value_ptr(hudProjection));
+			glUniformMatrix4fv(hudProg->getUniform("model"), 1, GL_FALSE, glm::value_ptr(model));
+			glUniform1f(hudProg->getUniform("healthPercent"), enemy->getHitpoints() / ENEMY_HP_MAX);
+			glUniform1f(hudProg->getUniform("BarStartX"), screenPos.x - (healthBarWidth / 2.0f));
+			glUniform1f(hudProg->getUniform("BarWidth"), healthBarWidth);
 
-			healthBar->Draw(curShade);
-			curShade->unbind();
+			healthBar->Draw(hudProg);
+			hudProg->unbind();
 		}
 	}
-	
-	void drawLock(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model, bool secondPass){
+
+
+
+
+	void drawLock(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model){
+		//need models
 		shader->bind();
 
-		if (secondPass) setProgFlags(shader, true, false); // materials, no bones
 
 		//top lock
+
 		Model->pushMatrix();
 			Model->loadIdentity();
 			Model->translate(vec3(0.0f, 2.5f, 38.5f));
 			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
 			Model->scale(0.1f);
-			if (secondPass) SetMaterial(shader, Material::gold);
+			SetMaterialMan(shader, 5); //gold
 			setModel(shader, Model);
 			lock->Draw(shader);
 			lockHandle->Draw(shader);
@@ -2638,7 +3178,7 @@ public:
 			Model->translate(vec3(0.0f, 1.5f, 38.5f));  //doorPosition
 			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
 			Model->scale(0.1f);
-			if (secondPass) SetMaterial(shader, Material::gold);
+			SetMaterialMan(shader, 5); //gold
 			setModel(shader, Model);
 			lock->Draw(shader);
 			lockHandle->Draw(shader);
@@ -2650,21 +3190,87 @@ public:
 			Model->translate(vec3(0.0f, 0.5f, 38.5f));
 			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
 			Model->scale(0.1f);
-			if (secondPass) SetMaterial(shader, Material::gold);
+			SetMaterialMan(shader, 5); //gold
 			setModel(shader, Model);
 			lock->Draw(shader);
 			lockHandle->Draw(shader);
 		Model->popMatrix();
 
-		if (secondPass) clearProgFlags(shader);
-
 		shader->unbind();
+
+
 	}
 
-	void drawUnlocked(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model, bool secondPass) { //unlock one of the locks if have a key (for now unlock all)
+	void updateLock(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model){
+		//unlock one of the locks if have a key
+		//for now unlock all
+
 		shader->bind();
 
-		if (secondPass) setProgFlags(shader, true, false); // materials, no bones
+		/*
+
+
+		Model->pushMatrix();
+			Model->loadIdentity();
+			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			//Model->scale(0.1f);
+			SetMaterialMan(shader, 5); //gold
+
+			//top lock
+			Model->pushMatrix();
+				Model->translate(vec3(0.0f, 2.5f, 38.5f));
+				Model->scale(0.1f);
+				setModel(shader, Model);
+				lock->Draw(shader);
+			Model->popMatrix();
+			//top handle
+			Model->pushMatrix();
+				Model->translate(vec3(0.0f, 2.5f, 38.5f));
+				Model->scale(0.1f);
+				Model->rotate( 1* glm::radians(15.0) + lTheta , vec3(0.0f, 0.0f, 1.0f)); //max -30?
+				setModel(shader, Model);
+				lockHandle->Draw(shader);
+			Model->popMatrix();
+
+			//middle lock
+			Model->pushMatrix();
+				Model->translate(vec3(0.0f, 1.5f, 38.5f));
+				Model->scale(0.1f);
+				setModel(shader, Model);
+				lock->Draw(shader);
+			Model->popMatrix();
+
+			//middle handle
+			Model->pushMatrix();
+				Model->translate(vec3(0.0f, 1.5f, 38.5f));
+				Model->scale(0.1f);
+				Model->rotate( 1* glm::radians(15.0) + lTheta , vec3(0.0f, 0.0f, 1.0f));
+				setModel(shader, Model);
+				lockHandle->Draw(shader);
+			Model->popMatrix();
+
+			//bottom lock
+			Model->pushMatrix();
+				Model->translate(vec3(0.0f, 0.5f, 38.5f));
+				Model->scale(0.1f);
+				setModel(shader, Model);
+				lock->Draw(shader);
+			Model->popMatrix();
+
+			//bottom handle
+			Model->pushMatrix();
+				Model->translate(vec3(0.0f, 0.5f, 38.5f));
+				Model->scale(0.1f);
+				Model->rotate( 1* glm::radians(15.0) + lTheta , vec3(0.0f, 0.0f, 1.0f));
+				setModel(shader, Model);
+				lockHandle->Draw(shader);
+			Model->popMatrix();
+
+
+		Model->popMatrix();
+
+		*/
+
 
 		//top lock
 		Model->pushMatrix();
@@ -2672,7 +3278,7 @@ public:
 			Model->translate(vec3(0.0f, 2.5f, 38.5f));  //doorPosition
 			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
 			Model->scale(0.1f);
-			if (secondPass) SetMaterial(shader, Material::gold);
+			SetMaterialMan(shader, 5); //gold
 			setModel(shader, Model);
 			lock->Draw(shader);
 		Model->popMatrix();
@@ -2685,7 +3291,7 @@ public:
 			Model->rotate( 1* glm::radians(15.0) + lTheta , vec3(0.0f, 0.0f, 1.0f)); //max -30?
 			Model->scale(0.1f);
 			// Model->rotate(  glm::radians(90.0) , vec3(0.0f, 1.0f, 0.0f)); //max -30
-			if (secondPass) SetMaterial(shader, Material::wood);
+			SetMaterialMan(shader, 6); //brown
 			setModel(shader, Model);
 			lockHandle->Draw(shader);
 		Model->popMatrix();
@@ -2696,7 +3302,7 @@ public:
 			Model->translate(vec3(0.0f, 1.5f, 38.5f));
 			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
 			Model->scale(0.1f);
-			if (secondPass) SetMaterial(shader, Material::gold);
+			SetMaterialMan(shader, 5); //gold
 			setModel(shader, Model);
 			lock->Draw(shader);
 		Model->popMatrix();
@@ -2709,7 +3315,7 @@ public:
 			Model->rotate( 1* glm::radians(15.0) + lTheta , vec3(0.0f, 0.0f, 1.0f)); //max -30?
 			Model->scale(0.1f);
 			// Model->rotate(  glm::radians(90.0) , vec3(0.0f, 1.0f, 0.0f)); //max -30
-			if (secondPass) SetMaterial(shader, Material::brown);
+			SetMaterialMan(shader, 6); //brown
 			setModel(shader, Model);
 			lockHandle->Draw(shader);
 		Model->popMatrix();
@@ -2720,9 +3326,10 @@ public:
 			Model->translate(vec3(0.0f, 0.5f, 38.5f));
 			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
 			Model->scale(0.1f);
-			if (secondPass) SetMaterial(shader, Material::gold);
+			SetMaterialMan(shader, 5); //gold
 			setModel(shader, Model);
 			lock->Draw(shader);
+
 		Model->popMatrix();
 
 		//lower handle
@@ -2733,40 +3340,72 @@ public:
 			Model->rotate( 1* glm::radians(15.0) + lTheta , vec3(0.0f, 0.0f, 1.0f)); //max -30?
 			Model->scale(0.1f);
 			// Model->rotate(  glm::radians(90.0) , vec3(0.0f, 1.0f, 0.0f)); //max -30
-			if (secondPass) SetMaterial(shader, Material::wood);
+			SetMaterialMan(shader, 6); //brown
 			setModel(shader, Model);
 			lockHandle->Draw(shader);
 		Model->popMatrix();
 
-		if (secondPass) clearProgFlags(shader);
+
+
+
+
+			// if(lTheta < 30.0){
+			// 	lTheta+= 0.1;
+			// lTheta = sin(glfwGetTime());
+			// }
+
+
+
+		// Model->pushMatrix();
+		// 	Model->loadIdentity();
+		// 	Model->translate(vec3(0.0f, 0.5f, 38.5f));  //doorPosition
+		// 	Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+		// 	Model->rotate( glm::radians(lTheta) , vec3(0.0f, 1.0f, 0.0f)); //max -30?
+		// 	Model->scale(0.1f);
+		// 	SetMaterialMan(shader, 6); //brown
+		// 	setModel(shader, Model);
+		// 	lockHandle->Draw(shader);
+		// Model->popMatrix();
+
 
 		shader->unbind();
+
+
 	}
 
+	//drawOrb, draw book , updateBooks, updateOrb, shootSpell
+
+	//glm::vec3 enemyPos = enemy->getPosition();
+	//enemy->isAlive() == false
+
 	/* keyCollect */
-	void drawKey(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model, bool secondPass){
-		// Collision Check
+	void drawKey(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model){
+
+		// --- Collision Check Logic ---
 		for (auto& key : keyCollectibles) {
 			// Perform collision check ONLY if not collected AND in the IDLE state
-			if (!key.collected && key.state == OrbState::IDLE &&
-				checkAABBCollision(playerAABB.min + player->getPosition(), playerAABB.max + player->getPosition(), key.AABBmin, key.AABBmax)) {
+			if (!key.collected && key.state == OrbState::IDLE && // <<<--- ADD STATE CHECK
+				checkAABBCollision(manAABBmin, manAABBmax, key.AABBmin, key.AABBmax)) {
 				key.collected = true;
+				// key.state = OrbState::COLLECTED; // Optionally set state
 				keysCollectedCount++;
 				std::cout << "Collected a key! (" << keysCollectedCount << ")\n";
 			}
 		}
 
-		shader->bind();
 
-		if (secondPass) setProgFlags(shader, true, false); // material, no bones
+		//need models
+		shader->bind();
 
 		int collectedKeyDrawIndex = 0;
 
 		for (auto& key : keyCollectibles) {
 
 			glm::vec3 currentDrawPosition;
+			//float currentDrawScale = key.scale; // Use base scale
 
 			if (key.collected) {
+				// Calculate position behind the player (same logic as before)
 				float backOffset = 0.4f;
 				float upOffsetBase = 0.6f;
 				float stackOffset = key.scale * 2.5f;
@@ -2776,46 +3415,68 @@ public:
 				glm::vec3 playerRight = normalize(cross(playerForward, playerUp));
 				float currentUpOffset = upOffsetBase + (collectedKeyDrawIndex * stackOffset);
 				float currentSideOffset = (collectedKeyDrawIndex % 2 == 0 ? -sideOffset : sideOffset);
-				currentDrawPosition = player->getPosition() - playerForward * backOffset
+				currentDrawPosition = charMove() - playerForward * backOffset
 					+ playerUp * currentUpOffset
 					+ playerRight * currentSideOffset;
 				collectedKeyDrawIndex++;
+				// currentDrawScale = orb.scale * 0.8f; // Optional: shrink collected orbs
 			}
 			else {
+				// Use the orb's current position (potentially animated by updateOrbs)
 				currentDrawPosition = key.position;
 			}
 
+			// --- Set up transformations ---
 			Model->pushMatrix();
-				Model->loadIdentity();
-				Model->translate(vec3(0.0f, 0.5f, 0.5f)); //last enemy pos
-				Model->scale(2.0f);
-				Model->rotate(glm::radians(90.0f), vec3(1.0f, 0.0f, 0.0f));
-				Model->rotate(glm::radians(-90.0f), vec3(0.0f, 1.0f, 0.0f));
-				if (secondPass) SetMaterial(shader, Material::gold);
-				setModel(shader, Model);
-				key.model->Draw(shader);
-			Model->popMatrix();
-		} // End drawing loop
-
-		Model->pushMatrix();
 			Model->loadIdentity();
 			Model->translate(vec3(0.0f, 0.5f, 0.5f)); //last enemy pos
 			Model->scale(2.0f);
 			Model->rotate(glm::radians(90.0f), vec3(1.0f, 0.0f, 0.0f));
 			Model->rotate(glm::radians(-90.0f), vec3(0.0f, 1.0f, 0.0f));
-			if (secondPass) SetMaterial(shader, Material::gold); //gold
+
+
+			// --- Set Material & Draw ---
+			// (Material setting code remains the same)
+			SetMaterialMan(shader, 5); //gold
+
 			setModel(shader, Model);
-			key->Draw(shader);
+			//orb.model->Draw(simpleShader);
+			key.model->Draw(shader);
+
+			Model->popMatrix();
+		} // End drawing loop
+
 		Model->popMatrix();
+		shader->unbind();
 
-		if (secondPass) clearProgFlags(shader);
 
+		shader->bind();
+
+		// --- Set up transformations ---
+		Model->pushMatrix();
+		Model->loadIdentity();
+		Model->translate(vec3(0.0f, 0.5f, 0.5f)); //last enemy pos
+		Model->scale(2.0f);
+		Model->rotate(glm::radians(90.0f), vec3(1.0f, 0.0f, 0.0f));
+		Model->rotate(glm::radians(-90.0f), vec3(0.0f, 1.0f, 0.0f));
+
+
+		// --- Set Material & Draw ---
+		// (Material setting code remains the same)
+		SetMaterialMan(shader, 5); //gold
+
+		setModel(shader, Model);
+		//orb.model->Draw(simpleShader);
+		key->Draw(shader);
+
+		Model->popMatrix();
 		shader->unbind();
 	}
 
 	void updateKeys(float currentTime) {
 		for (auto& key : keyCollectibles) {
-			if (!key.collected) { // Update levitation only if not already collected
+			// Update levitation only if not already collected
+			if (!key.collected) {
 				key.updateLevitation(currentTime);
 			}
 		}
@@ -2824,7 +3485,7 @@ public:
 	void drawBossHealthBar(glm::mat4 viewMatrix, glm::mat4 projMatrix) {
 		float healthBarWidth = 200.0f;
 		float healthBarHeight = 20.0f;
-		float healthBarOffsetY = 25.0f; // Offset above enemy head
+		float healthBarOffsetY = 25.0f;  // Offset above enemy head
 
 		int screenWidth, screenHeight;
 		glfwGetFramebufferSize(windowManager->getHandle(), &screenWidth, &screenHeight);
@@ -2866,21 +3527,24 @@ public:
 		}
 	}
 
-	void drawDamageIndicator(shared_ptr<Program>& shader, float alpha) {
+	void drawDamageIndicator(float alpha) {
 		int screenWidth, screenHeight;
 		glfwGetFramebufferSize(windowManager->getHandle(), &screenWidth, &screenHeight);
+
 		glEnable(GL_BLEND);
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 		// glDisable(GL_DEPTH_TEST);
-		shader->bind();
+		redFlashProg->bind();
+
 		glm::mat4 proj = glm::ortho(0.0f, (float)screenWidth, 0.0f, (float)screenHeight, -1.0f, 1.0f);
 		glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(0, 0, 0));
 		model = glm::scale(model, glm::vec3(screenWidth, screenHeight, 1.0f));
-		glUniformMatrix4fv(shader->getUniform("projection"), 1, GL_FALSE, value_ptr(proj));
-		glUniformMatrix4fv(shader->getUniform("model"), 1, GL_FALSE, value_ptr(model));
-		glUniform1f(shader->getUniform("alpha"), alpha); // Red color with alpha
-		healthBar->Draw(shader);
-		shader->unbind();
+		glUniformMatrix4fv(redFlashProg->getUniform("projection"), 1, GL_FALSE, value_ptr(proj));
+		glUniformMatrix4fv(redFlashProg->getUniform("model"), 1, GL_FALSE, value_ptr(model));
+		glUniform1f(redFlashProg->getUniform("alpha"), alpha); // Red color with alpha
+
+		healthBar->Draw(redFlashProg);
+		redFlashProg->unbind();
 	}
 
 	void drawOcclusionBoxAtPlayer(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
@@ -2900,102 +3564,21 @@ public:
 		shader->unbind();
 	}
 
-	void setCameraProjectionFromStack(shared_ptr<Program> curShade, shared_ptr<MatrixStack> projStack) {
-		curShade->bind();
-		glUniformMatrix4fv(curShade->getUniform("P"), 1, GL_FALSE, value_ptr(projStack->topMatrix()));
-	}
-
-	void setCameraViewFromStack(shared_ptr<Program> curShade, shared_ptr<MatrixStack> viewStack) {
-		curShade->bind();
-		glUniformMatrix4fv(curShade->getUniform("V"), 1, GL_FALSE, value_ptr(viewStack->topMatrix()));
-	}
-
-	// Draw the scene for shadow map generation (Draw only shadow-casting objects) (First Pass)
-	void drawSceneForShadowMap(shared_ptr<Program>& prog) {
-		auto Model = make_shared<MatrixStack>();
-		
-		drawBorderWalls(prog, Model, false); // Border walls
-		drawLibGrnd(prog, Model, false); // Floor
-		drawLibrary(prog, Model, false, false); // Shelves
-		drawBossRoom(prog, Model, false, false); // Boss room
-
-
-		
-		drawBooks(prog, Model, false); // Books
-		drawEnemies(prog, Model, false); // Enemies
-		drawPlayer(prog, Model, 0, false); // Player
-		
-		
-	}
-
-	// Draw the scene with shadows (Second Pass)
-	void drawMainScene(const shared_ptr<Program>& prog, shared_ptr<MatrixStack>& Model, float animTime) {
-		drawBorderWalls(prog, Model, true); // Border walls
-		drawLibGrnd(prog, Model, true); // Floor
-		drawLibrary(prog, Model, true, true); // Shelves
-		drawBossRoom(prog, Model, true, true); // Boss room
-
-		occlusionQuery(prog, Model); // NOTE: walls, ground, library and boss room need to be called before Occlusion Query
-
-		drawPlayer(prog, Model, animTime, true); // Player (with animation)
-		drawBooks(prog, Model, true); // Books
-		drawEnemies(prog, Model, true); // Enemies
-		drawOrbs(prog, Model, true); // Orbs
-		drawProjectiles(prog, Model, true); // Projectiles
-		drawBossProjectiles(prog, Model, true); // Boss Projectiles
-		(unlocked) ? drawUnlocked(prog, Model, true) : drawLock(prog, Model, true); // Locks
-		drawBossEnemy(prog, Model, true); // Big Boss Man
-	}
-
-	void occlusionQuery(const shared_ptr<Program>& shader, shared_ptr<MatrixStack>& Model) {
-		glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE); // disable color writes
-		glDepthMask(GL_FALSE); // disable depth writes
-		glBeginQuery(GL_ANY_SAMPLES_PASSED, occlusionQueryID); // begin occlusion query
-		drawOcclusionBoxAtPlayer(shader, Model);
-		glEndQuery(GL_ANY_SAMPLES_PASSED);
-
-		GLuint resultofQuery = 0;
-		glGetQueryObjectuiv(occlusionQueryID, GL_QUERY_RESULT, &resultofQuery);
-		visible = resultofQuery;
-
-		// re-enable color writes and depth writes
-		glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-		glDepthMask(GL_TRUE);
-	}
-
-	// Draw the mini map
-	void drawMiniMap(const shared_ptr<Program>& prog, shared_ptr<MatrixStack>& Model, int height) {
-		prog->bind();
-		glClear(GL_DEPTH_BUFFER_BIT);
-		glViewport(0, height - 300, 300, 300);
-
-		SetOrthoMatrixMiniMap(prog);
-		SetTopView(prog);
-
-		// Draw mini map elements
-		/*drawDoor(prog, Model, true);
-		drawBooks(prog, Model, true);
-		drawEnemies(prog, Model, true);*/
-		drawLibrary(prog, Model, false, true);
-		drawBossRoom(prog, Model, false, true);
-		drawBossEnemy(prog, Model, true);
-		drawMiniPlayer(prog, Model, true);
-		drawBorderWalls(prog, Model, true);
-		drawLibGrnd(prog, Model, true);
-		drawBossRoom(prog, Model, false, true); //boss room not drawing
-
-		glClear(GL_DEPTH_BUFFER_BIT);
-		glViewport(0, height - 300, 300, 300);
-		SetTopView(prog);
-		drawEnemies(prog, Model, true);
-
-		prog->unbind();
-	}
-
 	void render(float frametime, float animTime) {
+		// Get current frame buffer size.
 		int width, height;
-		glfwGetFramebufferSize(windowManager->getHandle(), &width, &height); // Get current frame buffer size
-		float aspect = width / (float)height;
+		glfwGetFramebufferSize(windowManager->getHandle(), &width, &height);
+		glViewport(0, 0, width, height);
+
+		// Clear framebuffer.
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+		float aspect = width/(float)height;
+
+		// Create the matrix stacks
+		auto Projection = make_shared<MatrixStack>();
+		auto View = make_shared<MatrixStack>();
+		auto Model = make_shared<MatrixStack>();
 
 		// --- Update Game Logic ---
 		charMove();
@@ -3011,137 +3594,263 @@ public:
 		BossEnemyShoot(frametime);
 		restartGeneration();
 
-		// Create the matrix stacks
-		auto Projection = make_shared<MatrixStack>();
-		auto View = make_shared<MatrixStack>();
-		auto Model = make_shared<MatrixStack>();
-
-		vec3 lightPos = vec3(10); // Fixed light position above the scene
-		vec3 lightTarget = libraryCenter; // Light looks at library center
-		vec3 lightDir = normalize(lightPos - lightTarget); // Light direction
-		vec3 lightUp = vec3(0, 1, 0);
-		mat4 LO, LV, LSpace;
-		
-		// ========================================================================
-		// First Pass: Render scene from light's perspective to generate depth map
-		// ========================================================================
-		if (Config::SHADOW) {
-			glViewport(0, 0, S_WIDTH, S_HEIGHT); // Set viewport for shadow map
-			glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO); // Bind shadow framebuffer
-			glClear(GL_DEPTH_BUFFER_BIT); // Clear depth buffer
-			glCullFace(GL_FRONT); // Cull front faces for shadow map
-
-			DepthProg->bind(); // Setup shadow shader and draw the scene
-
-			// Create a stable orthographic projection that covers the scene
-			float size = Config::ORTHO_SIZE;
-			LO = glm::ortho(-size, size, -size, size, 1.0f, 200.0f);
-			glUniformMatrix4fv(DepthProg->getUniform("LP"), 1, GL_FALSE, value_ptr(LO));
-
-			// Create a stable light view matrix
-			LV = glm::lookAt(lightPos, lightTarget, lightUp);
-			glUniformMatrix4fv(DepthProg->getUniform("LV"), 1, GL_FALSE, value_ptr(LV));
-
-			drawSceneForShadowMap(DepthProg); // Draw the scene from the lights perspective
-
-			DepthProg->unbind();
-			glCullFace(GL_BACK); // Reset culling to default
-			glBindFramebuffer(GL_FRAMEBUFFER, 0); // Unbind shadow framebuffer (hard coded 0 is the screen)
-		}
-
-		// ===================================================
-		// Prepare for Second Pass (Main Rendering to Screen)
-		// ===================================================
-		glViewport(0, 0, width, height); // Return viewport to screen size
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // Clear framebuffer
-
-		// Setup Camera
+		// --- Setup Camera ---
 		Projection->pushMatrix();
-		Projection->perspective(radians(45.0f), aspect, 0.1f, 100.0f);
+		Projection->perspective(radians(45.0f), aspect, 0.1f, 1000.0f); // Adjusted near/far
 		View->pushMatrix();
 		View->loadIdentity();
 		View->lookAt(eye, lookAt, up); // Use updated eye/lookAt
 
-		// Update frustum planes and light space matrix for shadow mapping
-		ExtractVFPlanes(Projection->topMatrix(), View->topMatrix(), planes);
+		ExtractVFPlanes(Projection->topMatrix(), View->topMatrix(), planes); // Update frustum planes
 
-		// ==============================
-		// Second Pass: Render to Screen
-		// ==============================
-		if (Config::DEBUG_LIGHTING) { // Debugging light view from lights perspective
-			if (Config::DEBUG_GEOM) {
-				DepthProgDebug->bind();
+		// --- Setup Lights ---
+		// Example: One bright light in the library, one dimmer in boss area
+		// vec3 lightPositions[NUM_LIGHTS] = {
+		// 	libraryCenter + vec3(0, 15, 0),      // Library light overhead
+		// 	bossAreaCenter + vec3(0, 10, 0),     // Boss area light overhead
+		// 	characterMovement + vec3(0, 1, 0.5), // Small light near player (optional)
+		// 	vec3(0, 0, 0)                        // Unused or ambient fill
+		// };
 
-				glUniformMatrix4fv(DepthProg->getUniform("LP"), 1, GL_FALSE, value_ptr(LO));
+		vec3 lightPositions[Config::NUM_LIGHTS] = {
+			libraryCenter + vec3(0, 15, 0),      // Library light overhead
+			bossAreaCenter + vec3(0, 10, 0),     // Boss area light overhead
+			player->getPosition() + vec3(0, 1, 0.5), // Small light near player (optional)
+			vec3(0, 0, 0)                        // Unused or ambient fill
+		};
 
-				glUniformMatrix4fv(DepthProg->getUniform("LV"), 1, GL_FALSE, value_ptr(LV));
+		vec3 lightColors[Config::NUM_LIGHTS] = {
+			vec3(1.0f, 1.0f, 0.9f), // Slightly warm white
+			vec3(0.8f, 0.6f, 1.0f), // Dim purple/blue
+			vec3(0.3f, 0.3f, 0.3f),
+			vec3(0.1f, 0.1f, 0.1f)
+		};
+		float lightIntensities[Config::NUM_LIGHTS] = {
+			1.5f, // Bright library
+			0.8f, // Dimmer boss area
+			0.5f, // Player light
+			0.0f
+		};
+		int numActiveLights = 3; // How many lights we're actually using
 
-				drawSceneForShadowMap(DepthProgDebug); // Draw the scene from the lights perspective for debugging
-				
-				DepthProgDebug->unbind();
+		// --- Update Shader Uniforms (Lights, P, V) ---
+		// Update prog2 (Simple Lighting)
+		if (prog2) {
+			prog2->bind();
+			glUniformMatrix4fv(prog2->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
+			glUniformMatrix4fv(prog2->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
+			glUniform1i(prog2->getUniform("numLights"), numActiveLights);
+			for (int i = 0; i < numActiveLights; ++i) {
+				string prefix = "lightPos[" + to_string(i) + "]";
+				glUniform3fv(prog2->getUniform(prefix), 1, value_ptr(lightPositions[i]));
+				prefix = "lightColor[" + to_string(i) + "]";
+				glUniform3fv(prog2->getUniform(prefix), 1, value_ptr(lightColors[i]));
+				prefix = "lightIntensity[" + to_string(i) + "]";
+				glUniform1f(prog2->getUniform(prefix), lightIntensities[i]);
 			}
-			else { // Draw the depth map texture to a quad for visualization
-				DebugProg->bind();
-				glActiveTexture(GL_TEXTURE0);
-				glBindTexture(GL_TEXTURE_2D, depthMap);
-				glUniform1i(DebugProg->getUniform("texBuf"), 0);
+			prog2->unbind();
+		}
 
-				glEnableVertexAttribArray(0); // Now we actually draw the quad
-				glBindBuffer(GL_ARRAY_BUFFER, quad_vertexbuffer);
-				glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
-				glDrawArrays(GL_TRIANGLES, 0, 6);
-				glDisableVertexAttribArray(0);
-				DebugProg->unbind();
+		if (prog2_enemy) {
+			prog2_enemy->bind();
+			glUniformMatrix4fv(prog2_enemy->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
+			glUniformMatrix4fv(prog2_enemy->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
+			glUniform1i(prog2_enemy->getUniform("numLights"), numActiveLights);
+			for (int i = 0; i < numActiveLights; ++i) {
+				string prefix = "lightPos[" + to_string(i) + "]";
+				glUniform3fv(prog2_enemy->getUniform(prefix), 1, value_ptr(lightPositions[i]));
+				prefix = "lightColor[" + to_string(i) + "]";
+				glUniform3fv(prog2_enemy->getUniform(prefix), 1, value_ptr(lightColors[i]));
+				prefix = "lightIntensity[" + to_string(i) + "]";
+				glUniform1f(prog2_enemy->getUniform(prefix), lightIntensities[i]);
 			}
-		}
-		else { // Render the scene like normal with shadow mapping
-			ShadowProg->bind();
-
-			// Setup shadow mapping
-			glActiveTexture(GL_TEXTURE10);
-			glBindTexture(GL_TEXTURE_2D, depthMap); // Bind shadow map texture
-			glUniform1i(ShadowProg->getUniform("shadowDepth"), 10); // Set uniform for shadow map
-
-			// Set light and camera uniforms
-			glUniform3f(ShadowProg->getUniform("lightDir"), lightDir.x, lightDir.y, lightDir.z); // Set light direction
-			glUniform3f(ShadowProg->getUniform("lightColor"), 1.0f, 1.0f, 1.0f); // White light
-			glUniform1f(ShadowProg->getUniform("lightIntensity"), 1.0f); // Full intensity
-			glUniform3fv(ShadowProg->getUniform("cameraPos"), 1, glm::value_ptr(eye));
-
-			setCameraProjectionFromStack(ShadowProg, Projection);
-			setCameraViewFromStack(ShadowProg, View);
-
-			LSpace = LO * LV;
-			glUniformMatrix4fv(ShadowProg->getUniform("LV"), 1, GL_FALSE, value_ptr(LSpace)); // Set light space matrix
-
-			drawMainScene(ShadowProg, Model, animTime); // Draw the entire scene with shadows
-
-			ShadowProg->unbind();
+			prog2_enemy->unbind();
 		}
 
-		if (Config::SHOW_MINIMAP) { // Draw the mini map
-			drawMiniMap(ShadowProg, Model, height);
+		// Update assimptexProg (Textured/Animated Lighting)
+		if (assimptexProg) {
+			assimptexProg->bind();
+			glUniformMatrix4fv(assimptexProg->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
+			glUniformMatrix4fv(assimptexProg->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
+			glUniform1i(assimptexProg->getUniform("numLights"), numActiveLights);
+			for (int i = 0; i < numActiveLights; ++i) {
+				string prefix = "lightPos[" + to_string(i) + "]";
+				glUniform3fv(assimptexProg->getUniform(prefix), 1, value_ptr(lightPositions[i]));
+				prefix = "lightColor[" + to_string(i) + "]";
+				glUniform3fv(assimptexProg->getUniform(prefix), 1, value_ptr(lightColors[i]));
+				prefix = "lightIntensity[" + to_string(i) + "]";
+				glUniform1f(assimptexProg->getUniform(prefix), lightIntensities[i]);
+			}
+			assimptexProg->unbind();
+		}
+		//TODO: sort them by z value
+		if (particleProg) {
+			particleProg->bind();
+			glPointSize(10.0f);
+			glUniformMatrix4fv(particleProg->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
+			glUniformMatrix4fv(particleProg->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
+			//particleAlphaTex->bind(particleProg->getUniform("alphaTexture"));
+			particleProg->unbind();
+		}
+		// --- Draw Scene Elements ---
+		// ORDER MATTERS for transparency, but with opaque objects and depth testing, it's less critical.
+		// Drawing grounds first is logical.
+
+		 // these four, walls, ground, library and boss room need to be called before Occlusion Query
+		drawBorderWalls(assimptexProg, Model); // Draw the borders
+
+		drawLibGrnd(assimptexProg, Model); // Draw the library ground
+
+
+		// 2. Draw the Static Library Shelves
+		drawLibrary(assimptexProg, Model, true);
+
+		drawBossRoom(assimptexProg, Model, true); // Draw the boss room
+
+		// disable color writes
+		glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+		// disable depth writes
+		glDepthMask(GL_FALSE);
+
+		// begin occlusion query
+		glBeginQuery(GL_ANY_SAMPLES_PASSED, occlusionQueryID);
+
+		// Draw a small sphere at the player's position
+		drawOcclusionBoxAtPlayer(prog2, Model);
+
+		glEndQuery(GL_ANY_SAMPLES_PASSED);
+
+		GLuint resultofQuery = 0;
+		glGetQueryObjectuiv(occlusionQueryID, GL_QUERY_RESULT, &resultofQuery);
+		visible = resultofQuery;
+
+		// re-enable color writes and depth writes
+		glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+		glDepthMask(GL_TRUE);
+
+
+		drawPlayer(assimptexProg, Model, animTime);
+
+		// 4. Draw Falling/Interactable Books
+		drawBooks(prog2, Model);
+
+		// 5. Draw Enemies
+		drawEnemies(prog2_enemy, Model);
+
+		// 6. Draw Collectible Orbs
+		drawOrbs(prog2, Model);
+
+		drawProjectiles(prog2, Model);
+
+		drawBossProjectiles(prog2, Model);
+
+
+
+		/*
+		//Test drawing cat model
+		drawCat(assimptexProg, Model);
+		*/
+
+		// drawSkybox(assimptexProg, Model); // Draw the skybox last
+
+		//testing drawing lock and key
+		if(unlock){
+			updateLock(prog2, Model);
+		}
+		else{
+			drawLock(prog2, Model);
 		}
 
-		if (Config::SHOW_HEALTHBAR) { // Draw the health bar
-			drawHealthBar(hudProg);
-			drawEnemyHealthBars(hudProg, View->topMatrix(), Projection->topMatrix());
-			if (bossfightstarted && !bossfightended) drawBossHealthBar(View->topMatrix(), Projection->topMatrix());
+		// orbCollectibles.emplace_back(sphere, orbSpawnPos, book.orbScale, book.orbColor);
+		// drawKey(prog2, Model);
+
+
+
+		drawBossEnemy(prog2, Model); // Draw the boss enemy
+
+
+
+		#if SHOW_HEALTHBAR
+		drawHealthBar();
+		drawEnemyHealthBars(View->topMatrix(), Projection->topMatrix());
+
+		if (bossfightstarted && !bossfightended) {
+			drawBossHealthBar(View->topMatrix(), Projection->topMatrix());
 		}
-		
-		if (player->getDamageTimer() > 0.0f) { // red flash
+		#endif
+
+		// red flash
+		if (player->getDamageTimer() > 0.0f) {
 			player->setDamageTimer(player->getDamageTimer() - frametime);
+
 			float alpha = player->getDamageTimer() / Config::PLAYER_HIT_DURATION;
-			drawDamageIndicator(redFlashProg, alpha);
-		}
-		else if (!player->isAlive() && !debugCamera) { // If player is dead, show red flash
-			
+			// cout << "Red flash alpha: " << alpha << endl;
+			// glEnable(GL_DEPTH_TEST);
+
+			drawDamageIndicator(alpha);
+    }
+// =======
+// 		if (player->isAlive()) {
+// 			// red flash
+// 			if (redFlashTimer > 0.0f) {
+// 				redFlashTimer -= frametime;
+
+// 				float alpha = redFlashTimer / redFlashDuration;
+// 				// cout << "Red flash alpha: " << alpha << endl;
+// 				// glEnable(GL_DEPTH_TEST);
+
+// 				drawDamageIndicator(alpha);
+// 			}
+// 		}
+		else if (!player->isAlive() && !debugCamera) {
+			// If player is dead, show red flash
 			movingForward = false;
 			movingBackward = false;
 			movingLeft = false;
 			movingRight = false;
-			drawDamageIndicator(redFlashProg, 1.0f);
+			drawDamageIndicator(1.0f);
 		}
+
+		/*MINI MAP*/
+		prog2->bind();
+			glClear( GL_DEPTH_BUFFER_BIT);
+			glViewport(0, height-350, 350, 350);
+			SetOrthoMatrix(prog2);
+			SetTopView(prog2); /*MINI MAP*/
+			SetMaterialMan(prog2,6 );
+			//drawScene(prog2, CULL);
+			/* draws */
+			// drawBorder(prog2, Model);
+
+			// drawDoor(prog2, Model);
+			// drawBooks(prog2, Model);
+			// drawEnemies(prog2, Model);
+			drawLibrary(prog2, Model, false);
+			drawBossRoom(prog2, Model, false);
+			drawBossEnemy(prog2, Model);
+			// drawOrbs(prog2, Model);
+			drawMiniPlayer(prog2, Model);
+			drawBorderWalls(prog2, Model);
+			// SetMaterialMan(prog2,6 );
+			drawLibGrnd(prog2, Model);
+			drawBossRoom(prog2, Model, false); //boss room not drawing
+
+
+
+			//stripped down player draw
+
+			// if (SD)
+			// 	drawOccupied(prog2);
+		prog2->unbind();
+
+		prog2_enemy->bind();
+			glClear( GL_DEPTH_BUFFER_BIT);
+			glViewport(0, height-300, 300, 300);
+			SetOrthoMatrix(prog2_enemy);
+			SetTopView(prog2_enemy); /*MINI MAP*/
+			drawEnemies(prog2_enemy, Model);
+
+		prog2_enemy->unbind();
 
 		// --- Cleanup ---
 		Projection->popMatrix();
@@ -3151,156 +3860,6 @@ public:
 		glBindVertexArray(0);
 		glUseProgram(0);
 	}
-
-	void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods)
-	{
-		if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
-		{
-			glfwSetWindowShouldClose(window, GL_TRUE);
-		}
-		if (player->isAlive() || debugCamera) {
-			if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_W) != GLFW_RELEASE) {
-				manState = Man_State::WALKING;
-
-				//Movement Variable
-				movingForward = true;
-				if (debug_pos) {
-					cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
-					cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
-				}
-			}
-			else if (key == GLFW_KEY_W && action == GLFW_RELEASE) {
-				manState = Man_State::STANDING;
-				//Movement Variable
-				movingForward = false;
-			}
-			if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_S) != GLFW_RELEASE) {
-				manState = Man_State::WALKING;
-
-				//Movement Variable
-				movingBackward = true;
-
-				if (debug_pos) {
-					cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
-					cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
-				}
-
-			}
-			else if (key == GLFW_KEY_S && action == GLFW_RELEASE) {
-				manState = Man_State::STANDING;
-				//Movement Variable
-				movingBackward = false;
-			}
-			if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_A) != GLFW_RELEASE) {
-				manState = Man_State::WALKING;
-
-				//Movement Variable
-				movingLeft = true;
-
-				if (debug_pos) {
-					cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
-					cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
-				}
-
-			}
-			else if (key == GLFW_KEY_A && action == GLFW_RELEASE) {
-				manState = Man_State::STANDING;
-				//Movement Variable
-				movingLeft = false;
-			}
-			if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_D) != GLFW_RELEASE) {
-				manState = Man_State::WALKING;
-
-				//Movement Variable
-				movingRight = true;
-
-				if (debug_pos) {
-					cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
-					cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
-				}
-			}
-			else if (key == GLFW_KEY_D && action == GLFW_RELEASE) {
-				manState = Man_State::STANDING;
-				//Movement Variable
-				movingRight = false;
-			}
-		}
-		if (key == GLFW_KEY_Z && action == GLFW_PRESS) {
-			glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-		}
-		if (key == GLFW_KEY_Z && action == GLFW_RELEASE) {
-			glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-		}
-		if (key == GLFW_KEY_F && action == GLFW_PRESS) { // Interaction Key
-			interactWithBooks();
-		}
-		if (key == GLFW_KEY_L && action == GLFW_PRESS) {
-			cursor_visable = !cursor_visable;
-			if (cursor_visable) {
-				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-			}
-			else {
-				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-			}
-		}
-		if (key == GLFW_KEY_U && action == GLFW_PRESS) {
-			unlocked = true;
-		}
-		if (key == GLFW_KEY_K && action == GLFW_PRESS) {
-			debugCamera = !debugCamera;
-		}
-		if (!player->isAlive() && key == GLFW_KEY_SPACE && action == GLFW_PRESS) {
-			restartGen = true;
-		}
-		if (key == GLFW_KEY_O && action == GLFW_PRESS) { // toggle debug light
-			Config::DEBUG_LIGHTING = !Config::DEBUG_LIGHTING;
-		}
-		if (key == GLFW_KEY_P && action == GLFW_PRESS) { // toggle debug geom
-			Config::DEBUG_GEOM = !Config::DEBUG_GEOM;
-		}
-	}
-
-	void scrollCallback(GLFWwindow* window, double deltaX, double deltaY)
-	{
-		theta = theta + deltaX * glm::radians(Config::CAMERA_SCROLL_SENSITIVITY_DEGREES);
-		phi = phi - deltaY * glm::radians(Config::CAMERA_SCROLL_SENSITIVITY_DEGREES);
-
-		if (phi > glm::radians(Config::CAMERA_PHI_MAX_DEGREES)) {
-			phi = glm::radians(Config::CAMERA_PHI_MAX_DEGREES);
-		}
-		if (phi < glm::radians(Config::CAMERA_PHI_MIN_DEGREES)) {
-			phi = glm::radians(Config::CAMERA_PHI_MIN_DEGREES);
-		}
-
-		updateCameraVectors();
-	}
-
-	void mouseMoveCallback(GLFWwindow* window, double xpos, double ypos) {
-		if (!mouseIntialized) {
-			lastX = xpos;
-			lastY = ypos;
-			mouseIntialized = true;
-			return;
-		}
-
-		float deltaX = xpos - lastX;
-		float deltaY = lastY - ypos;
-		lastX = xpos;
-		lastY = ypos;
-
-		theta = theta + deltaX * Config::CAMERA_MOUSE_SENSITIVITY;
-		phi = phi + deltaY * Config::CAMERA_MOUSE_SENSITIVITY;
-
-		if (phi > glm::radians(Config::CAMERA_PHI_MAX_DEGREES)) {
-			phi = glm::radians(Config::CAMERA_PHI_MAX_DEGREES);
-		}
-		if (phi < radians(-80.0f))
-		{
-			phi = radians(-80.0f);
-		}
-
-		updateCameraVectors();
-	}
 };
 
 void mouseMoveCallbackWrapper(GLFWwindow* window, double xpos, double ypos) {
@@ -3308,7 +3867,8 @@ void mouseMoveCallbackWrapper(GLFWwindow* window, double xpos, double ypos) {
 	app->mouseMoveCallback(window, xpos, ypos);
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[])
+{
 	// Where the resources are loaded from
 	std::string resourceDir = "../resources";
 
@@ -3336,6 +3896,9 @@ int main(int argc, char *argv[]) {
 	windowManager->init(640, 480);
 	windowManager->setEventCallbacks(application);
 	application->windowManager = windowManager;
+
+
+	// PlaySound(TEXT("C:/Users/trigu/OneDrive/Desktop/476-project/resources/Breaking_Ground.wav"), NULL, SND_FILENAME|SND_ASYNC|SND_LOOP);
 
 	glfwSetInputMode(windowManager->getHandle(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 	glfwSetWindowUserPointer(windowManager->getHandle(), application);
@@ -3372,12 +3935,13 @@ int main(int argc, char *argv[]) {
 		float AnimcurrFrame = glfwGetTime();
 		application->AnimDeltaTime = AnimcurrFrame - application->AnimLastFrame;
 		application->AnimLastFrame = AnimcurrFrame;
-		
-		application->render(deltaTime, application->AnimDeltaTime); // Render scene
+		// Render scene.
+		application->render(deltaTime, application->AnimDeltaTime);
 
-		glfwSwapBuffers(windowManager->getHandle()); // Swap front and back buffers
-		
-		glfwPollEvents(); // Poll for and process events
+		// Swap front and back buffers
+		glfwSwapBuffers(windowManager->getHandle());
+		// Poll for and process events
+		glfwPollEvents();
 	}
 
 	// Quit program
