@@ -77,6 +77,7 @@ public:
 	// Textures
 	shared_ptr<Texture> borderWallTex;
 	shared_ptr<Texture> libraryGroundTex;
+
 	shared_ptr<Texture> carpetTex;
 	shared_ptr<Texture> particleAlphaTex;
 
@@ -275,6 +276,8 @@ public:
 				radius = glm::min(desiredRadius, radius + step);
 				wasVisibleLastFrame = true; // Mark as visible
 			}
+			if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_A) != GLFW_RELEASE) {
+				manState = Man_State::WALKING;
 
 			radius = glm::mix(radius, finalRadius, 0.5f); // Smoothly interpolate radius
 
@@ -450,7 +453,8 @@ public:
 		updateCameraVectors();
 
 		borderWallTex = make_shared<Texture>();
-		borderWallTex->setFilename(resourceDirectory + "/sky_sphere/sky_sphere.fbm/infinite_lib2.png");
+		// borderWallTex->setFilename(resourceDirectory + "/sky_sphere/sky_sphere.fbm/infinite_lib2.png");
+		borderWallTex->setFilename(resourceDirectory + "/Wall/textures/mossCastle.png");
 		borderWallTex->init();
 		borderWallTex->setUnit(0);
 		borderWallTex->setWrapModes(GL_REPEAT, GL_REPEAT);
@@ -595,6 +599,13 @@ public:
 		// health bar
 		healthBar = new AssimpModel(resourceDirectory + "/Quad/hud_quad.obj");
 		healthBar->assignTexture("texture_diffuse", resourceDirectory + "/healthbar.bmp");
+
+		//key
+		key = new AssimpModel(resourceDirectory + "/Key_and_Lock/key.obj");
+
+		//lock
+		lock = new AssimpModel(resourceDirectory + "/Key_and_Lock/lockCopy.obj");
+		lockHandle = new AssimpModel(resourceDirectory + "/Key_and_Lock/lockHandle.obj");
 
 		//key
 		key = new AssimpModel(resourceDirectory + "/Key_and_Lock/key.obj");
@@ -1055,11 +1066,25 @@ public:
 			0, 0, 1
 		};
 
+		// float WallTex[] = {
+		// 	0, 0,
+		// 	1, 0,
+		// 	1, 1,
+		// 	0, 1
+		// };
+
+		// Repeating wall texture
+		float texRepeatPerUnit = 0.2f;
+
+		// Compute number of times to repeat the texture
+		float texRepeatX = length * texRepeatPerUnit;
+		float texRepeatY = height * texRepeatPerUnit;
+
 		float WallTex[] = {
-			0, 0,
-			1, 0,
-			1, 1,
-			0, 1
+			0.0f,         0.0f,
+			texRepeatX,   0.0f,
+			texRepeatX,   texRepeatY,
+			0.0f,         texRepeatY
 		};
 
 		unsigned short idx[] = { 0, 1, 2, 0, 2, 3 };
@@ -1151,6 +1176,7 @@ public:
 				glBindTexture(GL_TEXTURE_2D, border.texture->getID());
 				glUniform1i(shader->getUniform("TexAlb"), 0);
 				glUniform1i(shader->getUniform("hasTexAlb"), 1); // Set texture uniform
+
 			}
 
 			Model->pushMatrix();
@@ -2058,7 +2084,7 @@ public:
 
 		// first, collide against any border walls
 		for (const auto& w : borderWalls) {
-			// compute the two corners of the wall’s rectangle
+			// compute the two corners of the wallï¿½s rectangle
 			glm::vec3 p0 = w.position;
 			glm::vec3 p1 = w.position + w.direction * w.length;
 			glm::vec3 minCorner = glm::min(p0, p1);
@@ -2536,7 +2562,6 @@ public:
 			gen->drawMe(shader);
 
 			glDisable(GL_BLEND); // Restore state
-
 			particleAlphaTex->unbind();
 		Model->popMatrix();
 		shader->unbind();
