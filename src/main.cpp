@@ -371,6 +371,7 @@ public:
 		}
 		if(key == GLFW_KEY_U && action == GLFW_PRESS){
 			unlock = true;
+			canFightboss = true;
 		}
 		if (key == GLFW_KEY_K && action == GLFW_PRESS) {
 			debugCamera = !debugCamera;
