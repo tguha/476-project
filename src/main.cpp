@@ -75,6 +75,9 @@ public:
 	GLuint quad_VertexArrayID;
 	GLuint quad_vertexbuffer;
 
+	float exposure = 1.0f;
+	float saturation = 1.0f;
+
 	// Textures
 	shared_ptr<Texture> borderWallTex;
 	shared_ptr<Texture> libraryGroundTex;
@@ -411,7 +414,6 @@ public:
 		ShadowProg->addUniform("LV");
 		ShadowProg->addUniform("lightDir");
 		ShadowProg->addUniform("lightColor");
-		ShadowProg->addUniform("lightIntensity");
 		ShadowProg->addUniform("cameraPos");
 		ShadowProg->addAttribute("vertPos");
 		ShadowProg->addAttribute("vertNor");
@@ -431,6 +433,9 @@ public:
 		ShadowProg->addUniform("enemyAlpha");
 
 		ShadowProg->addUniform("player");
+
+		ShadowProg->addUniform("exposure");
+		ShadowProg->addUniform("saturation");
 
 		for (int i = 0; i < Config::MAX_BONES; i++) {
 			ShadowProg->addUniform("finalBonesMatrices[" + to_string(i) + "]");
@@ -3858,9 +3863,10 @@ public:
 
 			// Set light and camera uniforms
 			glUniform3f(ShadowProg->getUniform("lightDir"), lightDir.x, lightDir.y, lightDir.z); // Set light direction
-			glUniform3f(ShadowProg->getUniform("lightColor"), 1.0f, 1.0f, 1.0f); // White light
-			glUniform1f(ShadowProg->getUniform("lightIntensity"), 1.0f); // Full intensity
+			glUniform3f(ShadowProg->getUniform("lightColor"), 1.0f, 1.0f, 0.7f); // White light
 			glUniform3fv(ShadowProg->getUniform("cameraPos"), 1, glm::value_ptr(eye));
+			glUniform1f(ShadowProg->getUniform("exposure"), exposure);
+			glUniform1f(ShadowProg->getUniform("saturation"), saturation);
 
 			setCameraProjectionFromStack(ShadowProg, Projection);
 			setCameraViewFromStack(ShadowProg, View);
@@ -3965,6 +3971,12 @@ public:
 		{
 			glfwSetWindowShouldClose(window, GL_TRUE);
 		}
+
+		if (key == GLFW_KEY_EQUAL && action == GLFW_PRESS) exposure += 0.1f;
+		if (key == GLFW_KEY_MINUS && action == GLFW_PRESS) exposure -= 0.1f;
+
+		if (key == GLFW_KEY_1 && action == GLFW_PRESS) saturation -= 0.1f;
+		if (key == GLFW_KEY_2 && action == GLFW_PRESS) saturation += 0.1f;
 
 		if (key == GLFW_KEY_F11 && action == GLFW_PRESS)
 		{

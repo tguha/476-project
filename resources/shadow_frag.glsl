@@ -15,13 +15,15 @@ uniform vec3 MatEmit;
 uniform bool hasMaterial;
 
 uniform vec3 lightColor;
-uniform float lightIntensity;
 uniform vec3 lightDir;
 uniform vec3 cameraPos;
 
 uniform float enemyAlpha;
 
 uniform bool player;
+
+uniform float exposure;
+uniform float saturation;
 
 in pass_struct {
    vec3 fPos;
@@ -65,6 +67,11 @@ float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness) {
     return ggx1 * ggx2;
 }
 
+vec3 toneReinhard(vec3 x) {
+    x *= exposure;
+    return x / (x + vec3(1.0));
+}
+
 float ShadowCalculation(vec4 LSfPos) {
 	float bias = .005;
 	vec3 shiftedCords = (LSfPos.xyz + vec3(1.0)) * 0.5; // shift the coordinates from -1, 1 to 0 ,1
@@ -91,7 +98,7 @@ void main() {
     // Albedo
     vec3 albedo = hasMaterial ? MatAlbedo : vec3(1.0);
     vec3 sampleA = texture(uMaps[0], info_struct.vTexCoord).rgb;
-    bool hasAlbedoTex = any( lessThan( sampleA, vec3(0.99) ) );
+    bool hasAlbedoTex = any( lessThan( sampleA, vec3(0.999) ) );
     if (hasAlbedoTex) {
         albedo = sampleA;
     }
@@ -99,21 +106,21 @@ void main() {
     // Roughness
     float rough = hasMaterial ? MatRough : 1.0;
     float sampleR = texture(uMaps[2], info_struct.vTexCoord).r;
-    if (sampleR < 0.99) {
+    if (sampleR < 0.999) {
         rough = sampleR;
     }
 
     // Metalness
-    float metal = hasMaterial ? MatMetal : 0.0;   // <- fixed!
+    float metal = hasMaterial ? MatMetal : 0.0;
     float sampleM = texture(uMaps[3], info_struct.vTexCoord).r;
-    if (sampleM < 0.99) {
+    if (sampleM < 0.999) {
         metal = sampleM;
     }
 
     // Emission
-    vec3 emit = hasMaterial ? MatEmit : vec3(0.0); // <- fixed!
+    vec3 emit = hasMaterial ? MatEmit : vec3(0.0);
     vec3 sampleE = texture(uMaps[5], info_struct.vTexCoord).rgb;
-    if (any( greaterThan(sampleE, vec3(0.01)) )) {
+    if (any( greaterThan(sampleE, vec3(0.001)) )) {
         emit = sampleE;
     }
 
@@ -141,7 +148,7 @@ void main() {
         emit   = texture(uMaps[5], info_struct.vTexCoord).rgb;
     }
 
-    // build your base reflectivity using the specular tint map
+    // build base reflectivity using the specular tint map
     vec3  F0 = mix(spec, albedo, metal);
 
     // Cook–Torrance lighting
@@ -158,21 +165,40 @@ void main() {
     vec3  kS       = F;
     vec3  kD       = (1.0 - kS) * (1.0 - metal);
     float NdotL    = max(dot(normal, L), 0.0);
+
+    vec3 ambient   = 0.015 * albedo;
+
     vec3  Lo       = (kD * albedo / PI + specular) * lightColor * NdotL;
     
     float shadow   = ShadowCalculation(info_struct.fPosLS);
     shadow         = min(shadow, 0.6); // clamps max shadow to 60% to increase visibility in dark
-    vec3  color    = (1.0 - shadow) * Lo + emit;
+    vec3 hdrColor  = ambient + (1.0 - shadow) * Lo + emit;
 
-    // gamma-correct
-    color = pow(color, vec3(1.0/2.2));
+    // --- Reinhard tone mapping (exposure) ---
+    vec3 mapped  = toneReinhard(hdrColor);
+
+    // then gamma correction
+    mapped = pow(mapped, vec3(1.0/2.2));
+
+    // --- Saturation ---
+    vec3 c = mapped; 
+    // compute luminance (perceptual grayscale)
+    float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));  
+    vec3 gray = vec3(lum);
+    // saturation factor >1 will oversaturate, <1 desaturates
+    c = mix(gray, c, saturation);
+
+    float rimPower = 2.0;
+    float rim = pow(1.0 - max(dot(normal, V), 0.0), rimPower);
+    vec3 rimColor = vec3(1.0) * 0.1;        // tweak color & intensity
+    c += rim * rimColor;
 
     // enemy tint
     if (enemyAlpha != 1.0) {
-        color = mix(color, vec3(0.7,0.1,0.1), enemyAlpha);
+        c = mix(c, vec3(0.7,0.1,0.1), enemyAlpha);
     }
 
-    FragColor = vec4(color, 1.0);
+    FragColor = vec4(c, 1.0);
 }
 
 /*
