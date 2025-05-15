@@ -27,8 +27,8 @@ namespace Config {
     constexpr float ORTHO_SIZE = 60.0f;
 
     // UI
-    constexpr bool SHOW_HEALTHBAR = false;
-	constexpr bool SHOW_MINIMAP = false;
+    constexpr bool SHOW_HEALTHBAR = true;
+	constexpr bool SHOW_MINIMAP = true;
     const std::string RESOURCE_DIRECTORY_PREFIX = "../resources"; // Default, can be overridden
 
     // Default Window Dimensions

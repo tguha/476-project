@@ -404,8 +404,6 @@ public:
 		DepthProgDebug->addUniform("LV");
 		DepthProgDebug->addUniform("M");
 		DepthProgDebug->addAttribute("vertPos");
-		DepthProgDebug->addAttribute("vertNor");
-		DepthProgDebug->addAttribute("vertTex");
 
 		ShadowProg->addUniform("P");
 		ShadowProg->addUniform("V");
@@ -435,7 +433,7 @@ public:
 		ShadowProg->addUniform("player");
 
 		for (int i = 0; i < Config::MAX_BONES; i++) {
-			ShadowProg->addUniform("finalBoneMatrices[" + to_string(i) + "]");
+			ShadowProg->addUniform("finalBonesMatrices[" + to_string(i) + "]");
 		}
 		ShadowProg->addAttribute("boneIds");
 		ShadowProg->addAttribute("weights");
@@ -477,7 +475,7 @@ public:
 		redFlashProg->init();
 		redFlashProg->addUniform("projection");
 		redFlashProg->addUniform("model");
-		redFlashProg->addUniform("color");
+		//redFlashProg->addUniform("color");
 		redFlashProg->addUniform("alpha");
 
 		updateCameraVectors();
@@ -785,9 +783,9 @@ public:
 				break;
 			case Material::orb_glowing_blue:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.1f, 0.2f, 0.5f);
-				glUniform1f(shader->getUniform("MatRough"), 1.0f);
-				glUniform1f(shader->getUniform("MatMetal"), 1.0f);
-				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				glUniform1f(shader->getUniform("MatRough"), 0.7f);
+				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
+				glUniform3f(shader->getUniform("MatEmit"), 0.1f, 0.2f, 1.0f);
 				break;
 			case Material::orb_glowing_red:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.5f, 0.1f, 0.1f);
@@ -1294,8 +1292,10 @@ public:
 
 		// Animation update
 
-		catwizard_animator->SetCurrentAnimation(stickfigure_anim);
-		catwizard_animator->UpdateAnimation(1.5f * animTime);
+		if (animTime != 0.0) {
+			catwizard_animator->SetCurrentAnimation(stickfigure_anim);
+			catwizard_animator->UpdateAnimation(1.5f * animTime);
+		}
 
 		/*if (manState == Man_State::WALKING) {
 		if (manState == Man_State::WALKING) {
@@ -1346,7 +1346,10 @@ public:
 		if (curS->hasUniform("hasBones")) glUniform1i(curS->getUniform("hasBones"), GL_FALSE);
 		curS->unbind();
 
-		if (curS == ShadowProg) drawParticles(particleSystem, particleProg, Model); // draw particles if full scene render
+		if (curS == ShadowProg) {
+			cout << "Drawing particles" << endl;
+			drawParticles(particleSystem, particleProg, Model); // draw particles if full scene render
+		}
 
 		Model->popMatrix();
 	}
@@ -1724,7 +1727,7 @@ public:
 
 				// Set body material
 				SetMaterial(shader, Material::blue_body);
-				glUniform1f(shader->getUniform("enemyAlpha"), enemy->getDamageTimer() / Config::ENEMY_HIT_DURATION);
+				if (shader->hasUniform("enemyAlpha")) glUniform1f(shader->getUniform("enemyAlpha"), enemy->getDamageTimer() / Config::ENEMY_HIT_DURATION);
 
 				setModel(shader, Model);
 				iceElemental->Draw(shader); // Draw the scaled sphere as the body
@@ -2046,9 +2049,9 @@ public:
 	void drawBossRoom(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model, bool cullFlag) {
 		if (!shader || !Model) return;
 		shader->bind();
-		if (shader == ShadowProg) {
+		/*if (shader == ShadowProg) {
 			glUniform1i(shader->getUniform("hasMaterial"), 0);
-		}
+		}*/
 		for (int z = 0; z < bossGrid.getSize().y; ++z) {
 			for (int x = 0; x < bossGrid.getSize().x; ++x) {
 				glm::ivec2 gridPos(x, z);
@@ -2246,10 +2249,7 @@ public:
 			}
 			Model->popMatrix(); // Pop boss body transform
 		}
-
 		shader->unbind();
-
-
 	}
 
 	void drawDoor(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
@@ -3039,10 +3039,11 @@ public:
 		//glUniform1i(curS->getUniform("hasTexture"), 1); //0.6f, 0.2f, 0.8f
 		//0.8f, 0.4f, 0.2f
 		// 0.95, 0.78, 0.14
-		glUniform3f(curS->getUniform("MatAmb"), 0.95f, 0.78f, 0.14f);
+		/*glUniform3f(curS->getUniform("MatAmb"), 0.95f, 0.78f, 0.14f);
 		glUniform3f(curS->getUniform("MatDif"), 0.95f, 0.78f, 0.14f);
 		glUniform3f(curS->getUniform("MatSpec"), 0.3f, 0.3f, 0.3f);
-		glUniform1f(curS->getUniform("MatShine"), 8.0f);
+		glUniform1f(curS->getUniform("MatShine"), 8.0f);*/
+		SetMaterial(curS, Material::gold);
 		setModel(curS, Model);
 		//stickfigure_running->Draw(curS);
 		sphere->Draw(curS);
@@ -3735,35 +3736,6 @@ public:
 		glDepthMask(GL_TRUE);
 	}
 
-	// Draw the mini map
-	void drawMiniMap(const shared_ptr<Program>& prog, shared_ptr<MatrixStack>& Model, int height) {
-		prog->bind();
-		glClear(GL_DEPTH_BUFFER_BIT);
-		glViewport(0, height - 300, 300, 300);
-
-		SetOrthoMatrix(prog);
-		SetTopView(prog);
-
-		// Draw mini map elements
-		/*drawDoor(prog, Model, true);
-		drawBooks(prog, Model, true);
-		drawEnemies(prog, Model, true);*/
-		drawLibrary(prog, Model, false);
-		drawBossRoom(prog, Model, false);
-		drawBossEnemy(prog, Model);
-		drawMiniPlayer(prog, Model);
-		drawBorderWalls(prog, Model);
-		drawLibGrnd(prog, Model);
-		drawBossRoom(prog, Model, false); //boss room not drawing
-
-		glClear(GL_DEPTH_BUFFER_BIT);
-		glViewport(0, height - 300, 300, 300);
-		SetTopView(prog);
-		drawEnemies(prog, Model);
-
-		prog->unbind();
-	}
-
 	void render(float frametime, float animTime) {
 		int width, height;
 		glfwGetFramebufferSize(windowManager->getHandle(), &width, &height); // Get current frame buffer size
@@ -3902,6 +3874,7 @@ public:
 		}
 
 		if (Config::SHOW_HEALTHBAR) { // Draw the health bar
+			//cout << "Drawing healthbar" << endl;
 			drawHealthBar();
 			drawEnemyHealthBars(View->topMatrix(), Projection->topMatrix());
 
@@ -3943,6 +3916,7 @@ public:
 
 		if (Config::SHOW_MINIMAP) { // Draw the mini map
 			ShadowProg->bind();
+			//cout << "Drawing minimap" << endl;
 			glClear(GL_DEPTH_BUFFER_BIT);
 			glViewport(0, height - 350, 350, 350);
 			SetOrthoMatrix(ShadowProg);
@@ -3971,10 +3945,6 @@ public:
 
 			// if (SD)
 			// 	drawOccupied(prog2);
-			glClear(GL_DEPTH_BUFFER_BIT);
-			glViewport(0, height - 300, 300, 300);
-			SetOrthoMatrix(ShadowProg);
-			SetTopView(ShadowProg); /*MINI MAP*/
 			drawEnemies(ShadowProg, Model);
 
 			ShadowProg->unbind();
