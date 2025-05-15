@@ -12,16 +12,16 @@ bool Enemy::isHit() const {
 
 void Enemy::setHit(bool hit) {
     this->hit = hit;
-    setDamageTimer(Config::ENEMY_HIT_DURATION);
 }
 
 void Enemy::moveTowardsPlayer(const glm::vec3& playerPosition, float deltaTime) {
-    
+
     vec3 direction = glm::normalize(playerPosition - this->getPosition());
     direction.y = 0; // Keep the enemy on the same Y level
     direction = glm::normalize(direction); // Normalize the direction vector
     this->move(direction, deltaTime);
-    this->setRotY(atan2(direction.x, direction.z) * 180.0f / 3.14); // Rotate towards the player
+    this->setRotY(atan2(direction.x, direction.z) * 180.0f / glm::pi<float>()); // Rotate towards the player
+
 }
 
 void Enemy::attack(float damage, float deltaTime) {
@@ -58,11 +58,46 @@ void Enemy::takeDamage(float damage) {
     if (!isAlive()) return; // Can't damage dead entities
 
     this->setHit(true);
+    setDamageTimer(Config::ENEMY_HIT_DURATION);
 
     hitpoints -= damage;
     if (hitpoints <= 0) {
         hitpoints = 0;
         alive = false; // Set alive flag to false
         // Handle entity death visuals/logic here or in derived class override
+    }
+}
+
+void Enemy::update(Player* player, float deltaTime) {
+    // Drop down if not alive
+    if (!isAlive()) {
+        this->setPosition(this->getPosition() - glm::vec3(0.0f, 3.0f, 0.0f));
+        return;
+    }
+
+    // Aggro logic
+    if (glm::distance(this->getPosition(), player->getPosition()) <= this->getAggroRange() || this->isHit()) {
+        setAggro(true);
+    }
+
+    if ((glm::distance(this->getPosition(), player->getPosition()) <= this->meleeRange) && this->isAggro()) {
+        this->meleeAttack(player, deltaTime);
+    }
+
+    // Damage timer countdown
+    if (this->getDamageTimer() > 0.0f) {
+        this->setDamageTimer(this->getDamageTimer() - deltaTime);
+    } else {
+        this->setDamageTimer(0.0f);
+    }
+}
+
+void Enemy::meleeAttack(Player* player, float deltaTime) {
+    
+    if (this->meleeTimer <= 0.0f) {
+        player->takeDamage(this->meleeDamage);
+        this->meleeTimer = this->meleeSpeed;
+    } else {
+        this->meleeTimer -= deltaTime;
     }
 }

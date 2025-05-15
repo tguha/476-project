@@ -151,6 +151,7 @@ public:
     bool collected;
     glm::vec3 color;
     OrbState state = OrbState::SPAWNING;
+    // KeyState key_state = KeyState::SPAWNING;
     glm::vec3 spawnPosition;
     glm::vec3 idlePosition;
     float levitationHeight = 0.6f;
@@ -159,7 +160,7 @@ public:
 
     Collectible(AssimpModel* mdl, const glm::vec3& spawnPos, float scl, const glm::vec3& clr)
         : model(mdl), position(spawnPos), scale(scl), collected(false), color(clr),
-        state(OrbState::LEVITATING), spawnPosition(spawnPos)
+        state(OrbState::LEVITATING),  spawnPosition(spawnPos) //KeyState::LEVITATING  key_state(KeyState::LEVITATING),
     {
         idlePosition = spawnPosition + glm::vec3(0.0f, levitationHeight, 0.0f);
         levitationStartTime = glfwGetTime();
@@ -175,14 +176,14 @@ public:
     }
 
     void updateLevitation(float currentTime) {
-        if (state == OrbState::LEVITATING) {
+        if (state == OrbState::LEVITATING) { //KeyState::LEVITATING
             float elapsedTime = currentTime - levitationStartTime;
             float t = glm::clamp(elapsedTime / levitationDuration, 0.0f, 1.0f);
             t = t * t * (3.0f - 2.0f * t); // Smoothstep
             position = glm::mix(spawnPosition, idlePosition, t);
             updateAABB();
             if (t >= 1.0f) {
-                state = OrbState::IDLE;
+                state = OrbState::IDLE; ////KeyState::IDLE
                 position = idlePosition;
                 updateAABB();
             }

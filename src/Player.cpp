@@ -58,4 +58,22 @@ void Player::castSpell() {
     }
 }
 
-void initPlayer() {}
+void Player::setDamageTimer(float timer) {
+    damageTimer = timer;
+}
+
+float Player::getDamageTimer() {
+    return damageTimer;
+}
+
+void Player::takeDamage(float damage) {
+    if (!isAlive()) return; // Can't damage dead entities
+
+    setDamageTimer(Config::PLAYER_HIT_DURATION);
+
+    hitpoints -= damage;
+    if (hitpoints <= 0) {
+        hitpoints = 0;
+        alive = false; // Set alive flag to false
+    }
+}
