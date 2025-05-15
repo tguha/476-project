@@ -1276,12 +1276,19 @@ public:
 		// --- Collision Check Logic ---
 		for (auto& orb : orbCollectibles) {
 			// Perform collision check ONLY if not collected AND in the IDLE state
-			if (!orb.collected && orb.state == OrbState::IDLE && // <<<--- ADD STATE CHECK
-				checkAABBCollision(playerAABB.min + player->getPosition(), playerAABB.max + player->getPosition(), orb.AABBmin, orb.AABBmax)) {
-				orb.collected = true;
-				// orb.state = OrbState::COLLECTED; // Optionally set state
-				orbsCollectedCount++;
-				std::cout << "Collected a Spell Orb! (" << orbsCollectedCount << ")\n";
+			if (!orb.collected && orb.state == OrbState::IDLE) {//&& // <<<--- ADD STATE CHECK
+				if (Config::DEBUG_ORB_PICKUP) {
+					cout << "player position min: " << (playerAABB.min + player->getPosition()).x << " " << (playerAABB.min + player->getPosition()).y << " " << (playerAABB.min + player->getPosition()).z << endl;
+					cout << "player position max: " << (playerAABB.max + player->getPosition()).x << " " << (playerAABB.max + player->getPosition()).y << " " << (playerAABB.max + player->getPosition()).z << endl;
+					cout << "orb position min: " << orb.AABBmin.x << " " << orb.AABBmin.y << " " << orb.AABBmin.z << endl;
+					cout << "orb position max: " << orb.AABBmax.x << " " << orb.AABBmax.y << " " << orb.AABBmax.z << endl;
+				}
+				if (checkAABBCollision(playerAABB.min + player->getPosition(), playerAABB.max + player->getPosition(), orb.AABBmin, orb.AABBmax)) {
+					orb.collected = true;
+					orb.state = OrbState::COLLECTED;
+					orbsCollectedCount++;
+					std::cout << "Collected a Spell Orb! (" << orbsCollectedCount << ")\n";
+				}
 			}
 		}
 
@@ -1298,7 +1305,7 @@ public:
 			float currentDrawScale = orb.scale; // Use base scale
 
 			if (orb.collected) {
-				// Calculate position behind the player (same logic as before)
+				// Calculate position behind the player
 				float backOffset = 0.4f;
 				float upOffsetBase = 0.6f;
 				float stackOffset = orb.scale * 2.5f;
@@ -1308,11 +1315,10 @@ public:
 				glm::vec3 playerRight = normalize(cross(playerForward, playerUp));
 				float currentUpOffset = upOffsetBase + (collectedOrbDrawIndex * stackOffset);
 				float currentSideOffset = (collectedOrbDrawIndex % 2 == 0 ? -sideOffset : sideOffset);
-				currentDrawPosition = charMove() - playerForward * backOffset
+				currentDrawPosition = player->getPosition() - playerForward * backOffset
 					+ playerUp * currentUpOffset
 					+ playerRight * currentSideOffset;
 				collectedOrbDrawIndex++;
-				// currentDrawScale = orb.scale * 0.8f; // Optional: shrink collected orbs
 			}
 			else {
 				// Use the orb's current position (potentially animated by updateOrbs)
@@ -2032,11 +2038,13 @@ public:
 		glm::vec3 baseMax = stickfigure_running->getBoundingBoxMax();
 
 		// Apply the player's base scale
-		playerAABB.min = baseMin * manScale.x; // Assuming uniform scale for collision box
+		playerAABB.min = baseMin * manScale.x;
 		playerAABB.max = baseMax * manScale.x;
 
-		// Make collision box slightly taller or ensure base is at y=0 locally?
-		// playerAABB.min.y = 0.0f;
+		// Alin box with ground
+		float yOffset = 0.0f - playerAABB.min.y;
+		playerAABB.min.y += yOffset;
+		playerAABB.max.y = 2.0f;
 
 		if (Config::DEBUG_PLAYER_AABB) {
 			cout << "Calculated Player AABB Min: (" << playerAABB.min.x << "," << playerAABB.min.y << "," << playerAABB.min.z << ")" << endl;
@@ -2047,6 +2055,19 @@ public:
 	// Collision Checking Helper
 	bool checkCollisionAt(const glm::vec3& checkPos, const glm::quat& playerOrientation) {
 		if (!book_shelf1 || grid.getSize().x == 0) return false; // safety checks
+
+		// first, collide against any border walls
+		for (const auto& w : borderWalls) {
+			// compute the two corners of the wall’s rectangle
+			glm::vec3 p0 = w.position;
+			glm::vec3 p1 = w.position + w.direction * w.length;
+			glm::vec3 minCorner = glm::min(p0, p1);
+			glm::vec3 maxCorner = glm::max(p0, p1) + glm::vec3(0.0f, w.height, 0.0f);
+			if (checkAABBCollision(
+				playerAABB.min + player->getPosition(),
+				playerAABB.max + player->getPosition(),
+				minCorner, maxCorner)) return true;
+		}
 
 		// Iterate through grid for shelves
 		float gridWorldWidth = Config::GROUND_SIZE * 2.0f;
@@ -2730,7 +2751,7 @@ public:
 				glm::vec3 playerRight = normalize(cross(playerForward, playerUp));
 				float currentUpOffset = upOffsetBase + (collectedKeyDrawIndex * stackOffset);
 				float currentSideOffset = (collectedKeyDrawIndex % 2 == 0 ? -sideOffset : sideOffset);
-				currentDrawPosition = charMove() - playerForward * backOffset
+				currentDrawPosition = player->getPosition() - playerForward * backOffset
 					+ playerUp * currentUpOffset
 					+ playerRight * currentSideOffset;
 				collectedKeyDrawIndex++;

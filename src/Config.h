@@ -19,6 +19,7 @@ namespace Config {
 	constexpr bool DEBUG_SHADER = true; // Sets verbose flag for shaders
     constexpr bool DEBUG_TEX_LOADING = false;
     constexpr bool DEBUG_PLAYER_AABB = false;
+    constexpr bool DEBUG_ORB_PICKUP = false;
 
     // Rendering & Shaders
     constexpr int MAX_BONES = 200;
