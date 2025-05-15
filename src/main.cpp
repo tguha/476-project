@@ -641,7 +641,7 @@ public:
 		particleProg->addUniform("alphaTexture");
 		particleProg->addAttribute("vertPos");
 		particleProg->addAttribute("vertColor");
-		particleProg->addAttribute("vertScale"); // Add this line
+		particleProg->addAttribute("vertScale"); 
 
 		redFlashProg = make_shared<Program>();
 		redFlashProg->setVerbose(true);
@@ -1723,17 +1723,67 @@ public:
 					p_scale_max = 0.3f;
 					break;
 				}
+            // Particle emission for uncollected, idle orbs
+            if (!orb.collected && orb.state == OrbState::IDLE && particleSystem) {
+                float current_particle_system_time = particleSystem->getCurrentTime();
 
-				particleSystem->spawnParticleBurst(orb.position, // Emit from orb center
-					glm::vec3(0, 1, 0), // Emit upwards slowly or randomly
-					current_particles_to_spawn,
-					current_particle_system_time,
-					p_speed_min, p_speed_max,
-					p_spread,
-					p_lifespan_min, p_lifespan_max,
-					p_color_start, p_color_end,
-					p_scale_min, p_scale_max);
-			}
+                float p_speed_min = 0.05f;
+                float p_speed_max = 0.1f;
+                float p_spread = 1.5f; 
+                // lifespans  short so they die quickly and are recycled for other effects
+                float p_lifespan_min = 0.6f; 
+                float p_lifespan_max = 1.2f; 
+
+                // Base particle color (TODO: can be tweaked, maybe slightly transparent)
+                glm::vec4 p_color_start = glm::vec4(orb.color, 0.7f); 
+                glm::vec4 p_color_end = glm::vec4(orb.color, 0.2f);   
+                float p_scale_min = 0.1f;
+                float p_scale_max = 0.25f;
+
+                int current_particles_to_spawn = 15; // Set a fixed number of particles for all orbs
+                // Customize particle aura based on spell type
+                switch (orb.spellType) {
+                    case SpellType::FIRE:
+                        // current_particles_to_spawn = 15; // Increased for density with short life
+                        p_color_start = glm::vec4(1.0f, 0.5f, 0.1f, 0.8f); 
+                        p_color_end = glm::vec4(0.9f, 0.2f, 0.0f, 0.3f);   
+                        p_scale_min = 0.25f; 
+                        p_scale_max = 0.45f;
+                        break;
+                    case SpellType::ICE:
+                        // current_particles_to_spawn = 15; // Increased for density
+                        p_color_start = glm::vec4(0.5f, 0.8f, 1.0f, 0.8f); 
+                        p_color_end = glm::vec4(0.2f, 0.5f, 0.8f, 0.3f);   
+                        p_scale_min = 0.25f;
+                        p_scale_max = 0.45f;
+                        break;
+                    case SpellType::LIGHTNING:
+                        // current_particles_to_spawn = 15; // Increased for density
+                        p_color_start = glm::vec4(1.0f, 1.0f, 0.5f, 0.8f); 
+                        p_color_end = glm::vec4(0.8f, 0.8f, 0.2f, 0.3f);   
+                        p_scale_min = 0.25f;
+                        p_scale_max = 0.45f;
+                        break;
+                    default:
+                        // current_particles_to_spawn is 15 (standardized)
+                        // p_color_start and p_color_end use orb.color
+                        // p_lifespan_min/max are standardized
+                        // Make scales consistent with other types:
+                        p_scale_min = 0.25f; 
+                        p_scale_max = 0.45f; 
+                        break;
+                }
+
+                particleSystem->spawnParticleBurst(orb.position, // Emit from orb center
+                                                 glm::vec3(0,1,0), // Emit upwards slowly or randomly
+                                                 current_particles_to_spawn, 
+                                                 current_particle_system_time, 
+                                                 p_speed_min, p_speed_max, 
+                                                 p_spread, 
+                                                 p_lifespan_min, p_lifespan_max,
+                                                 p_color_start, p_color_end, 
+                                                 p_scale_min, p_scale_max);
+            }
 
 			glm::vec3 currentDrawPosition;
 			float currentDrawScale = orb.scale; // Use base scale
