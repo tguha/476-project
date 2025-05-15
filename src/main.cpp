@@ -60,7 +60,7 @@ public:
 
 	// Our shader programs
 	std::shared_ptr<Program> texProg, hudProg, prog2, prog2_enemy, assimptexProg, redFlashProg;
-	std::shared_ptr<Program> particleProg; // Add particle program
+	std::shared_ptr<Program> particleProg;
 
 	// ground data - Reused for all flat ground planes
 	GLuint GrndBuffObj = 0, GrndNorBuffObj = 0, GIndxBuffObj = 0; // Initialize to 0
@@ -144,8 +144,8 @@ public:
 
 	// --- Spell Projectiles ---
 	std::vector<SpellProjectile> activeSpells;
-	std::shared_ptr<particleGen> particleSystem; // Add particle system
-	glm::vec3 baseSphereLocalAABBMin; // Store base sphere AABB once
+	std::shared_ptr<particleGen> particleSystem; 
+	glm::vec3 baseSphereLocalAABBMin;
 	glm::vec3 baseSphereLocalAABBMax;
 	bool sphereAABBCalculated = false;
 
@@ -268,6 +268,9 @@ public:
 	float cameraVisibleCooldown = 0.0f; // Cooldown for camera visibility check
 	bool wasVisibleLastFrame = true;
 
+    SpellType currentPlayerSpellType = SpellType::FIRE; // Player starts with Fire spell by default
+    int nextSpellTypeIndex = 1; // Used to cycle spell types for new orbs: 1=FIRE, 2=ICE, 3=LIGHTNING
+
 	void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods)
 	{
 		if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
@@ -375,7 +378,15 @@ public:
 		if (key == GLFW_KEY_K && action == GLFW_PRESS) {
 			debugCamera = !debugCamera;
 		}
-		if (!player->isAlive() && key == GLFW_KEY_SPACE && action == GLFW_PRESS) {
+
+		// Shoot fireball with SPACEBAR
+        if (key == GLFW_KEY_SPACE && action == GLFW_PRESS) {
+            if (player->isAlive()) { // Only shoot if alive
+                shootSpell();
+            }
+        }
+
+		if (!player->isAlive() && key == GLFW_KEY_R && action == GLFW_PRESS) { // Changed restart to R
 			restartGen = true;
 		}
 	}
@@ -530,7 +541,7 @@ public:
 
 		if (action == GLFW_PRESS)
 		{
-			shootSpell();
+			shootSpell(); // Changed from shootSpell
 		}
 	}
 
@@ -684,6 +695,7 @@ public:
 		particleProg->addUniform("alphaTexture");
 		particleProg->addAttribute("vertPos");
 		particleProg->addAttribute("vertColor");
+		particleProg->addAttribute("vertScale"); // Add this line
 
 		redFlashProg = make_shared<Program>();
 		redFlashProg->setVerbose(true);
@@ -1537,8 +1549,15 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 				checkAABBCollision(manAABBmin, manAABBmax, orb.AABBmin, orb.AABBmax)) {
 				orb.collected = true;
 				// orb.state = OrbState::COLLECTED; // Optionally set state
-				orbsCollectedCount++;
-				std::cout << "Collected a Spell Orb! (" << orbsCollectedCount << ")\n";
+                currentPlayerSpellType = orb.spellType; // Equip the collected spell type
+				orbsCollectedCount++; // This might now just mean "spell charges" or be repurposed
+
+                // Debug output for spell type equipped
+                std::string spellTypeName = "NONE";
+                if (currentPlayerSpellType == SpellType::FIRE) spellTypeName = "FIRE";
+                else if (currentPlayerSpellType == SpellType::ICE) spellTypeName = "ICE";
+                else if (currentPlayerSpellType == SpellType::LIGHTNING) spellTypeName = "LIGHTNING";
+				std::cout << "Collected a Spell Orb! Equipped: " << spellTypeName << " Spell. Orbs available: " << orbsCollectedCount << std::endl;
 			}
 		}
 
@@ -1548,6 +1567,65 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		int collectedOrbDrawIndex = 0;
 
 		for (auto& orb : orbCollectibles) {
+
+            // Particle emission for uncollected, idle orbs
+            if (!orb.collected && orb.state == OrbState::IDLE && particleSystem) {
+                float current_particle_system_time = particleSystem->getCurrentTime();
+
+                float p_speed_min = 0.05f;
+                float p_speed_max = 0.1f;
+                float p_spread = 1.5f; 
+                // lifespans  short so they die quickly and are recycled for other effects
+                float p_lifespan_min = 0.03f; // Approx 1-2 frames at 60FPS
+                float p_lifespan_max = 0.05f; // Approx 2-3 frames at 60FPS
+
+                // Base particle color (TODO: can be tweaked, maybe slightly transparent)
+                glm::vec4 p_color_start = glm::vec4(orb.color, 0.7f); 
+                glm::vec4 p_color_end = glm::vec4(orb.color, 0.2f);   
+                float p_scale_min = 0.1f;
+                float p_scale_max = 0.25f;
+
+                int current_particles_to_spawn;
+                // Customize particle aura based on spell type
+                switch (orb.spellType) {
+                    case SpellType::FIRE:
+                        current_particles_to_spawn = 15; // Increased for density with short life
+                        p_color_start = glm::vec4(1.0f, 0.5f, 0.1f, 0.8f); 
+                        p_color_end = glm::vec4(0.9f, 0.2f, 0.0f, 0.3f);   
+                        p_scale_min = 0.25f; 
+                        p_scale_max = 0.45f;
+                        break;
+                    case SpellType::ICE:
+                        current_particles_to_spawn = 15; // Increased for density
+                        p_color_start = glm::vec4(0.5f, 0.8f, 1.0f, 0.8f); 
+                        p_color_end = glm::vec4(0.2f, 0.5f, 0.8f, 0.3f);   
+                        p_scale_min = 0.25f;
+                        p_scale_max = 0.45f;
+                        break;
+                    case SpellType::LIGHTNING:
+                        current_particles_to_spawn = 15; // Increased for density
+                        p_color_start = glm::vec4(1.0f, 1.0f, 0.5f, 0.8f); 
+                        p_color_end = glm::vec4(0.8f, 0.8f, 0.2f, 0.3f);   
+                        p_scale_min = 0.25f;
+                        p_scale_max = 0.45f;
+                        break;
+                    default:
+                        current_particles_to_spawn = 10; // Default count, also increased
+                        p_scale_min = 0.15f;
+                        p_scale_max = 0.3f;
+                        break;
+                }
+
+                particleSystem->spawnParticleBurst(orb.position, // Emit from orb center
+                                                 glm::vec3(0,1,0), // Emit upwards slowly or randomly
+                                                 current_particles_to_spawn, 
+                                                 current_particle_system_time, 
+                                                 p_speed_min, p_speed_max, 
+                                                 p_spread, 
+                                                 p_lifespan_min, p_lifespan_max,
+                                                 p_color_start, p_color_end, 
+                                                 p_scale_min, p_scale_max);
+            }
 
 			glm::vec3 currentDrawPosition;
 			float currentDrawScale = orb.scale; // Use base scale
@@ -1567,10 +1645,8 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 					+ playerUp * currentUpOffset
 					+ playerRight * currentSideOffset;
 				collectedOrbDrawIndex++;
-				// currentDrawScale = orb.scale * 0.8f; // Optional: shrink collected orbs
 			}
 			else {
-				// Use the orb's current position (potentially animated by updateOrbs)
 				currentDrawPosition = orb.position;
 			}
 
@@ -1702,7 +1778,20 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 		for (const auto* enemy : enemies) {
 			if (!enemy || !enemy->isAlive()){
-				keyCollectibles.emplace_back(key, enemy->getPosition(), 0.1f,  vec3(0.9, 0.9, 0.9));
+				// Ensure a key is added only once per dead enemy if not already present
+                // This simple check assumes positions are unique enough for dead enemies.
+                // A more robust way would be to tag enemies that have already dropped a key.
+                bool keyAlreadyExists = false;
+                for (const auto& k : keyCollectibles) {
+                    // Approximate check, ideally use a unique ID from the enemy
+                    if (glm::distance(k.position, enemy->getPosition()) < 0.1f) { 
+                        keyAlreadyExists = true;
+                        break;
+                    }
+                }
+                if (!keyAlreadyExists) {
+                    keyCollectibles.emplace_back(key, enemy->getPosition(), 0.1f, vec3(0.9, 0.9, 0.9), SpellType::NONE); 
+                }
 				drawKey(shader, Model );
 				continue; // Skip null or dead enemies
 			}
@@ -2289,10 +2378,11 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 				glm::vec3 orbSpawnPos = book.position + glm::vec3(baseRotation * glm::vec4(orbOffset, 0.0f));
 
 				// Constructor handles setting state to LEVITATING and calculating idlePosition
-				orbCollectibles.emplace_back(sphere, orbSpawnPos, book.orbScale, book.orbColor);
+				// Orb color is now set by the Book's spellType
+				orbCollectibles.emplace_back(sphere, orbSpawnPos, book.orbScale, book.orbColor, book.spellType);
 
 				book.orbSpawned = true;
-				cout << "Orb Spawned! State: LEVITATING" << endl;
+				cout << "Orb Spawned! Type: " << static_cast<int>(book.spellType) << " State: LEVITATING" << endl;
 			}
 		}
 	}
@@ -2334,9 +2424,17 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 						glm::vec3 bookScale = glm::vec3(0.7f, 0.9f, 0.2f);
 						glm::quat bookOrientation = glm::angleAxis(glm::radians(Config::randFloat(-10.f, 10.f)), glm::vec3(0, 1, 0));
-						glm::vec3 orbColor = glm::vec3(Config::randFloat(0.2f, 1.0f), Config::randFloat(0.2f, 1.0f), Config::randFloat(0.2f, 1.0f));
+						// glm::vec3 orbColor = glm::vec3(Config::randFloat(0.2f, 1.0f), Config::randFloat(0.2f, 1.0f), Config::randFloat(0.2f, 1.0f)); // Color now set by book
 
-						books.emplace_back(cube, sphere, spawnPos, bookScale, bookOrientation, orbColor);
+						// Cycle through spell types for newly spawned books/orbs
+						// static int nextSpellTypeIndex = 1; // Start with FIRE (index 1 in SpellType enum)
+						SpellType newSpellType = static_cast<SpellType>(nextSpellTypeIndex);
+						nextSpellTypeIndex++;
+						if (nextSpellTypeIndex > 3) { // Assuming 3 spell types: FIRE, ICE, LIGHTNING
+							nextSpellTypeIndex = 1; // Cycle back to FIRE
+						}
+
+						books.emplace_back(cube, sphere, spawnPos, bookScale, bookOrientation, newSpellType);
 
 						Book& newBook = books.back();
 
@@ -2710,250 +2808,241 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 	}
 
 	// --- Shooting Function ---
-	void shootSpell() {
+	void shootSpell() { 
 		cout << "[DEBUG] shootSpell() called. Orbs: " << orbsCollectedCount << endl;
-		if (orbsCollectedCount <= 0 || !sphere || !sphereAABBCalculated) {
-			cout << "[DEBUG] Cannot shoot: No orbs or sphere model not ready." << endl;
-			return; // Need orbs and the sphere model/AABB
+		if (orbsCollectedCount <= 0 && !debugCamera) { // Allow shooting in debug camera without orbs
+			cout << "[DEBUG] Cannot shoot: No orbs." << endl;
+			return; 
 		}
 
-		// Consume an orb
-		orbsCollectedCount--;
-		// Remove visual orb logic... (find first collected orb and erase)
-		for (auto it = orbCollectibles.begin(); it != orbCollectibles.end(); ++it) {
-			if (it->collected) {
-				orbCollectibles.erase(it);
-				break;
+		// Consume an orb if not in debug mode
+		if (!debugCamera) {
+			orbsCollectedCount--;
+			// Remove visual orb logic... (find first collected orb and erase)
+			for (auto it = orbCollectibles.begin(); it != orbCollectibles.end(); ++it) {
+				if (it->collected) {
+					orbCollectibles.erase(it);
+					break;
+				}
 			}
 		}
 
-		// *** Use Character's Forward Direction ***
-		// 'manMoveDir' is updated in updateCameraVectors based on manRot.y (which matches theta)
-		vec3 shootDir = manMoveDir; // Already normalized and horizontal
-
-		// *** Use Character's Right Vector ***
-		// Calculate the horizontal right vector based on manMoveDir
+		vec3 shootDir = manMoveDir; 
 		vec3 playerRight = normalize(cross(manMoveDir, vec3(0.0f, 1.0f, 0.0f)));
 
-
-		// Spawn Position Calculation (relative to character's position and orientation)
-		float forwardOffset = 0.5f; // How far in front of player center
-		float upOffset = 0.8f;      // Height relative to player base (groundY)
-		float rightOffset = 0.2f;   // Offset to the side (e.g., right hand)
-
-		// vec3 spawnPos = characterMovement
-		// 	+ vec3(0.0f, upOffset, 0.0f) // Vertical offset from base
-		// 	+ shootDir * forwardOffset   // Forward offset along character's facing direction
-		// 	+ playerRight * rightOffset; // Sideways offset along character's right
+		float forwardOffset = 0.5f; 
+		float upOffset = 0.8f;      
+		float rightOffset = 0.2f;   
 
 		vec3 spawnPos = player->getPosition()
-		+ vec3(0.0f, upOffset, 0.0f) // Vertical offset from base
-		+ shootDir * forwardOffset   // Forward offset along character's facing direction
-		+ playerRight * rightOffset; // Sideways offset along character's right
+			+ vec3(0.0f, upOffset, 0.0f) 
+			+ shootDir * forwardOffset   
+			+ playerRight * rightOffset; 
 
-		// Create and add projectile
-		activeSpells.emplace_back(spawnPos, shootDir, (float)glfwGetTime(), sphere);
+        activeSpells.emplace_back(spawnPos, shootDir, (float)glfwGetTime());
+        SpellProjectile& newProj = activeSpells.back(); 
+
+        if (particleSystem) {
+            float current_particle_system_time = particleSystem->getCurrentTime();
+            int particles_to_spawn = 10; 
+
+            float p_speed_min = newProj.speed * 0.2f; 
+            float p_speed_max = newProj.speed * 0.5f;
+            float p_spread = 0.6f;
+            float p_lifespan_min = 0.4f;
+            float p_lifespan_max = 0.8f;
+            glm::vec4 p_color_start = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f); 
+            glm::vec4 p_color_end = glm::vec4(1.0f, 1.0f, 1.0f, 0.0f);   
+            float p_scale_min = 0.2f;
+            float p_scale_max = 0.4f;
+
+            // Use currentPlayerSpellType to determine visuals
+            std::string spellTypeName = "NONE";
+            switch (currentPlayerSpellType) {
+                case SpellType::FIRE:
+                    spellTypeName = "FIRE";
+                    particles_to_spawn = 40; // Increased count
+                    p_color_start = glm::vec4(1.0f, 0.6f, 0.1f, 1.0f); 
+                    p_color_end = glm::vec4(0.9f, 0.2f, 0.0f, 0.5f);   
+                    p_scale_min = 0.45f; // Increased size
+                    p_scale_max = 0.85f;  
+                    break;
+                case SpellType::ICE:
+                    spellTypeName = "ICE";
+                    particles_to_spawn = 40;
+                    p_color_start = glm::vec4(0.5f, 0.8f, 1.0f, 1.0f); 
+                    p_color_end = glm::vec4(0.2f, 0.5f, 0.8f, 0.3f);   
+                    p_scale_min = 0.4f; // Increased size
+                    p_scale_max = 0.75f;
+                    newProj.speed = 12.0f; // Slower ice projectile
+                    break;
+                case SpellType::LIGHTNING:
+                    spellTypeName = "LIGHTNING";
+                    particles_to_spawn = 50; // More particles for lightning
+                    p_color_start = glm::vec4(1.0f, 1.0f, 0.5f, 1.0f); 
+                    p_color_end = glm::vec4(0.8f, 0.8f, 0.2f, 0.3f);   
+                    p_scale_min = 0.35f; // Slightly smaller but more numerous for lightning
+                    p_scale_max = 0.6f;
+                    newProj.speed = 20.0f; // Faster lightning projectile
+                    break;
+                case SpellType::NONE:
+                default:
+                    cout << "[DEBUG] Cannot shoot: No valid spell type selected." << endl;
+                    if (!activeSpells.empty()) activeSpells.pop_back(); 
+                    if (!debugCamera) orbsCollectedCount++; // Refund orb if not in debug mode
+                    return; 
+            }
+            cout << "[DEBUG] Firing " << spellTypeName << " spell." << endl;
+
+            particleSystem->spawnParticleBurst(spawnPos,       // Use initial spawnPos for particles
+                                             shootDir,       // Use initial shootDir for particles
+                                             particles_to_spawn, 
+                                             current_particle_system_time, 
+                                             p_speed_min, p_speed_max, 
+                                             p_spread, 
+                                             p_lifespan_min, p_lifespan_max,
+                                             p_color_start, p_color_end, 
+                                             p_scale_min, p_scale_max);
+        }
+
 		cout << "[DEBUG] Spell Fired! Start:(" << spawnPos.x << "," << spawnPos.y << "," << spawnPos.z
-			<< ") Dir: (" << shootDir.x << "," << shootDir.y << "," << shootDir.z // y should be 0
+			<< ") Dir: (" << shootDir.x << "," << shootDir.y << "," << shootDir.z
 			<< "). Active spells: " << activeSpells.size() << endl;
 	}
 
 	// --- updateProjectiles ---
 	void updateProjectiles(float deltaTime) {
-		if (!sphereAABBCalculated) return;
 
 		float damageAmount = Config::PROJECTILE_DAMAGE;
 
-		// Iterate using index for potential removal
-		for (int i = 0; i < activeSpells.size(); ++i) {
-			if (!activeSpells[i].active) continue;
-
-			SpellProjectile& proj = activeSpells[i]; // Use reference
-
-			// Check lifetime
-			if (glfwGetTime() - proj.spawnTime > proj.lifetime) {
-				proj.active = false;
-				// cout << "[DEBUG] Spell lifetime expired." << endl;
+		for (int i = 0; i < activeSpells.size(); ) { 
+			if (!activeSpells[i].active) {
+				i++;
 				continue;
 			}
 
-			// Update position
+			SpellProjectile& proj = activeSpells[i];
+
+			if (glfwGetTime() - proj.spawnTime > proj.lifetime) {
+				proj.active = false;
+				activeSpells.erase(activeSpells.begin() + i);
+				continue;
+			}
+
 			proj.position += proj.direction * proj.speed * deltaTime;
+			proj.transform = glm::translate(glm::mat4(1.0f), proj.position); 
 
-			// Calculate transform HERE
-			glm::quat rotation = glm::rotation(glm::vec3(0.0f, 0.0f, 1.0f), proj.direction);
-			proj.transform = glm::translate(glm::mat4(1.0f), proj.position) * glm::mat4_cast(rotation) * glm::scale(glm::mat4(1.0f), proj.scale);
+			this->updateBoundingBox(proj.localAABBMin_logical, proj.localAABBMax_logical, proj.transform, proj.aabbMin, proj.aabbMax);
 
-			// Update AABB using Application's function
-			this->updateBoundingBox(baseSphereLocalAABBMin, baseSphereLocalAABBMax, proj.transform, proj.aabbMin, proj.aabbMax);
-
-			// Check collision with enemies
+			bool hitSomething = false;
 			for (auto* enemy : enemies) {
 				if (!enemy || !enemy->isAlive()) continue;
 
-				// Ensure enemy AABB is up-to-date (call if they move)
-				// enemy->updateAABB();
-
 				if (checkAABBCollision(proj.aabbMin, proj.aabbMax, enemy->getAABBMin(), enemy->getAABBMax())) {
-					cout << "[DEBUG] Spell HIT enemy!" << endl;
-
-					// if (!enemy->isHit()) {
-					// 	enemy->setHit(true); // Mark enemy as hit
-					// }
-
+					cout << "[DEBUG] Fireball HIT enemy!" << endl;
 					enemy->takeDamage(damageAmount);
-					proj.active = false; // Deactivate projectile
-					break; // Hit one enemy
+					proj.active = false; 
+					hitSomething = true;
+					break; 
 				}
 			}
+			if (hitSomething) {
+				activeSpells.erase(activeSpells.begin() + i);
+				continue;
+			}
 
-			// for boss enemy
 			if (canFightboss && bossEnemy && bossEnemy->isAlive()) {
 				if (checkAABBCollision(proj.aabbMin, proj.aabbMax, bossEnemy->getAABBMin(), bossEnemy->getAABBMax())) {
-					cout << "[DEBUG] Spell HIT boss!" << endl;
-					damageAmount = 500.0f; // Boss takes more damage
-
-					// if (!bossEnemy->isHit()) {
-					// 	bossEnemy->setHit(true); // Mark enemy as hit
-					// }
-
-					bossEnemy->takeDamage(damageAmount);
-					proj.active = false; // Deactivate projectile
-					break; // Hit the boss
+					cout << "[DEBUG] Fireball HIT boss!" << endl;
+					float bossDamage = 50.0f;
+					bossEnemy->takeDamage(bossDamage);
+					proj.active = false;
+					activeSpells.erase(activeSpells.begin() + i);
+					continue;
 				}
 			}
-		} // End loop
-
-		// Remove inactive projectiles
-		activeSpells.erase(
-			std::remove_if(activeSpells.begin(), activeSpells.end(),
-				[](const SpellProjectile& p) { return !p.active; }),
-			activeSpells.end()
-		);
+			i++;
+		} 
 	}
 
 	void drawProjectiles(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
-		if (!shader || !Model || !sphere) return; // Need shader, stack, model
-
-		shader->bind();
-		// Set material for projectiles (e.g., bright yellow/white, maybe emissive if shader supports)
-		SetMaterialMan(shader, 0); // Gold material for now
-		glUniform3f(shader->getUniform("MatAmb"), 0.8f, 0.8f, 0.1f);
-		glUniform3f(shader->getUniform("MatDif"), 1.0f, 1.0f, 0.5f);
-		glUniform3f(shader->getUniform("MatSpec"), 1.0f, 1.0f, 1.0f);
-		glUniform1f(shader->getUniform("MatShine"), 64.0f);
-		// Optional: Emissive properties if shader supports them
-		// if(shader->hasUniform("hasEmittance")) glUniform1i(shader->getUniform("hasEmittance"), 1);
-		// if(shader->hasUniform("MatEmitt")) glUniform3f(shader->getUniform("MatEmitt"), 1.0f, 1.0f, 0.8f);
-
-		for (const auto& proj : activeSpells) {
-			if (!proj.active) continue;
-
-			Model->pushMatrix();
-			Model->loadIdentity(); // Start from identity for projectile
-
-			// Use the pre-calculated transform from updateAABB
-			Model->multMatrix(proj.transform);
-
-			/* // --- Manual Transform Calculation (Alternative to using proj.transform) ---
-			Model->translate(proj.position);
-			// Calculate rotation to align local Z with direction
-			glm::quat rotation = glm::rotation(glm::vec3(0.0f, 0.0f, 1.0f), proj.direction);
-			Model->multMatrix(glm::mat4_cast(rotation));
-			Model->scale(proj.scale);
-			*/
-
-			setModel(shader, Model);
-			proj.model->Draw(shader); // Draw the sphere model
-
-			Model->popMatrix();
-		}
-
-		shader->unbind();
+		// This function is now empty as particles handle visuals.
 	}
 
 	/* boss projectiles */
 	void drawBossProjectiles(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
-		if (!shader || !Model || !sphere) return; // Need shader, stack, model
-
-		shader->bind();
-		// Set material for projectiles (e.g., bright yellow/white, maybe emissive if shader supports)
-		SetMaterialMan(shader, 0); // Gold material for now
-		glUniform3f(shader->getUniform("MatAmb"), 0.8f, 0.8f, 0.1f);
-		glUniform3f(shader->getUniform("MatDif"), 1.0f, 1.0f, 0.5f);
-		glUniform3f(shader->getUniform("MatSpec"), 1.0f, 1.0f, 1.0f);
-		glUniform1f(shader->getUniform("MatShine"), 64.0f);
-		// Optional: Emissive properties if shader supports them
-		// if(shader->hasUniform("hasEmittance")) glUniform1i(shader->getUniform("hasEmittance"), 1);
-		// if(shader->hasUniform("MatEmitt")) glUniform3f(shader->getUniform("MatEmitt"), 1.0f, 1.0f, 0.8f);
-
-		for (const auto& proj : bossActiveSpells) {
-			if (!proj.active) continue;
-
-			Model->pushMatrix();
-			Model->loadIdentity(); // Start from identity for projectile
-
-			// Use the pre-calculated transform from updateAABB
-			Model->multMatrix(proj.transform);
-
-			setModel(shader, Model);
-			proj.model->Draw(shader); // Draw the sphere model
-
-			Model->popMatrix();
-		}
-
-		shader->unbind();
+		// This function is now empty as particles handle visuals for boss fireballs too.
 	}
 
 	void updateBossProjectiles(float deltaTime) {
-		if (!sphereAABBCalculated) return;
+		// if (!sphereAABBCalculated) return; // Not needed for logical projectiles
 
-		float damageAmount = 25.0f;
+		float damageAmount = 25.0f; // Damage from boss fireball
 
-		// Iterate using index for potential removal
-		for (int i = 0; i < bossActiveSpells.size(); ++i) {
-			if (!bossActiveSpells[i].active) continue;
-
-			SpellProjectile& proj = bossActiveSpells[i]; // Use reference
-
-			// Check lifetime
-			if (glfwGetTime() - proj.spawnTime > proj.lifetime) {
-				proj.active = false;
-				// cout << "[DEBUG] Spell lifetime expired." << endl;
+		for (int i = 0; i < bossActiveSpells.size(); ) {
+			if (!bossActiveSpells[i].active) {
+				i++;
 				continue;
 			}
 
-			// Update position
+			SpellProjectile& proj = bossActiveSpells[i];
+
+			if (glfwGetTime() - proj.spawnTime > proj.lifetime) {
+				proj.active = false;
+				bossActiveSpells.erase(bossActiveSpells.begin() + i);
+				continue;
+			}
+
 			proj.position += proj.direction * proj.speed * deltaTime;
+			proj.transform = glm::translate(glm::mat4(1.0f), proj.position); 
 
-			// Calculate transform HERE
-			glm::quat rotation = glm::rotation(glm::vec3(0.0f, 0.0f, 1.0f), proj.direction);
-			proj.transform = glm::translate(glm::mat4(1.0f), proj.position) * glm::mat4_cast(rotation) * glm::scale(glm::mat4(1.0f), proj.scale);
+			this->updateBoundingBox(proj.localAABBMin_logical, proj.localAABBMax_logical, proj.transform, proj.aabbMin, proj.aabbMax);
+            
+			// Emit particles for the boss's fireball visual effect
+			/*if (particleSystem) {
+				int particles_to_spawn = 5; 
+                float current_particle_system_time = particleSystem->getCurrentTime();
 
-			// Update AABB using Application's function
-			this->updateBoundingBox(baseSphereLocalAABBMin, baseSphereLocalAABBMax, proj.transform, proj.aabbMin, proj.aabbMax);
+                // Define boss fireball particle properties (can be different from player's)
+                float p_speed_min = proj.speed * 0.2f;
+                float p_speed_max = proj.speed * 0.6f;
+                float p_spread = 0.7f;
+                float p_lifespan_min = 0.4f;
+                float p_lifespan_max = 0.8f;
+                // glm::vec4 p_color_start = glm::vec4(0.8f, 0.2f, 1.0f, 1.0f); // Purpleish
+                // glm::vec4 p_color_end = glm::vec4(0.5f, 0.1f, 0.7f, 0.8f);   // Darker Purple
+                glm::vec4 p_color_start = glm::vec4(1.0f, 0.5f, 0.0f, 1.0f); // Bright Orange/Yellow (similar to player)
+                glm::vec4 p_color_end = glm::vec4(0.8f, 0.1f, 0.0f, 0.5f);   // Darker Red/Orange, fading (similar to player)
+                // float p_scale_min = 0.2f;
+                // float p_scale_max = 0.35f;
+                float p_scale_min = 0.4f; // Larger fire particles for boss
+                float p_scale_max = 0.8f;  // Larger fire particles for boss
+
+                particleSystem->spawnParticleBurst(proj.position, 
+                                                 proj.direction, 
+                                                 particles_to_spawn, 
+                                                 current_particle_system_time, 
+                                                 p_speed_min, p_speed_max, 
+                                                 p_spread, 
+                                                 p_lifespan_min, p_lifespan_max,
+                                                 p_color_start, p_color_end, 
+                                                 p_scale_min, p_scale_max);
+			}*/
 
 			// Check collision with player
-			// if (checkAABBCollision(proj.aabbMin, proj.aabbMax, playerLocalAABBMin, playerLocalAABBMax)) {
-			// 	cout << "[DEBUG] Spell HIT player!" << endl;
-			// 	player->takeDamage(damageAmount);
-			// 	proj.active = false; // Deactivate projectile
-			// 	break; // Hit the player
-			// }
-			if (checkSphereCollision(player->getPosition(), 1.5f, proj.aabbMin, proj.aabbMax)) {
-				cout << "[DEBUG] Spell HIT player!" << endl;
-				player->takeDamage(damageAmount);
-				proj.active = false; // Deactivate projectile
-				break; // Hit the player
-			}
-		} // End loop
+			// For simplicity, using a sphere check around player center for now.
+            glm::vec3 playerCenter = player->getPosition() + glm::vec3(0, 1.0f, 0); // Approx player center
+            float playerRadius = 0.5f; // Approx player radius
 
-		// Remove inactive projectiles
-		bossActiveSpells.erase(
-			std::remove_if(bossActiveSpells.begin(), bossActiveSpells.end(),
-				[](const SpellProjectile& p) { return !p.active; }),
-			bossActiveSpells.end()
-		);
+			if (checkSphereCollision(proj.position, 0.2f + playerRadius, playerCenter, proj.aabbMax)) { // Simple sphere check: proj vs player
+				cout << "[DEBUG] Boss Spell HIT player!" << endl;
+				player->takeDamage(damageAmount);
+				proj.active = false; 
+				bossActiveSpells.erase(bossActiveSpells.begin() + i);
+				continue;
+			}
+			i++;
+		} 
 	}
 
 	void shootBossSpell() {
@@ -2970,8 +3059,8 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			+ shootDir * forwardOffset   // Forward offset along character's facing direction
 			+ bossRight * rightOffset; // Sideways offset along character's right
 
-		// Create and add projectile
-		bossActiveSpells.emplace_back(spawnPos, shootDir, (float)glfwGetTime(), sphere);
+		// Create and add projectile (now uses the 3-argument constructor)
+		bossActiveSpells.emplace_back(spawnPos, shootDir, (float)glfwGetTime());
 	}
 
 	void BossEnemyShoot(float deltaTime) {
@@ -3063,29 +3152,32 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 
 	// Draw particles
 	void drawParticles(shared_ptr<particleGen> gen, shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
-		Model->pushMatrix();
+		// Model->pushMatrix(); // Original push
 			shader->bind();
-			particleAlphaTex->bind(particleProg->getUniform("alphaTexture"));
+			particleAlphaTex->bind(shader->getUniform("alphaTexture"));
 
-			// Enable blending for transparency
-			glEnable(GL_BLEND);
-			glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+			// glEnable(GL_BLEND); // gen->drawMe() handles its own GL state (blend, depth)
+			// glBlendFunc(GL_SRC_ALPHA, GL_ONE); // Original: GL_ONE. gen->drawMe() uses GL_SRC_ALPHA, GL_ONE
 
-			// Disable depth writing but keep depth testing
+			// Disable depth writing but keep depth testing; gen->drawMe() handles this
 			//glDepthMask(GL_FALSE);
-      glUniformMatrix4fv(shader->getUniform("M"), 1, GL_FALSE, value_ptr(Model->topMatrix()));
-			gen->drawMe(shader);
 
-			// Restore state
+			// Set Model matrix to identity for world-space particles
+			// The Model stack is passed in, so push, load identity, then pop to keep it clean for the stack
+			Model->pushMatrix();
+			Model->loadIdentity();
+            glUniformMatrix4fv(shader->getUniform("M"), 1, GL_FALSE, value_ptr(Model->topMatrix())); // M is now identity
+			Model->popMatrix(); // Restore original Model stack state
+            
+			gen->drawMe(shader); // gen->drawMe will set its own blend/depth states and draw
+
+			// Restore state --- gen->drawMe() handles its own GL state restoration
 			//glDepthMask(GL_TRUE);
-			glDisable(GL_BLEND);
+			// glDisable(GL_BLEND); // gen->drawMe() handles this
 
-
-			shader->unbind();
 			particleAlphaTex->unbind();
-
-
-		Model->popMatrix();
+			shader->unbind();
+		// Model->popMatrix(); // Original pop
 	}
 
 	void drawEnemyHealthBars(glm::mat4 viewMatrix, glm::mat4 projMatrix) {
@@ -3519,7 +3611,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		glEnable(GL_BLEND);
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 		// glDisable(GL_DEPTH_TEST);
-		redFlashProg->bind();
+			redFlashProg->bind();
 
 		glm::mat4 proj = glm::ortho(0.0f, (float)screenWidth, 0.0f, (float)screenHeight, -1.0f, 1.0f);
 		glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(0, 0, 0));
@@ -3671,7 +3763,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		//TODO: sort them by z value
 		if (particleProg) {
 			particleProg->bind();
-			glPointSize(10.0f);
+			// glPointSize(10.0f); // Remove this line, size is now per-particle in shader
 			glUniformMatrix4fv(particleProg->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
 			glUniformMatrix4fv(particleProg->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
 			//particleAlphaTex->bind(particleProg->getUniform("alphaTexture"));
