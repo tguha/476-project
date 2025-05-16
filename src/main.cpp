@@ -878,8 +878,8 @@ public:
 
 		//key
 		key = new AssimpModel(resourceDirectory + "/Key_and_Lock/key.obj");
-		// Collectible key1 = Collectible(key, vec3(0.0, 2.0, 0.0), 0.1f,  vec3(0.9, 0.9, 0.9));
-		// keyCollectibles.push_back(key1);
+		Collectible key1 = Collectible(key, vec3(0.0, 2.0, 0.0), 0.1f,  vec3(0.9, 0.9, 0.9), SpellType::NONE);
+		keyCollectibles.push_back(key1);
 
 		//lock
 		lock = new AssimpModel(resourceDirectory + "/Key_and_Lock/lockCopy.obj");
@@ -1573,7 +1573,11 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		for (auto& orb : orbCollectibles) {
 			// Perform collision check ONLY if not collected AND in the IDLE state
 			if (!orb.collected && orb.state == OrbState::IDLE && // <<<--- ADD STATE CHECK
-				checkAABBCollision(manAABBmin, manAABBmax, orb.AABBmin, orb.AABBmax)) {
+				//checkAABBCollision(manAABBmin, manAABBmax, orb.AABBmin, orb.AABBmax)
+				checkSphereCollision(player->getPosition(), 2.0f, orb.AABBmin, orb.AABBmax)
+				
+				
+				) {
 				orb.collected = true;
 				// orb.state = OrbState::COLLECTED; // Optionally set state
                 currentPlayerSpellType = orb.spellType; // Equip the collected spell type
@@ -3489,7 +3493,12 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		for (auto& key : keyCollectibles) {
 			// Perform collision check ONLY if not collected AND in the IDLE state
 			if (!key.collected && key.state == OrbState::IDLE && // <<<--- ADD STATE CHECK
-				checkAABBCollision(manAABBmin, manAABBmax, key.AABBmin, key.AABBmax)) {
+				//checkAABBCollision(manAABBmin, manAABBmax, key.AABBmin, key.AABBmax)
+				checkSphereCollision(player->getPosition(), 4.0f, key.AABBmin, key.AABBmax)
+				//checkSphereCollision(player->getPosition(), 2.0f, orb.AABBmin, orb.AABBmax)
+				
+				
+				) {
 				key.collected = true;
 				// key.state = OrbState::COLLECTED; // Optionally set state
 				keysCollectedCount++;
