@@ -46,9 +46,6 @@
 using namespace std;
 using namespace glm;
 
-#define SHOW_HEALTHBAR 1 // 1 = show health bar, 0 = hide health bar
-#define ENEMY_MOVEMENT 1 // 1 = enable enemy movement, 0 = disable enemy movement
-
 class Application : public EventCallbacks {
 public:
 	std::shared_ptr<Player> player;
@@ -878,7 +875,7 @@ public:
 
 		//key
 		key = new AssimpModel(resourceDirectory + "/Key_and_Lock/key.obj");
-		Collectible key1 = Collectible(key, vec3(0.0, 2.0, 0.0), 0.1f,  vec3(0.9, 0.9, 0.9));
+		Collectible key1 = Collectible(key, vec3(0.0, 2.0, 0.0), 0.1f,  vec3(0.9, 0.9, 0.9), SpellType::NONE);
 		keyCollectibles.push_back(key1);
 
 		//lock
