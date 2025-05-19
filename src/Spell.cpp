@@ -17,15 +17,4 @@ SpellType Spell::getWeakness() { return weakness; }
 
 std::string Spell::getName() { return name; }
 
-float Spell::getDamage() { return damage; }
-float Spell::getManaCost() { return manaCost; }
-float Spell::getCooldown() { return cooldown; }
-float Spell::getFireRate() { return fireRate; }
-float Spell::getRange() { return range; }
-SpellType Spell::getWeakness() { return weakness; }
-
-std::string Spell::getName() { return name; }
-
-void initSpells() {
-
-}
+void initSpells() {}

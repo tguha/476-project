@@ -31,12 +31,22 @@ enum class Man_State {
     STANDING
 };
 
-// --- Spell Types ---
 enum class SpellType {
     NONE,
     FIRE,
     ICE,
     LIGHTNING
+};
+
+typedef enum SpellSlot {
+    SLOT_LEFT,
+    SLOT_RIGHT,
+    SLOT_INV_ONE,
+    SLOT_INV_TWO,
+    SLOT_INV_THREE,
+    SLOT_INV_FOUR,
+    SLOT_INV_FIVE,
+    SLOT_INV_SIX
 };
 
 enum class Material {
@@ -58,7 +68,7 @@ enum class Material {
     gold,
 };
 
-// Map each Material enum to a base color for particles or fallback
+// Helper function to map each <Material> to a base color for particles (or fallback white)
 inline glm::vec3 materialToColor(Material m) {
     switch (m) {
     case Material::purple:            return glm::vec3(0.3f, 0.1f, 0.4f);
