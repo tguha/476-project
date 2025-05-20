@@ -4,17 +4,7 @@
 #include "Entity.h"
 #include "Spell.h"
 #include "Config.h"
-
-typedef enum {
-    SLOT_LEFT,
-    SLOT_RIGHT,
-    SLOT_INV_ONE,
-    SLOT_INV_TWO,
-    SLOT_INV_THREE,
-    SLOT_INV_FOUR,
-    SLOT_INV_FIVE,
-    SLOT_INV_SIX
-} SpellSlot;
+#include "GameObjectTypes.h"
 
 class Player : public Entity {
     private:
