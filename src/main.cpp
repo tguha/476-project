@@ -1782,6 +1782,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			bossActiveSpells.clear();
 			// enemies.push_back(new Enemy(libraryCenter + vec3(-5.0f, 0.8f, 8.0f), 50.0f, 2.0f, sphere, glm::vec3(0.5f, 1.28f, 0.5f), vec3(0.0f))); // <<-- Pass sphere and scale
 			activeSpells.clear(); // Clear active spells
+			unlock = false;
 		}
 	}
 
@@ -1967,7 +1968,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 							Model->loadIdentity();
 							// Model->translate(vec3(worldX, libraryCenter.y, worldZ)); // Position shelf at cell center on ground
 							Model->translate(vec3(i, libraryCenter.y, j)); // Position wall at cell center on ground
-							Model->scale(vec3(2.0f));
+							Model->scale(grid[gridPos].transformData.scale);
 							setModel(shader, Model);
 							book_shelf1->Draw(shader);
 							Model->popMatrix();
@@ -1977,7 +1978,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 							Model->pushMatrix();
 							Model->loadIdentity();
 							Model->translate(vec3(i, libraryCenter.y, j)); // Position wall at cell center on ground
-							Model->scale(vec3(1.0f));
+							Model->scale(grid[gridPos].transformData.scale);
 							setModel(shader, Model);
 							book_shelf1->Draw(shader);
 							Model->popMatrix();
@@ -1986,7 +1987,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 							Model->loadIdentity();
 							Model->translate(vec3(i, libraryCenter.y, j)); // Position wall at cell center on ground
 							Model->rotate(glm::radians(90.0f), vec3(0, 1, 0)); // Rotate for left/right walls
-							Model->scale(vec3(2.0f));
+							Model->scale(grid[gridPos].transformData.scale);
 							setModel(shader, Model);
 							book_shelf1->Draw(shader);
 							Model->popMatrix();
@@ -1994,7 +1995,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 							Model->pushMatrix();
 							Model->loadIdentity();
 							Model->translate(vec3(i, libraryCenter.y, j)); // Position wall at cell center on ground
-							Model->scale(vec3(0.5f));
+							Model->scale(grid[gridPos].transformData.scale);
 							setModel(shader, Model);
 							candelabra->Draw(shader);
 							Model->popMatrix();
@@ -2002,7 +2003,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 							Model->pushMatrix();
 							Model->loadIdentity();
 							Model->translate(vec3(i, libraryCenter.y, j)); // Position wall at cell center on ground
-							Model->scale(vec3(0.25f));
+							Model->scale(grid[gridPos].transformData.scale);
 							setModel(shader, Model);
 							chest->Draw(shader);
 							Model->popMatrix();
@@ -2010,7 +2011,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 							Model->pushMatrix();
 							Model->loadIdentity();
 							Model->translate(vec3(i, libraryCenter.y, j)); // Position wall at cell center on ground
-							Model->scale(vec3(0.35f));
+							Model->scale(grid[gridPos].transformData.scale);
 							setModel(shader, Model);
 							table_chairs1->Draw(shader);
 							Model->popMatrix();
@@ -2020,7 +2021,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 							Model->pushMatrix();
 							Model->loadIdentity();
 							Model->translate(vec3(i, libraryCenter.y, j)); // Position wall at cell center on ground
-							Model->scale(vec3(0.5f));
+							Model->scale(grid[gridPos].transformData.scale);
 							setModel(shader, Model);
 							grandfather_clock->Draw(shader);
 							Model->popMatrix();
@@ -2029,7 +2030,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 								Model->pushMatrix();
 								Model->loadIdentity();
 								Model->translate(vec3(i, libraryCenter.y, j)); // Position shelf at cell center on ground
-								Model->scale(vec3(2.0f)); // Scale set in grid members
+								Model->scale(grid[gridPos].transformData.scale);
 								setModel(shader, Model);
 								book_shelf1->Draw(shader);
 								Model->popMatrix();
@@ -2038,7 +2039,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 								Model->loadIdentity();
 								Model->translate(vec3(i, libraryCenter.y, j)); // Position shelf at cell center on ground
 								Model->rotate(glm::radians(90.0f), vec3(0, 1, 0)); // Rotate for left/right walls
-								Model->scale(vec3(2.0f)); // Scale set in class members
+								Model->scale(grid[gridPos].transformData.scale);
 								setModel(shader, Model);
 								book_shelf1->Draw(shader);
 								Model->popMatrix();
@@ -2046,7 +2047,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 								Model->pushMatrix();
 								Model->loadIdentity();
 								Model->translate(vec3(i, libraryCenter.y, j)); // Position shelf at cell center on ground
-								Model->scale(vec3(0.35f)); // Scale set in class members
+								Model->scale(grid[gridPos].transformData.scale);
 								setModel(shader, Model);
 								table_chairs1->Draw(shader);
 								Model->popMatrix();
@@ -2057,7 +2058,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 								Model->pushMatrix();
 								Model->loadIdentity();
 								Model->translate(vec3(i, libraryCenter.y, j)); // Position shelf at cell center on ground
-								Model->scale(vec3(0.35f)); // Scale set in class members
+								Model->scale(grid[gridPos].transformData.scale);
 								setModel(shader, Model);
 								table_chairs1->Draw(shader);
 								Model->popMatrix();
@@ -2067,7 +2068,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 								Model->pushMatrix();
 								Model->loadIdentity();
 								Model->translate(vec3(i, libraryCenter.y, j)); // Position shelf at cell center on ground
-								Model->scale(vec3(0.5f)); // Scale set in class members
+								Model->scale(grid[gridPos].transformData.scale);
 								setModel(shader, Model);
 								candelabra->Draw(shader);
 								Model->popMatrix();
@@ -2075,7 +2076,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 								Model->pushMatrix();
 								Model->loadIdentity();
 								Model->translate(vec3(i, libraryCenter.y, j)); // Position shelf at cell center on ground
-								Model->scale(vec3(0.5f)); // Scale set in class members
+								Model->scale(grid[gridPos].transformData.scale);
 								setModel(shader, Model);
 								grandfather_clock->Draw(shader);
 								Model->popMatrix();
@@ -2083,7 +2084,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 								Model->pushMatrix();
 								Model->loadIdentity();
 								Model->translate(vec3(i, libraryCenter.y, j)); // Position shelf at cell center on ground
-								Model->scale(vec3(0.25f)); // Scale set in class members
+								Model->scale(grid[gridPos].transformData.scale);
 								setModel(shader, Model);
 								chest->Draw(shader);
 								Model->popMatrix();
@@ -2092,7 +2093,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 							Model->pushMatrix();
 							Model->loadIdentity();
 							Model->translate(vec3(i, libraryCenter.y, j)); // Position shelf at cell center on ground
-							Model->scale(vec3(0.75f)); // Scale set in class members
+							Model->scale(grid[gridPos].transformData.scale);
 							setModel(shader, Model);
 							bookstand->Draw(shader);
 							Model->popMatrix();
@@ -2101,7 +2102,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 								Model->pushMatrix();
 								Model->loadIdentity();
 								Model->translate(vec3(i, libraryCenter.y, j)); // Position shelf at cell center on ground
-								Model->scale(vec3(2.0f)); // Scale set in class members
+								Model->scale(grid[gridPos].transformData.scale);
 								setModel(shader, Model);
 								book_shelf2->Draw(shader);
 								Model->popMatrix();
@@ -2109,7 +2110,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 								Model->pushMatrix();
 								Model->loadIdentity();
 								Model->translate(vec3(i, libraryCenter.y, j)); // Position shelf at cell center on ground
-								Model->scale(vec3(2.0f)); // Scale set in class members
+								Model->scale(grid[gridPos].transformData.scale);
 								setModel(shader, Model);
 								book_shelf1->Draw(shader);
 								Model->popMatrix();
@@ -2120,7 +2121,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 								Model->loadIdentity();
 								Model->translate(vec3(i, libraryCenter.y, j)); // Position shelf at cell center on ground
 								Model->rotate(glm::radians(90.0f), vec3(0, 1, 0)); // Rotate for left/right walls
-								Model->scale(vec3(2.0f)); // Scale set in class members
+								Model->scale(grid[gridPos].transformData.scale);
 								setModel(shader, Model);
 								book_shelf2->Draw(shader);
 								Model->popMatrix();
@@ -2129,7 +2130,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 								Model->loadIdentity();
 								Model->translate(vec3(i, libraryCenter.y, j)); // Position shelf at cell center on ground
 								Model->rotate(glm::radians(90.0f), vec3(0, 1, 0)); // Rotate for left/right walls
-								Model->scale(vec3(2.0f)); // Scale set in class members
+								Model->scale(grid[gridPos].transformData.scale);
 								setModel(shader, Model);
 								book_shelf1->Draw(shader);
 								Model->popMatrix();
@@ -2157,19 +2158,11 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 					if (bossGrid[gridPos].type == BossRoomGen::CellType::BORDER) {
 						int test = bossRoom->mapXtoGridX(i);
 						int test2 = bossRoom->mapZtoGridY(j);
-
-						if (!debug_shelf) {
-							std::cout << "Shelf Position in Grid: (" << x << ", " << z << ")" << std::endl;
-							std::cout << "Shelf Position in World: (" << i << ", " << libraryCenter.y << ", " << j << ")" << std::endl;
-							debug_shelf = true; // Set to true to avoid spamming the console
-							std::cout << "Redo Grid Position: (" << test << ", " << test2 << ")" << std::endl;
-						}
-
 						Model->pushMatrix();
 						Model->loadIdentity();
 						Model->translate(vec3(i, libraryCenter.y, j)); // Position set in class members
 						Model->rotate(glm::radians(bossGrid[gridPos].transformData.rotation), vec3(0, 1, 0)); // Rotate for left/right walls
-						Model->scale(2.5f);
+						Model->scale(bossGrid[gridPos].transformData.scale); // Scale set in class members
 						setModel(shader, Model);
 						book_shelf1->Draw(shader); // Use the bookshelf model for the border
 						Model->popMatrix();
@@ -2179,7 +2172,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 							Model->loadIdentity();
 							Model->translate(vec3(i, 0, j));
 							Model->rotate(glm::radians(bossGrid[gridPos].transformData.rotation), vec3(0, 1, 0)); // Rotate for left/right walls
-							Model->scale(1.0f);
+							Model->scale(bossGrid[gridPos].transformData.scale); // Scale set in class members
 							setModel(shader, Model);
 							if(unlock == false){
 								door->Draw(shader); // Use the door model for the entrance
@@ -2191,7 +2184,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 							Model->loadIdentity();
 							Model->translate(vec3(i, 0, j));
 							Model->rotate(glm::radians(bossGrid[gridPos].transformData.rotation), vec3(0, 1, 0)); // Rotate for left/right walls
-							Model->scale(1.0f);
+							Model->scale(bossGrid[gridPos].transformData.scale); // Scale set in class members
 							setModel(shader, Model);
 							book_shelf1->Draw(shader); // Use the door model for the entrance
 							Model->popMatrix();
@@ -2202,7 +2195,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 							Model->loadIdentity();
 							Model->translate(vec3(i, 0, j));
 							Model->rotate(glm::radians(bossGrid[gridPos].transformData.rotation), vec3(0, 1, 0)); // Rotate for left/right walls
-							Model->scale(1.0f);
+							Model->scale(bossGrid[gridPos].transformData.scale); // Scale set in class members
 							setModel(shader, Model);
 							door->Draw(shader); // Use the door model for the entrance
 							Model->popMatrix();
@@ -2211,7 +2204,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 							Model->loadIdentity();
 							Model->translate(vec3(i, 0, j));
 							Model->rotate(glm::radians(bossGrid[gridPos].transformData.rotation), vec3(0, 1, 0)); // Rotate for left/right walls
-							Model->scale(1.0f);
+							Model->scale(bossGrid[gridPos].transformData.scale); // Scale set in class members
 							setModel(shader, Model);
 							book_shelf1->Draw(shader); // Use the door model for the entrance
 							Model->popMatrix();
@@ -2223,7 +2216,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 								Model->loadIdentity();
 								Model->translate(vec3(i, libraryCenter.y, j)); // Position shelf at cell center on ground
 								Model->rotate(glm::radians(bossGrid[gridPos].transformData.rotation), vec3(0, 1, 0)); // Rotate for left/right walls
-								Model->scale(vec3(2.0f)); // Scale set in class members
+								Model->scale(bossGrid[gridPos].transformData.scale); // Scale set in class members
 								setModel(shader, Model);
 								book_shelf2->Draw(shader);
 								Model->popMatrix();
@@ -2684,148 +2677,248 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		glm::vec3 playerWorldMin, playerWorldMax;
 		updateBoundingBox(playerLocalAABBMin, playerLocalAABBMax, playerTransform, playerWorldMin, playerWorldMax);
 
-		// 2. Iterate through grid for shelves
-		float gridWorldWidth = groundSize * 2.0f;
-		float gridWorldDepth = groundSize * 2.0f;
-		float cellWidth = gridWorldWidth / (float)grid.getSize().x;
-		float cellDepth = gridWorldDepth / (float)grid.getSize().y;
-		// Use the same scale factor as drawLibrary
-		float shelfScaleFactor = 1.8f;
-		// glm::vec3 shelfVisScale = vec3(shelfScaleFactor * cellWidth * 1.5f,
-		// 	shelfScaleFactor * 1.8f,
-		// 	shelfScaleFactor * cellDepth * 1.5f);
-		glm::vec3 shelfVisScale = vec3(1.0f);
-		// --- Get shelf model's local AABB ONCE ---
-		glm::vec3 shelfLocalMin = book_shelf1->getBoundingBoxMin();
-		glm::vec3 shelfLocalMax = book_shelf1->getBoundingBoxMax();
-		// --- Apply visual scale to shelf local AABB for collision ---
-		// Important: Scale the AABB min/max points correctly
-		glm::vec3 collisionShelfLocalMin = shelfLocalMin * shelfVisScale;
-		glm::vec3 collisionShelfLocalMax = shelfLocalMax * shelfVisScale;
-		// Handle potential inversion if scale is negative (unlikely here)
-		for (int i = 0; i < 3; ++i) {
-			if (collisionShelfLocalMin[i] > collisionShelfLocalMax[i]) std::swap(collisionShelfLocalMin[i], collisionShelfLocalMax[i]);
-		}
-
 		// spatial detection for library grid
+
+		float gridCollisionRadius = 1.0f;
+		float cellSize = 2.0f; // Assuming square cells
+		int radiusInCells = static_cast<int>(std::ceil(gridCollisionRadius / cellSize));
 
 		int gridX = library->mapXtoGridX(checkPos.x);
 		int gridZ = library->mapZtoGridY(checkPos.z);
 
 		glm::ivec2 gridPos(gridX, gridZ);
 
-		float gridtoworldX = library->mapGridXtoWorldX(gridPos.x); // check back against the specific world position
-		float gridtoworldZ = library->mapGridYtoWorldZ(gridPos.y);
+		// float gridtoworldX = library->mapGridXtoWorldX(gridPos.x); // check back against the specific world position
+		// float gridtoworldZ = library->mapGridYtoWorldZ(gridPos.y);
 
-		// gridX = library->mapXtoGridX(gridtoworldX);
-		// gridZ = library->mapZtoGridY(gridtoworldZ);
+		if (grid.inBounds(gridPos)) {
+			if (grid[gridPos].type == LibraryGen::CellType::BORDER) {
+				return true; // Collision with border
+			}
+			for (int dz = -radiusInCells; dz <= radiusInCells; ++dz) {
+				for (int dx = -radiusInCells; dx <= radiusInCells; ++dx) {
+					glm::ivec2 cellPos = glm::ivec2(gridX + dx, gridZ + dz);
+					if (!grid.inBounds(cellPos)) continue; // Skip out-of-bounds cells
 
-		// gridPos = glm::ivec2(gridX, gridZ);
+					const auto& cell = grid[cellPos];
+					if (cell.type != LibraryGen::CellType::CLUSTER) continue; // Only check for shelves
 
+					glm::vec3 clusterBboxMin;
+					glm::vec3 clusterBboxMax;
+					glm::vec3 clusterCenter = glm::vec3(library->mapGridXtoWorldX(cellPos.x), libraryCenter.y, library->mapGridYtoWorldZ(cellPos.y));
 
-		// gridX = library->mapXtoGridX(gridtoworldX);
-		// gridZ = library->mapZtoGridY(gridtoworldZ);
+					switch (cell.objectType) {
+						case LibraryGen::CellObjType::CANDELABRA:
+							clusterBboxMin = candelabra->getBoundingBoxMin();
+							clusterBboxMax = candelabra->getBoundingBoxMax();
+							break;
+						case LibraryGen::CellObjType::CHEST:
+							clusterBboxMin = chest->getBoundingBoxMin();
+							clusterBboxMax = chest->getBoundingBoxMax();
+							break;
+						case LibraryGen::CellObjType::GRANDFATHER_CLOCK:
+							clusterBboxMin = grandfather_clock->getBoundingBoxMin();
+							clusterBboxMax = grandfather_clock->getBoundingBoxMax();
+							break;
+						case LibraryGen::CellObjType::ROTATED_BOOKSHELF:
+						case LibraryGen::CellObjType::BOOKSHELF:
+							clusterBboxMin = book_shelf1->getBoundingBoxMin();
+							clusterBboxMax = book_shelf1->getBoundingBoxMax();
+							break;
+						case LibraryGen::CellObjType::TABLE_AND_CHAIR1:
+							clusterBboxMin = table_chairs1->getBoundingBoxMin();
+							clusterBboxMax = table_chairs1->getBoundingBoxMax();
+							break;
+						case LibraryGen::CellObjType::TABLE_AND_CHAIR2:
+							clusterBboxMin = table_chairs2->getBoundingBoxMin();
+							clusterBboxMax = table_chairs2->getBoundingBoxMax();
+							break;
+						case LibraryGen::CellObjType::SHELF_WITH_ABILITY:
+						case LibraryGen::CellObjType::SHELF_WITH_ABILITY_ROTATED:
+							clusterBboxMin = book_shelf2->getBoundingBoxMin();
+							clusterBboxMax = book_shelf2->getBoundingBoxMax();
+							break;
+						case LibraryGen::CellObjType::BOOKSTAND:
+							clusterBboxMin = bookstand->getBoundingBoxMin();
+							clusterBboxMax = bookstand->getBoundingBoxMax();
+							break;
+						default:
+							continue; // Skip unknown object types
+					}
 
-		if (grid.inBounds(glm::ivec2(gridX, gridZ))) {
-			// std::cout << "[DEBUG] Player Position: (" << checkPos.x << "," << checkPos.y << "," << checkPos.z << ")" << std::endl;
-			// std::cout << "[DEBUG] Grid Position: (" << gridX << "," << gridZ << ")" << std::endl;
-			// std::cout << "[DEBUG] Grid to World Position: (" << gridtoworldX << "," << libraryCenter.y << "," << gridtoworldZ << ")" << std::endl;
-			// std::cout << "Grid Cell Value: " << static_cast<int>(grid[gridPos].type) << std::endl;
-			if (grid[gridPos].type == LibraryGen::CellType::CLUSTER) {
-				// std::cout << "[DEBUG] Collision DETECTED with OBSTACLE at grid (" << gridX << "," << gridZ << ")" << std::endl;
-				// // return true; // No collision with walls
-				// glm::vec3 shelfWorldMin = book_shelf1->getBoundingBoxMin() * shelfVisScale;
-				// glm::vec3 shelfWorldMax = book_shelf1->getBoundingBoxMax() * shelfVisScale;
-				// std::cout << "Initial Bounding Box Min: (" << shelfWorldMin.x << "," << shelfWorldMin.y << "," << shelfWorldMin.z << ")" << std::endl;
-				// std::cout << "Initial Bounding Box Max: (" << shelfWorldMax.x << "," << shelfWorldMax.y << "," << shelfWorldMax.z << ")" << std::endl;
-				// shelfWorldMin = glm::vec3(shelfWorldMin.x + gridtoworldX,
-				// 	shelfWorldMin.y + libraryCenter.y,
-				// 	shelfWorldMin.z + gridtoworldZ);
-				// shelfWorldMax = glm::vec3(shelfWorldMax.x + gridtoworldX,
-				// 	shelfWorldMax.y + libraryCenter.y,
-				// 	shelfWorldMax.z + gridtoworldZ);
-				// std::cout << "[DEBUG] Shelf World Min: (" << shelfWorldMin.x << "," << shelfWorldMin.y << "," << shelfWorldMin.z << ")" << std::endl;
-				// std::cout << "[DEBUG] Shelf World Max: (" << shelfWorldMax.x << "," << shelfWorldMax.y << "," << shelfWorldMax.z << ")" << std::endl;
-				glm::vec3 shelfPos = glm::vec3(gridtoworldX, libraryCenter.y, gridtoworldZ); // Base position on ground
+					glm::mat4 clusterTransform = glm::translate(glm::mat4(1.0f), clusterCenter);
+					clusterTransform = glm::rotate(clusterTransform, cell.transformData.rotation, glm::vec3(0, 1, 0));
+					clusterTransform = glm::scale(clusterTransform, cell.transformData.scale);
 
-				if (checkSphereCollision(shelfPos, 1.5f, playerWorldMin, playerWorldMax)) {
-					std::cout << "[DEBUG] Collision DETECTED with shelf at grid (" << gridX << "," << gridZ << ")" << std::endl;
-					return true; // Collision found
+					glm::vec3 clusterWorldMin, clusterWorldMax;
+					updateBoundingBox(clusterBboxMin, clusterBboxMax, clusterTransform, clusterWorldMin, clusterWorldMax);
+
+					// if (checkAABBCollision(playerWorldMin, playerWorldMax, clusterWorldMin, clusterWorldMax)) {
+					// 	std::cout << "[DEBUG] Collision DETECTED with shelf at grid (" << gridX << "," << gridZ << ")" << std::endl;
+					// 	return true; // Collision found
+					// }
+					if (checkSphereCollision(checkPos, 0.25f, clusterWorldMin, clusterWorldMax)) {
+						// std::cout << "[DEBUG] Collision DETECTED with shelf at grid (" << gridX << "," << gridZ << ")" << std::endl;
+						return true; // Collision found
+					}
 				}
-			} else if (grid[gridPos].type == LibraryGen::CellType::BORDER) {
-				return true; // Collision found
 			}
 		}
+
+		gridX = bossRoom->mapXtoGridX(checkPos.x);
+		gridZ = bossRoom->mapZtoGridY(checkPos.z);
+
+		gridPos = glm::ivec2(gridX, gridZ);
+
+		if (bossGrid.inBounds(gridPos)) {
+			for (int dz = -radiusInCells; dz <= radiusInCells; ++dz) {
+				for (int dx = -radiusInCells; dx <= radiusInCells; ++dx) {
+					glm::ivec2 cellPos = glm::ivec2(gridX + dx, gridZ + dz);
+					if (!bossGrid.inBounds(cellPos)) continue; // Skip out-of-bounds cells
+
+					const auto& cell = bossGrid[cellPos];
+					if (cell.type == BossRoomGen::CellType::NONE) continue;
+					// if (bossfightstarted && !bossRoom->isInsideBossArea(cellPos)) return true;
+
+					glm::vec3 clusterBboxMin;
+					glm::vec3 clusterBboxMax;
+					glm::vec3 clusterCenter = glm::vec3(bossRoom->mapGridXtoWorldX(cellPos.x), libraryCenter.y, bossRoom->mapGridYtoWorldZ(cellPos.y));
+
+					switch (cell.objectType) {
+						case BossRoomGen::CellObjType::BOOKSHELF:
+							clusterBboxMin = book_shelf1->getBoundingBoxMin();
+							clusterBboxMax = book_shelf1->getBoundingBoxMax();
+							break;
+						case BossRoomGen::CellObjType::GLOWING_SHELF:
+							clusterBboxMin = book_shelf2->getBoundingBoxMin();
+							clusterBboxMax = book_shelf2->getBoundingBoxMax();
+							break;
+						case BossRoomGen::CellObjType::DOOR:
+							clusterBboxMin = door->getBoundingBoxMin();
+							clusterBboxMax = door->getBoundingBoxMax();
+							break;
+						default:
+							continue; // Skip unknown object types
+						}
+
+					glm::mat4 clusterTransform = glm::translate(glm::mat4(1.0f), clusterCenter);
+					clusterTransform = glm::rotate(clusterTransform, cell.transformData.rotation, glm::vec3(0, 1, 0));
+					clusterTransform = glm::scale(clusterTransform, cell.transformData.scale);
+					glm::vec3 clusterWorldMin, clusterWorldMax;
+					updateBoundingBox(clusterBboxMin, clusterBboxMax, clusterTransform, clusterWorldMin, clusterWorldMax);
+
+					// Checks collision with the side shelves
+					if (cell.borderType == BossRoomGen::BorderType::ENTRANCE_SIDE) {
+						if (checkSphereCollision(checkPos, 0.25f, clusterWorldMin, clusterWorldMax)) {
+							std::cout << "[DEBUG] Collision DETECTED with shelf at grid (" << gridX << "," << gridZ << ")" << std::endl;
+							return true; // Collision found
+						}
+					}
+					// Prevents entering the boss room until canFightboss is true
+					else if (cell.borderType == BossRoomGen::BorderType::ENTRANCE_MIDDLE && !canFightboss) {
+						if (checkSphereCollision(checkPos, 0.25f, clusterWorldMin, clusterWorldMax)) {
+							std::cout << "[DEBUG] Collision DETECTED with shelf at grid (" << gridX << "," << gridZ << ")" << std::endl;
+							return true; // Collision found
+						}
+					} // for when done with the boss fight
+					else if (cell.borderType == BossRoomGen::BorderType::EXIT_MIDDLE && bossfightended && !bossEnemy->isAlive()) {
+						if (checkSphereCollision(checkPos, 0.25f, clusterWorldMin, clusterWorldMax)) {
+							bossfightended = false;
+							restartGen = true;
+							return false;
+						}
+					}
+					// these two are to prevent leaving the boss area once the fight has started
+					else if (cell.borderType == BossRoomGen::BorderType::CIRCULAR_BORDER && bossfightstarted) {
+						if (checkSphereCollision(checkPos, 0.25f, clusterWorldMin, clusterWorldMax)) {
+							return true;
+						}
+					}
+					else if (cell.borderType == BossRoomGen::BorderType::ENTRANCE_MIDDLE && bossfightstarted) {
+						if (checkSphereCollision(checkPos, 0.25f, clusterWorldMin, clusterWorldMax)) {
+							return true;
+						}
+					}
+					// checks general collision with shelves inside boss area
+					else if (cell.type == BossRoomGen::CellType::CLUSTER) {
+						if (checkSphereCollision(checkPos, 0.5f, clusterWorldMin, clusterWorldMax)) {
+							return true;
+						}
+					}
+				}
+			}
+		}
+
 
 		// spatial detection for boss room grid
 
-		gridX = bossRoom->mapXtoGridX(checkPos.x);
-		gridZ = bossRoom->mapZtoGridY(checkPos.z);
+		// gridX = bossRoom->mapXtoGridX(checkPos.x);
+		// gridZ = bossRoom->mapZtoGridY(checkPos.z);
 
-		gridPos = glm::ivec2(gridX, gridZ);
+		// gridPos = glm::ivec2(gridX, gridZ);
 
-		gridtoworldX = bossRoom->mapGridXtoWorldX(gridPos.x); // check back against the specific world position
-		gridtoworldZ = bossRoom->mapGridYtoWorldZ(gridPos.y);
+		// float gridtoworldX = bossRoom->mapGridXtoWorldX(gridPos.x); // check back against the specific world position
+		// float gridtoworldZ = bossRoom->mapGridYtoWorldZ(gridPos.y);
 
-		if (bossGrid.inBounds(glm::ivec2(gridX, gridZ))) {
-			// std::cout << "[DEBUG] Player Position: (" << checkPos.x << "," << checkPos.y << "," << checkPos.z << ")" << std::endl;
-			// std::cout << "[DEBUG] Grid Position: (" << gridX << "," << gridZ << ")" << std::endl;
-			// std::cout << "[DEBUG] Grid to World Position: (" << gridtoworldX << "," << libraryCenter.y << "," << gridtoworldZ << ")" << std::endl;
-			// std::cout << "Grid Cell Value: " << static_cast<int>(grid[gridPos].type) << std::endl;
+		// if (bossGrid.inBounds(glm::ivec2(gridX, gridZ))) {
+		// 	// std::cout << "[DEBUG] Player Position: (" << checkPos.x << "," << checkPos.y << "," << checkPos.z << ")" << std::endl;
+		// 	// std::cout << "[DEBUG] Grid Position: (" << gridX << "," << gridZ << ")" << std::endl;
+		// 	// std::cout << "[DEBUG] Grid to World Position: (" << gridtoworldX << "," << libraryCenter.y << "," << gridtoworldZ << ")" << std::endl;
+		// 	// std::cout << "Grid Cell Value: " << static_cast<int>(grid[gridPos].type) << std::endl;
 
-			if (bossGrid[gridPos].borderType == BossRoomGen::BorderType::ENTRANCE_SIDE) {
-				glm::vec3 pos = glm::vec3(gridtoworldX, libraryCenter.y, gridtoworldZ); // Base position on ground
+		// 	if (bossGrid[gridPos].borderType == BossRoomGen::BorderType::ENTRANCE_SIDE) {
+		// 		glm::vec3 pos = glm::vec3(gridtoworldX, libraryCenter.y, gridtoworldZ); // Base position on ground
 
-				if (checkSphereCollision(pos, 2.0f, playerWorldMin, playerWorldMax)) {
-					std::cout << "[DEBUG] Collision DETECTED with shelf at grid (" << gridX << "," << gridZ << ")" << std::endl;
-					return true; // Collision found
-				}
-			}
-		}
+		// 		if (checkSphereCollision(pos, 2.0f, playerWorldMin, playerWorldMax)) {
+		// 			std::cout << "[DEBUG] Collision DETECTED with shelf at grid (" << gridX << "," << gridZ << ")" << std::endl;
+		// 			return true; // Collision found
+		// 		}
+		// 	}
+		// }
 
-		gridX = bossRoom->mapXtoGridX(checkPos.x);
-		gridZ = bossRoom->mapZtoGridY(checkPos.z);
+		// gridX = bossRoom->mapXtoGridX(checkPos.x);
+		// gridZ = bossRoom->mapZtoGridY(checkPos.z);
 
-		gridPos = glm::ivec2(gridX, gridZ);
+		// gridPos = glm::ivec2(gridX, gridZ);
 
-		gridtoworldX = bossRoom->mapGridXtoWorldX(gridPos.x); // check back against the specific world position
-		gridtoworldZ = bossRoom->mapGridYtoWorldZ(gridPos.y);
+		// gridtoworldX = bossRoom->mapGridXtoWorldX(gridPos.x); // check back against the specific world position
+		// gridtoworldZ = bossRoom->mapGridYtoWorldZ(gridPos.y);
 
-		if (bossGrid.inBounds(glm::ivec2(gridX, gridZ))) {
-			if (bossGrid[gridPos].borderType == BossRoomGen::BorderType::ENTRANCE_SIDE) {
-				glm::vec3 pos = glm::vec3(gridtoworldX, libraryCenter.y, gridtoworldZ); // Base position on ground
+		// if (bossGrid.inBounds(glm::ivec2(gridX, gridZ))) {
+		// 	if (bossGrid[gridPos].borderType == BossRoomGen::BorderType::ENTRANCE_SIDE) {
+		// 		glm::vec3 pos = glm::vec3(gridtoworldX, libraryCenter.y, gridtoworldZ); // Base position on ground
 
-				if (checkSphereCollision(pos, 3.0f, playerWorldMin, playerWorldMax)) {
-					std::cout << "[DEBUG] Collision DETECTED with shelf at grid (" << gridX << "," << gridZ << ")" << std::endl;
-					return true; // Collision found
-				}
-			}
-			// prevents entering the boss room
-			else if ((bossGrid[gridPos].borderType == BossRoomGen::BorderType::ENTRANCE_MIDDLE && !canFightboss)) {
-				glm::vec3 pos = glm::vec3(gridtoworldX, libraryCenter.y, gridtoworldZ); // Base position on ground
-				if (checkSphereCollision(pos, 2.0f, playerWorldMin, playerWorldMax)) {
-					std::cout << "[DEBUG] Collision DETECTED with shelf at grid (" << gridX << "," << gridZ << ")" << std::endl;
-					return true; // Collision found
-				}
-			}
-			else if (bossfightstarted && !bossRoom->isInsideBossArea(gridPos)) {
-				return true;
-			}
-			// else if (bossRoom->isInsideBossArea(gridPos) && canFightboss) {
-			// 	return true;
-			// }
-			// // prevents player from leaving the boss room
-			// else if ((canFightboss && bossEnemy->isAlive() && bossGrid[gridPos].borderType == BossRoomGen::BorderType::EXIT_MIDDLE) ||
-			// 	(bossRoom->isInsideBossArea(gridPos) && canFightboss && bossEnemy->isAlive() && bossGrid[gridPos].borderType == BossRoomGen::BorderType::ENTRANCE_MIDDLE)) {
-			// 	return true;
-			// }
-			// when boss is dead player is able to leave the boss room and will restart the generation
-			else if ((bossfightended && !bossEnemy->isAlive() && bossGrid[gridPos].borderType == BossRoomGen::BorderType::EXIT_MIDDLE)) {
-				bossfightended = false;
-				restartGen = true;
-				return true;
-			}
-		}
+		// 		if (checkSphereCollision(pos, 3.0f, playerWorldMin, playerWorldMax)) {
+		// 			std::cout << "[DEBUG] Collision DETECTED with shelf at grid (" << gridX << "," << gridZ << ")" << std::endl;
+		// 			return true; // Collision found
+		// 		}
+		// 	}
+		// 	// prevents entering the boss room
+		// 	else if ((bossGrid[gridPos].borderType == BossRoomGen::BorderType::ENTRANCE_MIDDLE && !canFightboss)) {
+		// 		glm::vec3 pos = glm::vec3(gridtoworldX, libraryCenter.y, gridtoworldZ); // Base position on ground
+		// 		if (checkSphereCollision(pos, 2.0f, playerWorldMin, playerWorldMax)) {
+		// 			std::cout << "[DEBUG] Collision DETECTED with shelf at grid (" << gridX << "," << gridZ << ")" << std::endl;
+		// 			return true; // Collision found
+		// 		}
+		// 	}
+		// 	else if (bossfightstarted && !bossRoom->isInsideBossArea(gridPos)) {
+		// 		return true;
+		// 	}
+		// 	// else if (bossRoom->isInsideBossArea(gridPos) && canFightboss) {
+		// 	// 	return true;
+		// 	// }
+		// 	// // prevents player from leaving the boss room
+		// 	// else if ((canFightboss && bossEnemy->isAlive() && bossGrid[gridPos].borderType == BossRoomGen::BorderType::EXIT_MIDDLE) ||
+		// 	// 	(bossRoom->isInsideBossArea(gridPos) && canFightboss && bossEnemy->isAlive() && bossGrid[gridPos].borderType == BossRoomGen::BorderType::ENTRANCE_MIDDLE)) {
+		// 	// 	return true;
+		// 	// }
+		// 	// when boss is dead player is able to leave the boss room and will restart the generation
+		// 	else if ((bossfightended && !bossEnemy->isAlive() && bossGrid[gridPos].borderType == BossRoomGen::BorderType::EXIT_MIDDLE)) {
+		// 		bossfightended = false;
+		// 		restartGen = true;
+		// 		return true;
+		// 	}
+		// }
 
 		// for (int z = 0; z < grid.getSize().y; ++z) {
 		// 	for (int x = 0; x < grid.getSize().x; ++x) {
@@ -3124,7 +3217,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			if (canFightboss && bossEnemy && bossEnemy->isAlive()) {
 				if (checkAABBCollision(proj.aabbMin, proj.aabbMax, bossEnemy->getAABBMin(), bossEnemy->getAABBMax())) {
 					cout << "[DEBUG] Fireball HIT boss!" << endl;
-					float bossDamage = 50.0f;
+					float bossDamage = 100.0f;
 					bossEnemy->takeDamage(bossDamage);
 					proj.active = false;
 					activeSpells.erase(activeSpells.begin() + i);
@@ -3215,17 +3308,17 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 												p_color_start, p_color_end,
 												p_scale_min, p_scale_max);
 
-			// Model->pushMatrix();
-			// Model->loadIdentity(); // Start from identity for projectile
+			Model->pushMatrix();
+			Model->loadIdentity(); // Start from identity for projectile
 
-			// // Use the pre-calculated transform from updateAABB
-			// Model->multMatrix(proj.transform);
-			// Model->scale(0.2f);
+			// Use the pre-calculated transform from updateAABB
+			Model->multMatrix(proj.transform);
+			Model->scale(0.15f);
 
-			// setModel(shader, Model);
-			// sphere->Draw(shader); // Draw the sphere model
+			setModel(shader, Model);
+			sphere->Draw(shader); // Draw the sphere model
 
-			// Model->popMatrix();
+			Model->popMatrix();
 		}
 
 		shader->unbind();

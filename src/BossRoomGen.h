@@ -40,6 +40,8 @@ class BossRoomGen {
         enum class CellObjType {
             NONE,
             GLOWING_SHELF,
+            BOOKSHELF,
+            DOOR,
         };
 
         struct transform {

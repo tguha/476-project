@@ -143,7 +143,8 @@ void LibraryGen::placeClusters(int count) {
                 for (int dx = -1; dx <= 1; ++dx) {
                     glm::ivec2 shelfPos = pos + glm::ivec2(dx, 0);
                     if (grid.inBounds(shelfPos)) {
-                        grid[shelfPos] = Cell(CellType::CLUSTER, randomClusterType); // Mark the cluster position in the grid
+                        grid[shelfPos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::BOOKSHELF); // Mark the cluster position in the grid
+                        grid[shelfPos].transformData.scale = glm::vec3(2.0f); // Scale the object
                     }
                 }
             } else if (randomClusterType == ClusterType::SHELF2) {
@@ -157,101 +158,132 @@ void LibraryGen::placeClusters(int count) {
                 for (int dx = -1; dx <= 1; ++dx) {
                     glm::ivec2 shelfPos = pos + glm::ivec2(0, dx);
                     if (grid.inBounds(shelfPos)) {
-                        grid[shelfPos] = Cell(CellType::CLUSTER, randomClusterType); // Mark the cluster position in the grid
+                        grid[shelfPos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::ROTATED_BOOKSHELF); // Mark the cluster position in the grid
+                        grid[shelfPos].transformData.rotation = glm::radians(90.0f); // Rotate the object
+                        grid[shelfPos].transformData.scale = glm::vec3(2.0f); // Scale the object
                     }
                 }
             } else if (randomClusterType == ClusterType::LAYOUT1) {
                 if (grid.inBounds(pos)) {
                     grid[pos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::TABLE_AND_CHAIR1);
+                    grid[pos].transformData.scale = glm::vec3(0.35f);
                 }
                 glm::ivec2 layoutpos = pos + glm::ivec2(1, 0);
                 if (grid.inBounds(layoutpos)) {
                     grid[layoutpos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::ROTATED_BOOKSHELF);
+                    grid[layoutpos].transformData.rotation = glm::radians(90.0f); // Rotate the object
+                    grid[layoutpos].transformData.scale = glm::vec3(2.0f);
                 }
                 layoutpos = pos + glm::ivec2(1, 1);
                 if (grid.inBounds(layoutpos)) {
                     grid[layoutpos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::ROTATED_BOOKSHELF);
+                    grid[layoutpos].transformData.rotation = glm::radians(90.0f); // Rotate the object
+                    grid[layoutpos].transformData.scale = glm::vec3(2.0f);
                 }
                 layoutpos = pos + glm::ivec2(1, -1);
                 if (grid.inBounds(layoutpos)) {
                     grid[layoutpos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::ROTATED_BOOKSHELF);
+                    grid[layoutpos].transformData.rotation = glm::radians(90.0f); // Rotate the object
+                    grid[layoutpos].transformData.scale = glm::vec3(2.0f);
                 }
                 layoutpos = pos + glm::ivec2(0, -2);
                 if (grid.inBounds(layoutpos)) {
                     grid[layoutpos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::BOOKSHELF);
+                    grid[layoutpos].transformData.scale = glm::vec3(2.0f);
                 }
                 layoutpos = pos + glm::ivec2(0, 2);
                 if (grid.inBounds(layoutpos)) {
                     grid[layoutpos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::BOOKSHELF);
+                    grid[layoutpos].transformData.scale = glm::vec3(2.0f);
                 }
                 layoutpos = pos + glm::ivec2(0, 1);
                 if (grid.inBounds(layoutpos)) {
                     grid[layoutpos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::CHEST);
+                    grid[layoutpos].transformData.scale = glm::vec3(0.25f);
                 }
                 layoutpos = pos + glm::ivec2(0, -1);
                 if (grid.inBounds(layoutpos)) {
                     grid[layoutpos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::CANDELABRA);
+                    grid[layoutpos].transformData.scale = glm::vec3(0.5f);
                 }
             } else if (randomClusterType == ClusterType::LAYOUT2) {
                 if (grid.inBounds(pos)) {
                     grid[pos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::TABLE_AND_CHAIR2);
+                    grid[pos].transformData.scale = glm::vec3(0.35f);
                 }
                 glm::ivec2 layoutpos = pos + glm::ivec2(0, 1);
                 if (grid.inBounds(layoutpos)) {
                     grid[layoutpos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::BOOKSHELF);
+                    grid[layoutpos].transformData.scale = glm::vec3(2.0f);
                 }
             } else if (randomClusterType == ClusterType::LAYOUT3) {
                 if (grid.inBounds(pos)) {
                     grid[pos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::TABLE);
+                    grid[pos].transformData.scale = glm::vec3(0.35f);
                 }
                 glm::ivec2 layoutpos = pos + glm::ivec2(1, 1);
                 if (grid.inBounds(layoutpos)) {
                     grid[layoutpos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::CHAIR);
+                    grid[layoutpos].transformData.scale = glm::vec3(0.35f);
                 }
             } else if (randomClusterType == ClusterType::ONLY_CANDELABRA) {
                 if (grid.inBounds(pos)) {
                     grid[pos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::CANDELABRA); // Mark the cluster position in the grid
+                    grid[pos].transformData.scale = glm::vec3(0.5f); // Scale the object
                 }
             } else if (randomClusterType == ClusterType::ONLY_CLOCK) {
                 if (grid.inBounds(pos)) {
                     grid[pos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::GRANDFATHER_CLOCK); // Mark the cluster position in the grid
+                    grid[pos].transformData.scale = glm::vec3(0.5f); // Scale the object
                 }
             } else if (randomClusterType == ClusterType::ONLY_CHEST) {
                 if (grid.inBounds(pos)) {
                     grid[pos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::CHEST); // Mark the cluster position in the grid
+                    grid[pos].transformData.scale = glm::vec3(0.25f); // Scale the object
                 }
             } else if (randomClusterType == ClusterType::ONLY_TABLE) {
                 if (grid.inBounds(pos)) {
                     grid[pos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::TABLE_AND_CHAIR1); // Mark the cluster position in the grid
+                    grid[pos].transformData.scale = glm::vec3(0.35f); // Scale the object
                 }
             } else if (randomClusterType == ClusterType::ONLY_BOOKSTAND) {
                 glm::ivec2 layoutpos = glm::ivec2(spawnPosinGrid.x, spawnPosinGrid.y) + glm::ivec2(1, 0);
                 if (grid.inBounds(layoutpos)) {
                     grid[layoutpos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::BOOKSTAND); // Mark the cluster position in the grid
+                    grid[layoutpos].transformData.scale = glm::vec3(0.75f); // Scale the object
                 }
             } else if (randomClusterType == ClusterType::GLOWING_SHELF1) {
                 if (grid.inBounds(pos)) {
                     grid[pos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::SHELF_WITH_ABILITY); // Mark the cluster position in the grid
+                    grid[pos].transformData.scale = glm::vec3(2.0f); // Scale the object
                 }
                 glm::ivec2 layoutpos = pos + glm::ivec2(1, 0);
                 if (grid.inBounds(layoutpos)) {
                     grid[layoutpos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::BOOKSHELF); // Mark the cluster position in the grid
+                    grid[layoutpos].transformData.scale = glm::vec3(2.0f); // Scale the object
                 }
                 layoutpos = pos + glm::ivec2(-1, 0);
                 if (grid.inBounds(layoutpos)) {
                     grid[layoutpos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::BOOKSHELF); // Mark the cluster position in the grid
+                    grid[layoutpos].transformData.scale = glm::vec3(2.0f); // Scale the object
                 }
             } else if (randomClusterType == ClusterType::GLOWING_SHELF2) {
                 if (grid.inBounds(pos)) {
                     grid[pos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::SHELF_WITH_ABILITY_ROTATED); // Mark the cluster position in the grid
+                    grid[pos].transformData.rotation = glm::radians(90.0f); // Rotate the object
+                    grid[pos].transformData.scale = glm::vec3(2.0f); // Scale the object
                 }
                 glm::ivec2 layoutpos = pos + glm::ivec2(0, 1);
                 if (grid.inBounds(layoutpos)) {
                     grid[layoutpos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::ROTATED_BOOKSHELF); // Mark the cluster position in the grid
+                    grid[layoutpos].transformData.rotation = glm::radians(90.0f); // Rotate the object
+                    grid[layoutpos].transformData.scale = glm::vec3(2.0f); // Scale the object
                 }
                 layoutpos = pos + glm::ivec2(0, -1);
                 if (grid.inBounds(layoutpos)) {
                     grid[layoutpos] = Cell(CellType::CLUSTER, randomClusterType, CellObjType::ROTATED_BOOKSHELF); // Mark the cluster position in the grid
+                    grid[layoutpos].transformData.rotation = glm::radians(90.0f); // Rotate the object
+                    grid[layoutpos].transformData.scale = glm::vec3(2.0f); // Scale the object
                 }
             }
             else {
