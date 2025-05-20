@@ -1,4 +1,5 @@
 #include "Enemy.h"
+#include "Spell.h"
 
 #define BOSS_HP_MAX 500.0f
 #define BOSS_ENRAGED_HP 250.0f
@@ -14,9 +15,10 @@ class BossEnemy : public Enemy {
         bool enraged;
         float specialAttackCooldown;
         glm::vec3 bossDirection = glm::vec3(0.0f, 0.0f, 0.0f);
+        SpellType BossSpellType = SpellType::NONE;
 
     public:
-        BossEnemy(const glm::vec3& position, float hitpoints, AssimpModel* model, const glm::vec3& scale, const glm::vec3& rotation, float specialAttackCooldown);
+        BossEnemy(const glm::vec3& position, float hitpoints, AssimpModel* model, const glm::vec3& scale, const glm::vec3& rotation, float specialAttackCooldown, SpellType spellType);
 
         void changePhase();
         void specialAttack(float damage, float deltaTime);
@@ -27,4 +29,5 @@ class BossEnemy : public Enemy {
         glm::vec3 getBossDirection() const { return bossDirection; }
         float getSpecialAttackCooldown() const { return specialAttackCooldown; }
         void setSpecialAttackCooldown(float cooldown) { specialAttackCooldown = cooldown; }
+        SpellType getBossSpellType() const { return BossSpellType; }
 };
