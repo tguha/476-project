@@ -11,17 +11,31 @@
 namespace Config {
     // --- Global Game Settings ---
 
+    // Debugging --- set all to false for release builds
+    constexpr bool DEBUG_ENEMY_MOVEMENT = true; // Debug enemy movement
+    constexpr bool DEBUG_ROOM_PLACEMENT = false; // Debugging room placement
+    inline static bool DEBUG_LIGHTING = false;
+    inline static bool DEBUG_GEOM = false;
+    constexpr bool DEBUG_SHADER = true; // Sets verbose flag for shaders
+    constexpr bool DEBUG_TEX_LOADING = false;
+    constexpr bool DEBUG_PLAYER_AABB = false;
+    constexpr bool DEBUG_ORB_PICKUP = false;
+
     // Rendering & Shaders
-    constexpr int NUM_LIGHTS = 4;
     constexpr int MAX_BONES = 200;
+    inline static bool SHADOW = true;
+    constexpr float ORTHO_SIZE = 60.0f;
+    constexpr float PARTICLES = true;
 
     // UI
     constexpr bool SHOW_HEALTHBAR = true;
+	constexpr bool SHOW_MINIMAP = true;
+
     const std::string RESOURCE_DIRECTORY_PREFIX = "../resources"; // Default, can be overridden
 
     // Default Window Dimensions
-    constexpr int DEFAULT_WINDOW_WIDTH = 640;
-    constexpr int DEFAULT_WINDOW_HEIGHT = 480;
+    constexpr int DEFAULT_WINDOW_WIDTH = 1920;
+    constexpr int DEFAULT_WINDOW_HEIGHT = 1080;
 
     // Player settings
     constexpr int INVENTORY_SIZE = 8;
@@ -61,12 +75,15 @@ namespace Config {
     constexpr float CAMERA_PHI_MAX_DEGREES = -10.0f;
 
     // Gameplay
-    constexpr float GROUND_Y_LEVEL = 0.0f;
     constexpr float INTERACTION_RADIUS = 5.0f;
     constexpr float SPELL_PROJECTILE_SPEED = 20.0f;
     constexpr float SPELL_PROJECTILE_LIFETIME = 2.0f;
     constexpr glm::vec3 SPELL_PROJECTILE_SCALE = glm::vec3(0.05f, 0.05f, 0.6f);
     constexpr float SPELL_DAMAGE_AMOUNT = 25.0f;
+
+    // Scene
+    constexpr float GROUND_SIZE = 20.0f;
+    constexpr float GROUND_HEIGHT = 0.0f;
 
     // --- Utility Functions ---
 
