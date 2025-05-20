@@ -878,8 +878,8 @@ public:
 
 		//key
 		key = new AssimpModel(resourceDirectory + "/Key_and_Lock/key.obj");
-		Collectible key1 = Collectible(key, vec3(0.0, 2.0, 0.0), 0.1f,  vec3(0.9, 0.9, 0.9), SpellType::NONE);
-		keyCollectibles.push_back(key1);
+		// Collectible key1 = Collectible(key, vec3(0.0, 2.0, 0.0), 0.1f,  vec3(0.9, 0.9, 0.9), SpellType::NONE);
+		// keyCollectibles.push_back(key1);
 
 		//lock
 		lock = new AssimpModel(resourceDirectory + "/Key_and_Lock/lockCopy.obj");
@@ -1813,9 +1813,9 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
                 // This simple check assumes positions are unique enough for dead enemies.
                 // A more robust way would be to tag enemies that have already dropped a key.
                 bool keyAlreadyExists = false;
-                for (const auto& k : keyCollectibles) {
+                for (const auto& key : keyCollectibles) {
                     // Approximate check, ideally use a unique ID from the enemy
-                    if (glm::distance(k.position, enemy->getPosition()) < 0.1f) { 
+                    if (glm::distance(key.position, enemy->getPosition()) < 0.1f) { 
                         keyAlreadyExists = true;
                         break;
                     }
@@ -1823,7 +1823,9 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
                 if (!keyAlreadyExists) {
                     keyCollectibles.emplace_back(key, enemy->getPosition(), 0.1f, vec3(0.9, 0.9, 0.9), SpellType::NONE); 
                 }
+				
 				drawKey(shader, Model );
+				
 				continue; // Skip null or dead enemies
 			}
 
@@ -3539,6 +3541,8 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 				currentDrawPosition = key.position;
 			}
 
+			//std::cout << "key position " << key.position.x << " " << key.position.y << " " << key.position.z << " " << std::endl;
+
 			// --- Set up transformations ---
 			Model->pushMatrix();
 				Model->loadIdentity();
@@ -3877,7 +3881,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		
 		//keyCollectibles.emplace_back(key, vec3(0.0, 2.0, 0.0), 0.1f,  vec3(0.9, 0.9, 0.9));
 
-		drawKey(prog2, Model);
+		//drawKey(prog2, Model);
 
 
 
