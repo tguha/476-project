@@ -71,6 +71,10 @@ public:
 
 	float exposure = 1.0f;
 	float saturation = 1.0f;
+	
+	//Timeout for F Key
+	float fTimeout;
+
 
 	// Textures
 	shared_ptr<Texture> borderWallTex;
@@ -3413,6 +3417,12 @@ public:
 		redFlashProg->unbind();
 	}
 
+	void updateFTimeout(float deltaTime) {
+		if (fTimeout > 0) {
+			fTimeout -= deltaTime;
+		}
+	}
+
 	void drawOcclusionBoxAtPlayer(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		if (!shader || !Model || !sphere) return; // Need shader, stack, model
 
@@ -3610,6 +3620,7 @@ public:
 		//updateKeys((float)glfwGetTime());
 		updateEnemies(frametime);
 		updateProjectiles(frametime);
+		updateFTimeout(frametime);
 		particleSystem->update(frametime); // Update particles
 		checkAllEnemies();
 		checkBossfight();
@@ -3879,7 +3890,11 @@ public:
 			glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 		}
 		if (key == GLFW_KEY_F && action == GLFW_PRESS) { // Interaction Key
-			interactWithBooks();
+			//F Time out to avoid pointer crash
+			if (fTimeout <= 0) {
+				interactWithBooks();
+				fTimeout = 3.0f;
+			}
 		}
 		if (key == GLFW_KEY_L && action == GLFW_PRESS) {
 			cursor_visable = !cursor_visable;
