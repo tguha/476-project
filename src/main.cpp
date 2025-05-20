@@ -3443,9 +3443,9 @@ public:
 
 
 		// 2. Draw the Static Library Shelves
-		drawLibrary(prog, Model, true);
+		drawLibrary(prog, Model, CULL);
 
-		drawBossRoom(prog, Model, true); // Draw the boss room
+		drawBossRoom(prog, Model, CULL); // Draw the boss room
 
 		//// disable color writes
 		//glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
@@ -3641,7 +3641,9 @@ public:
 			LV = glm::lookAt(lightPos, lightTarget, lightUp);
 			glUniformMatrix4fv(DepthProg->getUniform("LV"), 1, GL_FALSE, value_ptr(LV));
 
+			CULL = false;
 			drawSceneForShadowMap(DepthProg); // Draw the scene from the lights perspective
+			CULL = true;
 
 			DepthProg->unbind();
 			glCullFace(GL_BACK); // Reset culling to default
