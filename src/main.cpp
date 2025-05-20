@@ -126,9 +126,9 @@ public:
 	//  vector of books
 	vector<Book> books;
 
-	AssimpModel *stickfigure_running, *stickfigure_standing;
-	Animation *stickfigure_anim, *stickfigure_idle;
-	Animator *catwizard_animator, *stickfigure_animator;
+	AssimpModel* player_rig;
+	Animation *player_walk, *player_idle;
+	Animator *catwizard_animator;
 
 	AssimpModel *CatWizard;
 
@@ -191,7 +191,7 @@ public:
 	vec3 debugEye = vec3(0.0f, 0.0f, 0.0f);
 	float debugMovementSpeed = 0.2f;
 
-	Man_State manState = Man_State::STANDING;
+	Man_State manState = Man_State::IDLE;
 
 	LibraryGen *library = new LibraryGen();
 	Grid<LibraryGen::Cell> grid;
@@ -583,12 +583,12 @@ public:
 
 		// load the walking character model
 		// load the walking character moded
-		stickfigure_running = new AssimpModel(resourceDirectory + "/CatWizard/CatWizardAnimationMay.fbx");
-		stickfigure_running->assignTexture("texture_diffuse", resourceDirectory + "/CatWizard/textures/ImphenziaPalette02-Albedo.png");
+		player_rig = new AssimpModel(resourceDirectory + "/CatWizard/CatWizardAnimation2.fbx");
+		player_rig->assignTexture("texture_diffuse", resourceDirectory + "/CatWizard/textures/ImphenziaPalette02-Albedo.png");
 		//PROBLEM GETTING ANIMATION FROM "Fixed" FBX
-		stickfigure_anim = new Animation(resourceDirectory + "/CatWizard/CatWizardAnimationMay.fbx", stickfigure_running, 0);
-		//stickfigure_idle = new Animation(resourceDirectory + "/Vanguard/Vanguard.fbx", stickfigure_running, 1);
-		//stickfigure_idle = new Animation(resourceDirectory + "/Vanguard/Vanguard.fbx", stickfigure_running, 1);
+		player_walk = new Animation(resourceDirectory + "/CatWizard/CatWizardAnimation2.fbx", player_rig, 2);
+		player_idle = new Animation(resourceDirectory + "/CatWizard/CatWizardAnimation2.fbx", player_rig, 1);
+		//player_idle = new Animation(resourceDirectory + "/Vanguard/Vanguard.fbx", player_rig, 1);
 
 		//TEST Load the cat
 		//CatWizard = new AssimpModel(resourceDirectory + "/CatWizard/BlendWalkFix.fbx");
@@ -597,7 +597,7 @@ public:
 		// --- Calculate Player Collision Box NOW that model is loaded ---
 		calculatePlayerLocalAABB();
 
-		catwizard_animator = new Animator(stickfigure_anim);
+		catwizard_animator = new Animator(player_walk);
 
 		// load the cube (books)
 		cube = new AssimpModel(resourceDirectory + "/cube.obj");
@@ -1306,27 +1306,26 @@ public:
 	}
 
 	void drawPlayer(shared_ptr<Program> curS, shared_ptr<MatrixStack> Model, float animTime) {
-		if (!curS || !Model || !stickfigure_running || !catwizard_animator || !stickfigure_anim /*|| !stickfigure_idle*/) {
+		if (!curS || !Model || !player_rig || !catwizard_animator || !player_walk || !player_idle) {
 			cerr << "Error: Null pointer in drawPlayer." << endl;
 			return;
 		}
 		curS->bind();
 
-		// Animation update
+	
 
 		if (animTime != 0.0) {
-			catwizard_animator->SetCurrentAnimation(stickfigure_anim);
 			catwizard_animator->UpdateAnimation(1.5f * animTime);
 		}
 
-		/*if (manState == Man_State::WALKING) {
+		// Animation update
 		if (manState == Man_State::WALKING) {
-			stickfigure_animator->SetCurrentAnimation(stickfigure_anim);
+			catwizard_animator->SetCurrentAnimation(player_walk);
 		}
-		else {
-			//stickfigure_animator->SetCurrentAnimation(stickfigure_idle);
+		else if (manState == Man_State::IDLE){
+			catwizard_animator->SetCurrentAnimation(player_idle);
 		}
-		*/
+		
 		// Update bone matrices
 
 		vector<glm::mat4> transforms = catwizard_animator->GetFinalBoneMatrices();
@@ -1355,8 +1354,8 @@ public:
 		// Update VISUAL bounding box (can be different from collision box if needed)
 		// Using the same AABB calculation logic as before for consistency
 		glm::mat4 manTransform = Model->topMatrix();
-		updateBoundingBox(stickfigure_running->getBoundingBoxMin(),
-			stickfigure_running->getBoundingBoxMax(),
+		updateBoundingBox(player_rig->getBoundingBoxMin(),
+			player_rig->getBoundingBoxMax(),
 			manTransform,
 			manAABBmin, // This is the visual/interaction AABB
 			manAABBmax);
@@ -1365,7 +1364,7 @@ public:
 		if (curS->hasUniform("player")) glUniform1i(curS->getUniform("player"), GL_TRUE);
 		if (curS->hasUniform("hasBones")) glUniform1i(curS->getUniform("hasBones"), GL_TRUE);
 		setModel(curS, Model);
-		stickfigure_running->Draw(curS);
+		player_rig->Draw(curS);
 		if (curS->hasUniform("player")) glUniform1i(curS->getUniform("player"), GL_FALSE);
 		if (curS->hasUniform("hasBones")) glUniform1i(curS->getUniform("hasBones"), GL_FALSE);
 		curS->unbind();
@@ -2308,12 +2307,12 @@ public:
 
 	// Helper to calculate player's local AABB
 	void calculatePlayerLocalAABB() {
-		if (!stickfigure_running || playerAABBCalculated) return;
+		if (!player_rig || playerAABBCalculated) return;
 
-		// Get base AABB from the *standing* or *running* model (choose one representative)
-		// Using stickfigure_running as it's loaded first
-		glm::vec3 baseMin = stickfigure_running->getBoundingBoxMin();
-		glm::vec3 baseMax = stickfigure_running->getBoundingBoxMax();
+		// Get base AABB from the *IDLE* or *running* model (choose one representative)
+		// Using player_rig as it's loaded first
+		glm::vec3 baseMin = player_rig->getBoundingBoxMin();
+		glm::vec3 baseMax = player_rig->getBoundingBoxMax();
 
 		// Apply the player's base scale
 		playerLocalAABBMin = baseMin * manScale.x; // Assuming uniform scale for collision box
@@ -2931,8 +2930,8 @@ public:
 		// Update VISUAL bounding box (can be different from collision box if needed)
 		// Using the same AABB calculation logic as before for consistency
 		glm::mat4 manTransform = Model->topMatrix();
-		updateBoundingBox(stickfigure_running->getBoundingBoxMin(),
-			stickfigure_running->getBoundingBoxMax(),
+		updateBoundingBox(player_rig->getBoundingBoxMin(),
+			player_rig->getBoundingBoxMax(),
 			manTransform,
 			manAABBmin, // This is the visual/interaction AABB
 			manAABBmax);
@@ -2947,7 +2946,7 @@ public:
 		glUniform1f(curS->getUniform("MatShine"), 8.0f);*/
 		SetMaterial(curS, Material::gold);
 		setModel(curS, Model);
-		//stickfigure_running->Draw(curS);
+		//player_rig->Draw(curS);
 		sphere->Draw(curS);
 
 		Model->popMatrix();
@@ -3819,7 +3818,7 @@ public:
 				}
 			}
 			else if (key == GLFW_KEY_W && action == GLFW_RELEASE) {
-				manState = Man_State::STANDING;
+				manState = Man_State::IDLE;
 				//Movement Variable
 				movingForward = false;
 			}
@@ -3836,7 +3835,7 @@ public:
 
 			}
 			else if (key == GLFW_KEY_S && action == GLFW_RELEASE) {
-				manState = Man_State::STANDING;
+				manState = Man_State::IDLE;
 				//Movement Variable
 				movingBackward = false;
 			}
@@ -3853,7 +3852,7 @@ public:
 
 			}
 			else if (key == GLFW_KEY_A && action == GLFW_RELEASE) {
-				manState = Man_State::STANDING;
+				manState = Man_State::IDLE;
 				//Movement Variable
 				movingLeft = false;
 			}
@@ -3869,7 +3868,7 @@ public:
 				}
 			}
 			else if (key == GLFW_KEY_D && action == GLFW_RELEASE) {
-				manState = Man_State::STANDING;
+				manState = Man_State::IDLE;
 				//Movement Variable
 				movingRight = false;
 			}
