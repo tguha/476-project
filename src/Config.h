@@ -85,6 +85,10 @@ namespace Config {
     constexpr float GROUND_SIZE = 20.0f;
     constexpr float GROUND_HEIGHT = 0.0f;
 
+    // Rotation Constants
+    constexpr float HALF_PI = glm::half_pi<float>();
+    constexpr float PI = glm::pi<float>();
+
     // --- Utility Functions ---
 
     // A random float generator

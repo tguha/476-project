@@ -20,7 +20,7 @@ uniform vec3 cameraPos;
 
 uniform float enemyAlpha;
 
-uniform bool player;
+uniform bool texOnly;
 
 uniform float exposure;
 uniform float saturation;
@@ -136,7 +136,7 @@ void main() {
                  );
     }
 
-    if (player) {
+    if (texOnly) {
         albedo = texture(uMaps[0], info_struct.vTexCoord).rgb;
         spec   = texture(uMaps[1], info_struct.vTexCoord).rgb;
         rough  = texture(uMaps[2], info_struct.vTexCoord).r;
