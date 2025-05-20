@@ -129,8 +129,7 @@ GLint Program::getAttribute(const std::string &name) const
 	return attribute->second;
 }
 
-GLint Program::getUniform(const std::string &name) const
-{
+GLint Program::getUniform(const std::string &name) const {
 	std::map<std::string, GLint>::const_iterator uniform = uniforms.find(name.c_str());
 	if (uniform == uniforms.end())
 	{
@@ -141,4 +140,12 @@ GLint Program::getUniform(const std::string &name) const
 		return -1;
 	}
 	return uniform->second;
+}
+
+bool Program::hasUniform(const std::string& name) const {
+	std::map<std::string, GLint>::const_iterator uniform = uniforms.find(name.c_str());
+	if (uniform == uniforms.end()) {
+		return false;
+	}
+	return true;
 }
