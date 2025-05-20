@@ -20,10 +20,12 @@ class BossRoomGen {
             ENTRANCE,
             BORDER,
             EXIT,
+            BOSSSPAWN,
         };
 
         enum class ClusterType {
             NONE,
+            SHELF1,
         };
 
         enum class BorderType {
@@ -37,6 +39,7 @@ class BossRoomGen {
 
         enum class CellObjType {
             NONE,
+            GLOWING_SHELF,
         };
 
         struct transform {
@@ -119,18 +122,23 @@ class BossRoomGen {
         float entranceWidth;
         float radiusX;
         float radiusY;
+        std::vector<glm::vec2> clusterCenters;
 
 
         std::map<ClusterType, float> objMinSpacing = {
+            {ClusterType::SHELF1, 3.0f},
         };
 
         std::map<ClusterType, int> MaxobjAmount = {
+            {ClusterType::SHELF1, 1},
         };
 
         std::map<ClusterType, int> objAmount = {
+            {ClusterType::SHELF1, 0},
         };
 
         std::vector<ClusterType> clusterOptions = {
+            ClusterType::SHELF1,
         };
 
         std::vector<std::pair<glm::ivec2, glm::ivec2>> selectedEdges;
@@ -138,6 +146,7 @@ class BossRoomGen {
         void placeBorder();
         void placeEntrance(); // Place the entrance in the boss room
         void placeExit(); // Place the exit in the boss room
+        void placeClusters(int count);
 };
 
 #endif // BOSSROOMGEN_H

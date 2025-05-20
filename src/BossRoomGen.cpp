@@ -17,10 +17,15 @@ void BossRoomGen::generate(glm::ivec2 bossGridSize, glm::ivec2 libraryGridSize, 
         BossroomworldOrigin = libraryOrigin + glm::vec3(0, 0, -libraryGridSize.y - bossGridSize.y);
     }
 
+    int x = mapXtoGridX(BossroomworldOrigin.x);
+    int y = mapZtoGridY(BossroomworldOrigin.z);
+    grid[glm::ivec2(x, y)] = Cell(CellType::BOSSSPAWN); // Mark the spawn position in the grid
+
     std::cout << "Boss room world origin: " << BossroomworldOrigin.x << ", " << BossroomworldOrigin.y << ", " << BossroomworldOrigin.z << std::endl;
     placeBorder();
     placeEntrance(); // Place the entrance in the boss room
     placeExit();
+    placeClusters(1);
 }
 
 void BossRoomGen::placeBorder() {
@@ -200,6 +205,70 @@ bool BossRoomGen::isInsideBossArea(const glm::ivec2& gridPos) {
     float ellipseValue = (delta.x * delta.x) / (radiusX * radiusX) +
                          (delta.y * delta.y) / (radiusY * radiusY);
     return (ellipseValue <= 0.85f); // Inside the ellipse
+}
+
+void BossRoomGen::placeClusters(int count) {
+    std::uniform_int_distribution<int> distX(0, grid.getSize().x - 1);
+    std::uniform_int_distribution<int> distY(0, grid.getSize().y - 1);
+
+    std::uniform_int_distribution<int> clusterTypeDist(0, clusterOptions.size() - 1);
+
+    int attempts = 0;
+    int maxAttempts = grid.getSize().x * grid.getSize().y / 5; // Limit attempts to avoid infinite loop
+
+    for (auto& obj : objAmount) {
+        obj.second = 0; // Reset object amounts
+    }
+
+    while (clusterCenters.size() < count && attempts < maxAttempts) {
+        attempts++;
+        glm::ivec2 pos{distX(seedGen), distY(seedGen)};
+        bool valid = true;
+
+        if (grid[pos].type == CellType::BOSSSPAWN ||
+            !isInsideBossArea(pos)) {
+                valid = false; // Skip if the position is not inside the circle boss area or is the spawn position
+            }
+
+        // Check if the position is already occupied or too close to existing clusters
+        for (const auto& center : clusterCenters) {
+            float requiredSpacing = objMinSpacing[grid[center].clusterType]; // Get the required spacing for the cluster type
+            for (const auto& avoidPoint : avoidPoints) {
+                if (glm::distance(glm::vec2(pos), glm::vec2(avoidPoint)) < requiredSpacing) {
+                    valid = false;
+                    break;
+                }
+            }
+        }
+
+        // if the position is valid, place the cluster
+        if (valid) {
+            clusterCenters.push_back(pos);
+            ClusterType randomClusterType;
+
+            randomClusterType = clusterOptions[clusterTypeDist(seedGen)]; // Randomly select a cluster type
+
+            // Limits the number of objects of each type based on MaxobjAmount
+            while (MaxobjAmount.count(randomClusterType) && objAmount[randomClusterType] >= MaxobjAmount[randomClusterType]) {
+                randomClusterType = clusterOptions[clusterTypeDist(seedGen)];
+            }
+
+            // add if the cluster type is in the map
+            if (objAmount.count(randomClusterType)) {
+                objAmount[randomClusterType]++;
+            }
+
+            if (randomClusterType == ClusterType::SHELF1) {
+                if (grid.inBounds(pos)) {
+                    BossRoomGen::Cell cell = Cell(CellType::CLUSTER, randomClusterType, CellObjType::GLOWING_SHELF);
+                    cell.transformData.position = glm::vec3(mapGridXtoWorldX(pos.x), 0, mapGridYtoWorldZ(pos.y));
+                    grid[pos] = cell; // Mark the cluster position in the grid
+
+                }
+            }
+        }
+    }
+
 }
 
 

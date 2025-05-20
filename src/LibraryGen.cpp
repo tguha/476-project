@@ -102,6 +102,7 @@ void LibraryGen::placeClusters(int count) {
                 }
             }
 
+            // checks the distance between the walls/borders of the grid and the new cluster
             if (glm::distance(glm::vec2(center), glm::vec2(pos)) < requiredSpacing ||
                 glm::distance(glm::vec2(pos), glm::vec2(pos.x, gridSize.y - 1)) < requiredSpacing || // check distance against all 4 borders
                 glm::distance(glm::vec2(pos), glm::vec2(pos.x, 0)) < requiredSpacing ||
@@ -120,6 +121,7 @@ void LibraryGen::placeClusters(int count) {
             clusterCenters.push_back(pos);
             ClusterType randomClusterType;
 
+            // ensures that bookstand is always placed first
             if (!placedBookstand) {
                 randomClusterType = ClusterType::ONLY_BOOKSTAND;
                 placedBookstand = true;
@@ -127,6 +129,7 @@ void LibraryGen::placeClusters(int count) {
                 randomClusterType = clusterOptions[clusterTypeDist(seedGen)];
             }
 
+            // Limits the number of objects of each type based of MaxobjAmount
             while (MaxobjAmount.count(randomClusterType) && objAmount[randomClusterType] >= MaxobjAmount[randomClusterType]) {
                 randomClusterType = clusterOptions[clusterTypeDist(seedGen)];
             }
@@ -286,7 +289,7 @@ void LibraryGen::placeEnemies(int numEnemies) {
 
         bool valid = true;
 
-        if (grid[pos].type == CellType::SPAWN || 
+        if (grid[pos].type == CellType::SPAWN ||
             grid[pos].type == CellType::ENEMY_SPAWN ||
             grid[pos].type == CellType::BORDER) {
             valid = false;
@@ -304,7 +307,7 @@ void LibraryGen::placeEnemies(int numEnemies) {
             }
         }
 
-        
+
 
         // for (const auto& center : clusterCenters) {
         //     if (glm::distance(glm::vec2(center), glm::vec2(pos)) < 3.0f) {
