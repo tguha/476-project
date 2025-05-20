@@ -583,10 +583,10 @@ public:
 
 		// load the walking character model
 		// load the walking character moded
-		stickfigure_running = new AssimpModel(resourceDirectory + "/CatWizard/CatWizardAnimation.fbx");
+		stickfigure_running = new AssimpModel(resourceDirectory + "/CatWizard/CatWizardAnimationMay.fbx");
 		stickfigure_running->assignTexture("texture_diffuse", resourceDirectory + "/CatWizard/textures/ImphenziaPalette02-Albedo.png");
 		//PROBLEM GETTING ANIMATION FROM "Fixed" FBX
-		stickfigure_anim = new Animation(resourceDirectory + "/CatWizard/CatWizardAnimation.fbx", stickfigure_running, 0);
+		stickfigure_anim = new Animation(resourceDirectory + "/CatWizard/CatWizardAnimationMay.fbx", stickfigure_running, 0);
 		//stickfigure_idle = new Animation(resourceDirectory + "/Vanguard/Vanguard.fbx", stickfigure_running, 1);
 		//stickfigure_idle = new Animation(resourceDirectory + "/Vanguard/Vanguard.fbx", stickfigure_running, 1);
 
@@ -1346,9 +1346,9 @@ public:
 		// Model->translate(characterMovement); // Use final player position
 		Model->translate(player->getPosition());
 		// *** USE CAMERA ROTATION FOR MODEL ***
-		Model->rotate(glm::radians(90.0f), vec3(1.0f, 0.0f, 0.0f));
+		
 
-		Model->rotate((-1.0f * player->getRotY()), vec3(0, 0, 1)); // <<-- FIXED ROTATION
+		Model->rotate((player->getRotY()), vec3(0, 1, 0)); // <<-- FIXED ROTATION
 
 		Model->scale(0.01f);
 
