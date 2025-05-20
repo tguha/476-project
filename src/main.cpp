@@ -677,7 +677,7 @@ public:
 		vec3 bossSpawnPos = bossRoom->getWorldOrigin();
 		
 		initEnemies();
-		bossEnemy = new BossEnemy(bossSpawnPos, BOSS_HP_MAX, sphere, vec3(1.0f), vec3(0, 1, 0), BOSS_SPECIAL_ATTACK_COOLDOWN);
+		bossEnemy = new BossEnemy(bossSpawnPos, BOSS_HP_MAX, sphere, vec3(1.0f), vec3(0, 1, 0), BOSS_SPECIAL_ATTACK_COOLDOWN, SpellType::FIRE);
 	}
 
 	void SetMaterial(shared_ptr<Program> shader, Material color) {
@@ -2238,7 +2238,7 @@ public:
 								nextSpellTypeIndex = 1; // Cycle back to FIRE
 							}
 
-							books.emplace_back(cube, sphere, spawnPos, bookScale, bookOrientation, newSpellType);
+							books.emplace_back(spawnPos, bookScale, bookOrientation, newSpellType);
               //books.emplace_back(spawnPos, bookScale, bookOrientation, newSpellType);
 
 							Book& newBook = books.back();
@@ -2296,7 +2296,7 @@ public:
 								nextSpellTypeIndex = 1; // Cycle back to FIRE
 							}
 
-							books.emplace_back(cube, sphere, spawnPos, bookScale, bookOrientation, newSpellType);
+							books.emplace_back(spawnPos, bookScale, bookOrientation, newSpellType);
 
 							Book& newBook = books.back();
 
