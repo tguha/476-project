@@ -80,20 +80,9 @@ public:
 	shared_ptr<Texture> particleAlphaTex;
 
 	vector<WallObject> borderWalls;
-	shared_ptr<Texture> borderWallTex;
-	// std::unordered_set<int> borderWallIDs; // Set to track unique IDs
 	std::set<WallObjKey> borderWallKeys; // Set to track unique keys
-
 	vector<LibGrndObject> libraryGrounds;
-	shared_ptr<Texture> libraryGroundTex;
-	// std::unordered_set<int> libraryGroundIDs; // Set to track unique IDs
 	std::set<LibGrndObjKey> libraryGroundKeys; // Set to track unique keys
-
-	shared_ptr<Texture> carpetTex;
-	shared_ptr<Texture> particleAlphaTex; // Add particle alpha texture
-
-	// character bounding box
-	glm::vec3 manAABBmin, manAABBmax;
 
 	// Scene layout parameters
 	vec3 libraryCenter = vec3(0.0f, groundY, 0.0f);
@@ -232,8 +221,6 @@ public:
 
 	float cameraVisibleCooldown = 0.0f; // Cooldown for camera visibility check
 	bool wasVisibleLastFrame = true;
-
-	GLuint GroundVertexArrayID = 0; // Initialize to 0
 
 	SpellType currentPlayerSpellType = SpellType::FIRE; // Player starts with Fire spell by default
 	int nextSpellTypeIndex = 1; // Used to cycle spell types for new orbs: 1=FIRE, 2=ICE, 3=LIGHTNING

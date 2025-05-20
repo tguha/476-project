@@ -182,7 +182,7 @@ public:
     float openSpeed = glm::radians(120.0f);
     AssimpModel* bookModel;
     AssimpModel* orbModel;
-    vec3 orbColor;
+    Material orbColor;
     float orbScale = 0.1f;
     bool orbSpawned = false;
     SpellType spellType = SpellType::FIRE;
