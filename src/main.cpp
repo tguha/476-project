@@ -1,6 +1,6 @@
-/*
- * The start of our wizarding adventure
- */
+//========================================
+// Main (GOD FILE) for the Wizard Library
+//========================================
 
 #include <iostream>
 #include <glad/glad.h>
@@ -1675,54 +1675,6 @@ public:
 		int collectedOrbDrawIndex = 0;
 
 		for (auto& orb : orbCollectibles) {
-			// Particle emission for uncollected, idle orbs
-			if (!orb.collected && orb.state == OrbState::IDLE && particleSystem) {
-				float current_particle_system_time = particleSystem->getCurrentTime();
-
-				float p_speed_min = 0.05f;
-				float p_speed_max = 0.1f;
-				float p_spread = 1.5f;
-				// lifespans short so they die quickly and are recycled for other effects
-				float p_lifespan_min = 0.03f; // Approx 1-2 frames at 60FPS
-				float p_lifespan_max = 0.05f; // Approx 2-3 frames at 60FPS
-
-				// Base particle color (TODO: can be tweaked, maybe slightly transparent)
-				auto base = materialToColor(orb.color);
-				glm::vec4 p_color_start = glm::vec4(base, 0.7f);
-				glm::vec4 p_color_end = glm::vec4(base, 0.2f);
-				float p_scale_min = 0.1f;
-				float p_scale_max = 0.25f;
-
-				int current_particles_to_spawn;
-				// Customize particle aura based on spell type
-				switch (orb.spellType) {
-				case SpellType::FIRE:
-					current_particles_to_spawn = 15; // Increased for density with short life
-					p_color_start = glm::vec4(1.0f, 0.5f, 0.1f, 0.8f);
-					p_color_end = glm::vec4(0.9f, 0.2f, 0.0f, 0.3f);
-					p_scale_min = 0.25f;
-					p_scale_max = 0.45f;
-					break;
-				case SpellType::ICE:
-					current_particles_to_spawn = 15; // Increased for density
-					p_color_start = glm::vec4(0.5f, 0.8f, 1.0f, 0.8f);
-					p_color_end = glm::vec4(0.2f, 0.5f, 0.8f, 0.3f);
-					p_scale_min = 0.25f;
-					p_scale_max = 0.45f;
-					break;
-				case SpellType::LIGHTNING:
-					current_particles_to_spawn = 15; // Increased for density
-					p_color_start = glm::vec4(1.0f, 1.0f, 0.5f, 0.8f);
-					p_color_end = glm::vec4(0.8f, 0.8f, 0.2f, 0.3f);
-					p_scale_min = 0.25f;
-					p_scale_max = 0.45f;
-					break;
-				default:
-					current_particles_to_spawn = 10; // Default count, also increased
-					p_scale_min = 0.15f;
-					p_scale_max = 0.3f;
-					break;
-				}
             // Particle emission for uncollected, idle orbs
             if (!orb.collected && orb.state == OrbState::IDLE && particleSystem) {
                 float current_particle_system_time = particleSystem->getCurrentTime();
@@ -1809,7 +1761,7 @@ public:
 			}
 
 			// --- Set up transformations ---
-			Model->pushMatrix();
+			Model->pushMatrix(); {
 				Model->loadIdentity();
 				Model->translate(currentDrawPosition);
 				Model->scale(currentDrawScale); // Use current scale
@@ -1820,7 +1772,7 @@ public:
 				setModel(simpleShader, Model);
 				orb.model->Draw(simpleShader);
 
-			Model->popMatrix();
+			} Model->popMatrix();
 		} // End drawing loop
 
 		simpleShader->unbind();
@@ -1828,24 +1780,18 @@ public:
 
 	void drawCat(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		if (!CatWizard) return; //Need Cat Model
-		shader->bind(); //Texture
-
-		//if (shader == ShadowProg) {
-		//	glUniform1i(shader->getUniform("hasMaterial"), 0);
-		//}
-
-		Model->pushMatrix();
-		Model->loadIdentity();
-		Model->translate(vec3(0.0f, 0.0f, 0.0f)); // Position at origin
-		//Model->scale(vec3(0.25f));
-		Model->rotate(glm::radians(-90.0f), vec3(1.0f, 0.0f, 0.0f));
-		setModel(shader, Model);
-		if (shader == ShadowProg) glUniform1i(shader->getUniform("player"), 1);
-		CatWizard->Draw(shader);
-		if (shader == ShadowProg) glUniform1i(shader->getUniform("player"), 0);
-		Model->popMatrix();
+		shader->bind();
+		Model->pushMatrix(); {
+			Model->loadIdentity();
+			Model->translate(vec3(0.0f, 0.0f, 0.0f)); // Position at origin
+			//Model->scale(vec3(0.25f));
+			Model->rotate(glm::radians(-90.0f), vec3(1.0f, 0.0f, 0.0f));
+			setModel(shader, Model);
+			if (shader == ShadowProg) glUniform1i(shader->getUniform("player"), GL_TRUE);
+			CatWizard->Draw(shader);
+			if (shader == ShadowProg) glUniform1i(shader->getUniform("player"), GL_FALSE);
+		} Model->popMatrix();
 		shader->unbind();
-
 	}
 
 	void checkAllEnemies() {
@@ -1914,25 +1860,6 @@ public:
 	}
 
 	void drawEnemies(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
-		if (!sphere) return; // Need the sphere model
-
-		shader->bind(); // Use prog2 for simple colored shapes
-
-		// --- Material Settings ---
-		// glm::vec3 bodyColor = glm::vec3(0.6f, 0.2f, 0.8f); // Purple-ish body
-		glm::vec3 bodyColor = glm::vec3(0.35f, 0.4f, 0.914f); // Blue body
-		glm::vec3 eyeWhiteColor = glm::vec3(1.0f, 1.0f, 1.0f);
-		glm::vec3 eyePupilColor = glm::vec3(0.1f, 0.1f, 0.1f);
-
-		// --- Common Eye Parameters ---
-		float bodyBaseScaleY = 0.8f; // Base height factor before pill stretch
-		glm::vec3 eyeOffsetBase = glm::vec3(0.0f, bodyBaseScaleY * 0.4f, 0.45f); // Y up, Z forward from body center
-		float eyeSeparation = 0.25f; // Distance between eye centers
-		float whiteScale = 0.18f;
-		float pupilScale = 0.1f;
-		float pupilOffsetForward = 0.02f; // Push pupil slightly in front of white
-
-
 		for (const auto* enemy : enemies) {
 			if (!enemy || !enemy->isAlive()) {
 				// Ensure a key is added only once per dead enemy if not already present
@@ -1952,118 +1879,20 @@ public:
 				drawKey(shader, Model);
 				continue; // Skip null or dead enemies
 			}
-
-
-			glm::vec3 enemyPos = enemy->getPosition();
-
-			// --- Draw Main Body (Pill Shape) ---
-			Model->pushMatrix();
-			{
-				Model->translate(enemyPos);
-				// Scale for pill shape ( taller in Y, squished in X/Z )
+			shader->bind();
+			Model->pushMatrix(); {
+				Model->translate(enemy->getPosition());
 				Model->scale(glm::vec3(1.0f, 1.0f, 1.0f));
 				Model->rotate(enemy->getRotY(), glm::vec3(0, 1, 0));
-				// rotate 90 around z
-				Model->rotate(glm::radians(-90.0f), glm::vec3(1, 0, 0));
-
-				// Set body material
-				SetMaterial(shader, Material::blue_body);
+				Model->rotate(glm::radians(-90.0f), glm::vec3(1, 0, 0)); // rotate -90 degrees around x axis
+				SetMaterial(shader, Material::blue_body); // Set body material
 				if (shader->hasUniform("enemyAlpha")) glUniform1f(shader->getUniform("enemyAlpha"), enemy->getDamageTimer() / Config::ENEMY_HIT_DURATION);
 
 				setModel(shader, Model);
 				iceElemental->Draw(shader); // Draw the scaled sphere as the body
-			}
-			Model->popMatrix();
-
-
-			// --- Draw Eyes (Relative to Enemy Center) ---
-
-			// Set Eye Materials Once
-			// White Material Setup (done inside loop per part for clarity now)
-			// Black Material Setup (done inside loop per part for clarity now)
-
-			// Left Eye
-			// Model->pushMatrix();
-			// {
-			// 	// Go to enemy center, then offset to eye position
-			// 	Model->translate(enemyPos);
-			// 	Model->translate(eyeOffsetBase + glm::vec3(-eyeSeparation, 0, 0));
-
-			// 	// White Part
-			// 	Model->pushMatrix();
-			// 	{
-			// 		Model->scale(glm::vec3(whiteScale));
-			// 		// Set white material
-			// 		glUniform3f(shader->getUniform("MatAmb"), eyeWhiteColor.r * 0.3f, eyeWhiteColor.g * 0.3f, eyeWhiteColor.b * 0.3f);
-			// 		glUniform3f(shader->getUniform("MatDif"), eyeWhiteColor.r, eyeWhiteColor.g, eyeWhiteColor.b);
-			// 		glUniform3f(shader->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f);
-			// 		glUniform1f(shader->getUniform("MatShine"), 4.0f);
-			// 		setModel(shader, Model);
-			// 		sphere->Draw(shader);
-			// 	}
-			// 	Model->popMatrix(); // Pop white scale
-
-			// 	// Pupil Part
-			// 	Model->pushMatrix();
-			// 	{
-			// 		// Move slightly forward from white surface and scale down
-			// 		Model->translate(glm::vec3(0, 0, whiteScale * 0.5f + pupilOffsetForward)); // Offset relative to white scale
-			// 		Model->scale(glm::vec3(pupilScale));
-			// 		// Set black material
-			// 		glUniform3f(shader->getUniform("MatAmb"), eyePupilColor.r * 0.3f, eyePupilColor.g * 0.3f, eyePupilColor.b * 0.3f);
-			// 		glUniform3f(shader->getUniform("MatDif"), eyePupilColor.r, eyePupilColor.g, eyePupilColor.b);
-			// 		glUniform3f(shader->getUniform("MatSpec"), 0.5f, 0.5f, 0.5f); // Some specular highlight
-			// 		glUniform1f(shader->getUniform("MatShine"), 32.0f);
-			// 		setModel(shader, Model);
-			// 		sphere->Draw(shader);
-			// 	}
-			// 	Model->popMatrix(); // Pop pupil transform
-			// }
-			// Model->popMatrix(); // Pop left eye transform
-
-
-			// // Right Eye (Similar to Left)
-			// Model->pushMatrix();
-			// {
-			// 	Model->translate(enemyPos);
-			// 	Model->translate(eyeOffsetBase + glm::vec3(+eyeSeparation, 0, 0)); // Offset to the right
-
-			// 	// White Part
-			// 	Model->pushMatrix();
-			// 	{
-			// 		Model->scale(glm::vec3(whiteScale));
-			// 		// Set white material
-			// 		glUniform3f(shader->getUniform("MatAmb"), eyeWhiteColor.r * 0.3f, eyeWhiteColor.g * 0.3f, eyeWhiteColor.b * 0.3f);
-			// 		glUniform3f(shader->getUniform("MatDif"), eyeWhiteColor.r, eyeWhiteColor.g, eyeWhiteColor.b);
-			// 		glUniform3f(shader->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f);
-			// 		glUniform1f(shader->getUniform("MatShine"), 4.0f);
-			// 		setModel(shader, Model);
-			// 		sphere->Draw(shader);
-			// 	}
-			// 	Model->popMatrix();
-
-			// 	// Pupil Part
-			// 	Model->pushMatrix();
-			// 	{
-			// 		Model->translate(glm::vec3(0, 0, whiteScale * 0.5f + pupilOffsetForward));
-			// 		Model->scale(glm::vec3(pupilScale));
-			// 		// Set black material
-			// 		glUniform3f(shader->getUniform("MatAmb"), eyePupilColor.r * 0.3f, eyePupilColor.g * 0.3f, eyePupilColor.b * 0.3f);
-			// 		glUniform3f(shader->getUniform("MatDif"), eyePupilColor.r, eyePupilColor.g, eyePupilColor.b);
-			// 		glUniform3f(shader->getUniform("MatSpec"), 0.5f, 0.5f, 0.5f);
-			// 		glUniform1f(shader->getUniform("MatShine"), 32.0f);
-			// 		setModel(shader, Model);
-			// 		sphere->Draw(shader);
-			// 	}
-			// 	Model->popMatrix();
-			// }
-			// Model->popMatrix(); // Pop right eye transform
-
+			} Model->popMatrix();
+			shader->unbind();
 		} // End loop through enemies
-
-
-
-		shader->unbind();
 	}
 
 	void drawLibrary(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model, bool cullFlag) {
@@ -3626,17 +3455,11 @@ public:
 			}
 		}
 
-
-		//need models
-		shader->bind();
-
 		int collectedKeyDrawIndex = 0;
-
+		shader->bind();
 		for (auto& key : keyCollectibles) {
-
 			glm::vec3 currentDrawPosition;
 			//float currentDrawScale = key.scale; // Use base scale
-
 			if (key.collected) {
 				// Calculate position behind the player (same logic as before)
 				float backOffset = 0.4f;
@@ -3652,80 +3475,34 @@ public:
 					+ playerUp * currentUpOffset
 					+ playerRight * currentSideOffset;
 				collectedKeyDrawIndex++;
-				// currentDrawScale = orb.scale * 0.8f; // Optional: shrink collected orbs
 			}
 			else {
-				// Use the orb's current position (potentially animated by updateOrbs)
-				currentDrawPosition = key.position;
+				currentDrawPosition = key.position; // Use the orb's current position (potentially animated by updateOrbs)
 			}
-
 			// --- Set up transformations ---
-			Model->pushMatrix();
+			Model->pushMatrix(); {
 				Model->loadIdentity();
 				Model->translate(vec3(0.0f, 0.5f, 0.5f)); //last enemy pos
 				Model->scale(2.0f);
 				Model->rotate(glm::radians(90.0f), vec3(1.0f, 0.0f, 0.0f));
 				Model->rotate(glm::radians(-90.0f), vec3(0.0f, 1.0f, 0.0f));
-
-
-				// --- Set Material & Draw ---
-				// (Material setting code remains the same)
 				SetMaterial(shader, Material::gold); //gold
-
 				setModel(shader, Model);
-				//orb.model->Draw(simpleShader);
 				key.model->Draw(shader);
-			Model->popMatrix();
+			} Model->popMatrix();
 		} // End drawing loop
-
-		Model->popMatrix();
-			shader->unbind();
-
-
-			shader->bind();
-
-			// --- Set up transformations ---
-			Model->pushMatrix();
+		// --- Set up transformations ---
+		Model->pushMatrix(); {
 			Model->loadIdentity();
 			Model->translate(vec3(0.0f, 0.5f, 0.5f)); //last enemy pos
 			Model->scale(2.0f);
 			Model->rotate(glm::radians(90.0f), vec3(1.0f, 0.0f, 0.0f));
 			Model->rotate(glm::radians(-90.0f), vec3(0.0f, 1.0f, 0.0f));
-
-
-			// --- Set Material & Draw ---
-			// (Material setting code remains the same)
 			SetMaterial(shader, Material::gold); //gold
-
 			setModel(shader, Model);
-			//orb.model->Draw(simpleShader);
 			key->Draw(shader);
-
-		Model->popMatrix();
+		} Model->popMatrix();
 		shader->unbind();
-
-		
-		// shader->bind();
-
-		// // --- Set up transformations ---
-		// Model->pushMatrix();
-		// Model->loadIdentity();
-		// Model->translate(vec3(0.0f, 0.5f, 0.5f)); //last enemy pos
-		// Model->scale(2.0f);
-		// Model->rotate(glm::radians(90.0f), vec3(1.0f, 0.0f, 0.0f));
-		// Model->rotate(glm::radians(-90.0f), vec3(0.0f, 1.0f, 0.0f));
-
-
-		// // --- Set Material & Draw ---
-		// // (Material setting code remains the same)
-		// SetMaterialMan(shader, 5); //gold
-
-		// setModel(shader, Model);
-		// //orb.model->Draw(simpleShader);
-		// key->Draw(shader);
-
-		// Model->popMatrix();
-		// shader->unbind();
 	}
 
 	void updateKeys(float currentTime) {
