@@ -1314,7 +1314,12 @@ public:
 		}
 		curS->bind();
 
-	
+		if (movingBackward || movingForward || movingLeft || movingRight) {
+			manState = Man_State::WALKING;
+		}
+		else {
+			manState = Man_State::IDLE;
+		}
 
 		if (animTime != 0.0) {
 			catwizard_animator->UpdateAnimation(1.5f * animTime);
@@ -3810,8 +3815,6 @@ public:
 
 		if (player->isAlive() || debugCamera) {
 			if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_W) != GLFW_RELEASE) {
-				manState = Man_State::WALKING;
-
 				//Movement Variable
 				movingForward = true;
 				if (debug_pos) {
@@ -3820,12 +3823,10 @@ public:
 				}
 			}
 			else if (key == GLFW_KEY_W && action == GLFW_RELEASE) {
-				manState = Man_State::IDLE;
 				//Movement Variable
 				movingForward = false;
 			}
 			if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_S) != GLFW_RELEASE) {
-				manState = Man_State::WALKING;
 
 				//Movement Variable
 				movingBackward = true;
@@ -3837,12 +3838,10 @@ public:
 
 			}
 			else if (key == GLFW_KEY_S && action == GLFW_RELEASE) {
-				manState = Man_State::IDLE;
 				//Movement Variable
 				movingBackward = false;
 			}
 			if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_A) != GLFW_RELEASE) {
-				manState = Man_State::WALKING;
 
 				//Movement Variable
 				movingLeft = true;
@@ -3854,12 +3853,11 @@ public:
 
 			}
 			else if (key == GLFW_KEY_A && action == GLFW_RELEASE) {
-				manState = Man_State::IDLE;
+				
 				//Movement Variable
 				movingLeft = false;
 			}
 			if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_D) != GLFW_RELEASE) {
-				manState = Man_State::WALKING;
 
 				//Movement Variable
 				movingRight = true;
@@ -3870,7 +3868,6 @@ public:
 				}
 			}
 			else if (key == GLFW_KEY_D && action == GLFW_RELEASE) {
-				manState = Man_State::IDLE;
 				//Movement Variable
 				movingRight = false;
 			}
