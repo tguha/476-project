@@ -3004,11 +3004,7 @@ public:
 
 		shader->bind();
 		// Set material for projectiles (e.g., bright yellow/white, maybe emissive if shader supports)
-		SetMaterialMan(shader, 0); // Gold material for now
-		glUniform3f(shader->getUniform("MatAmb"), 0.8f, 0.8f, 0.1f);
-		glUniform3f(shader->getUniform("MatDif"), 1.0f, 1.0f, 0.5f);
-		glUniform3f(shader->getUniform("MatSpec"), 1.0f, 1.0f, 1.0f);
-		glUniform1f(shader->getUniform("MatShine"), 64.0f);
+		SetMaterial(shader, Material::gold);
 		// Optional: Emissive properties if shader supports them
 		// if(shader->hasUniform("hasEmittance")) glUniform1i(shader->getUniform("hasEmittance"), 1);
 		// if(shader->hasUniform("MatEmitt")) glUniform3f(shader->getUniform("MatEmitt"), 1.0f, 1.0f, 0.8f);
