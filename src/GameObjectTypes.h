@@ -178,18 +178,15 @@ public:
     Spline* fallSpline = nullptr;
     float fallStartTime = 0.0f;
     float openAngle = 0.0f;
-    float maxOpenAngle = glm::radians(80.0f);
+    float maxOpenAngle = Config::PI;
     float openSpeed = glm::radians(120.0f);
-    AssimpModel* bookModel;
-    AssimpModel* orbModel;
     Material orbColor;
     float orbScale = 0.1f;
     bool orbSpawned = false;
     SpellType spellType = SpellType::FIRE;
 
-    Book(AssimpModel* bookMdl, AssimpModel* orbMdl, const glm::vec3& pos, const glm::vec3& scl, const glm::quat& orient, SpellType type)
-        : initialPosition(pos), position(pos), scale(scl), orientation(orient),
-        bookModel(bookMdl), orbModel(orbMdl), spellType(type) {
+    Book(const glm::vec3& pos, const glm::vec3& scl, const glm::quat& orient, SpellType type)
+        : initialPosition(pos), position(pos), scale(scl), orientation(orient), spellType(type) {
         switch (spellType) {
         case SpellType::FIRE:
             orbColor = Material::orb_glowing_red;
@@ -216,7 +213,7 @@ public:
         fallStartTime = (float)glfwGetTime();
 
         glm::vec3 endPosition;
-        endPosition.y = groundY + (scale.y * 0.5f);
+        endPosition.y = groundY + (scale.z * 0.15);
         glm::vec3 dirToBook = playerPos - initialPosition;
         dirToBook.y = 0.0f;
         float distSq = dot(dirToBook, dirToBook);
@@ -248,7 +245,7 @@ public:
                 position = fallSpline->getPosition();
                 if (fallSpline->isDone()) {
                     state = BookState::LANDED;
-                    position.y = groundY + (scale.y * 0.5f);
+                    position.y = groundY + (scale.z * 0.15);
                     delete fallSpline;
                     fallSpline = nullptr;
                     orientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);

@@ -114,21 +114,17 @@ public:
 
 	AssimpModel *book_shelf1, *book_shelf2;
 	AssimpModel *candelabra, *chest, *library_bench, *low_poly_bookshelf, *table_chairs1, *table_chairs2, *grandfather_clock, *bookstand, *door;
-
 	AssimpModel *healthBar;
-
 	AssimpModel *cube, *sphere;
-
 	AssimpModel *sky_sphere;
-
 	AssimpModel *border, *lock, *lockHandle, *key;
+	AssimpModel *bookCover, *bookPaper;
 
 	//key collectibles
 	std::vector<Collectible> keyCollectibles;
 	int keysCollectedCount = 0;
-
-	//  vector of books
-	vector<Book> books;
+	
+	vector<Book> books; // vector of books to be drawn
 
 	AssimpModel* player_rig;
 	Animation *player_walk, *player_idle;
@@ -439,7 +435,7 @@ public:
 
 		ShadowProg->addUniform("enemyAlpha");
 
-		ShadowProg->addUniform("player");
+		ShadowProg->addUniform("texOnly");
 
 		ShadowProg->addUniform("exposure");
 		ShadowProg->addUniform("saturation");
@@ -581,11 +577,9 @@ public:
 		addLibGrnd(bossGridSize.x * 2, bossGridSize.y * 2, 0.0f, bossRoom->getWorldOrigin(), libraryGroundTex);
 	}
 
-	void initGeom(const std::string& resourceDirectory)
-	{
+	void initGeom(const std::string& resourceDirectory) { // NOTE: PROBLEMS GETTING ANIMATION FROM "Fixed" FBX
 		string errStr;
 
-		// load the walking character model
 		// load the walking character moded
 		player_rig = new AssimpModel(resourceDirectory + "/CatWizard/CatWizardAnimation2.fbx");
 		player_rig->assignTexture("texture_diffuse", resourceDirectory + "/CatWizard/textures/ImphenziaPalette02-Albedo.png");
@@ -596,70 +590,51 @@ public:
 
 		//TEST Load the cat
 		//CatWizard = new AssimpModel(resourceDirectory + "/CatWizard/BlendWalkFix.fbx");
-
-
-		// --- Calculate Player Collision Box NOW that model is loaded ---
 		calculatePlayerLocalAABB();
 
 		catwizard_animator = new Animator(player_walk);
 
-		// load the cube (books)
 		cube = new AssimpModel(resourceDirectory + "/cube.obj");
 
-		// book_shelf1 = new AssimpModel(resourceDirectory + "/book_shelf/source/bookshelf_cluster.obj");
+		bookCover = new AssimpModel(resourceDirectory + "/cornerCube/sideCube.fbx");
+		bookCover->assignTexture("texture_diffuse", resourceDirectory + "/cornerCube/brown-leather-tex/brown-leather_albedo.png");
+		bookCover->assignTexture("texture_roughness", resourceDirectory + "/cornerCube/brown-leather-tex/brown-leather_roughness.png");
+		bookCover->assignTexture("texture_metalness", resourceDirectory + "/cornerCube/brown-leather-tex/brown-leather_metallic.png");
+		bookCover->assignTexture("texture_normal", resourceDirectory + "/cornerCube/brown-leather-tex/brown-leather_normal-ogl.png");
 
-		// book_shelf1->assignTexture("texture_diffuse1", resourceDirectory + "/book_shelf/textures/bookstack_textures_2.jpg");
-		// book_shelf1->assignTexture("texture_specular1", resourceDirectory + "/book_shelf/textures/bookstack_specular.jpg");
+		bookPaper = new AssimpModel(resourceDirectory + "/cornerCube/sideCube.fbx");
+		bookPaper->assignTexture("texture_diffuse", resourceDirectory + "/cornerCube/wrinkled-paper-tex/wrinkled-paper-albedo.png");
+		bookPaper->assignTexture("texture_roughness", resourceDirectory + "/cornerCube/wrinkled-paper-tex/wrinkled-paper-roughness.png");
+		bookPaper->assignTexture("texture_metalness", resourceDirectory + "/cornerCube/wrinkled-paper-tex/wrinkled-paper-metalness.png");
+		bookPaper->assignTexture("texture_normal", resourceDirectory + "/cornerCube/wrinkled-paper-tex/wrinkled-paper-normal-ogl.png");
 
 		book_shelf1 = new AssimpModel(resourceDirectory + "/cluster_assets/bookshelf_texture2.obj");
-
 		book_shelf1->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/darker_bookshelf_diffuse.png");
 
 		book_shelf2 = new AssimpModel(resourceDirectory + "/cluster_assets/bookshelf_texture2.obj");
-
 		book_shelf2->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/glowing_bookshelf_bake_diffuse.png");
 
 		candelabra = new AssimpModel(resourceDirectory + "/cluster_assets/candelabrum/Candelabrum.obj");
-
 		candelabra->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/candelabrum/textures/defaultobject_gloss.png");
 		candelabra->assignTexture("texture_specular", resourceDirectory + "/cluster_assets/candelabrum/textures/defaultobject_specular.png");
 		candelabra->assignTexture("texture_normal", resourceDirectory + "/cluster_assets/candelabrum/textures/defaultobject_normal.png");
 
 		chest = new AssimpModel(resourceDirectory + "/cluster_assets/chest/Chest.obj");
-
 		chest->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/chest/textures/TreasureChestDiffuse_2.png");
 		chest->assignTexture("texture_roughness", resourceDirectory + "/cluster_assets/chest/textures/TreasureChestRoughness_2.png");
 		chest->assignTexture("texture_metalness", resourceDirectory + "/cluster_assets/chest/textures/TreasureChestMetal_2.png");
 		chest->assignTexture("texture_normal", resourceDirectory + "/cluster_assets/chest/textures/TreasureChestNormal_2.png");
 
 		library_bench = new AssimpModel(resourceDirectory + "/cluster_assets/library_bench/library_bench.obj");
-
 		library_bench->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/library_bench/textures/bench_diffuse.png");
 
-		// low_poly_bookshelf = new AssimpModel(resourceDirectory + "/cluster_assets/low_poly_bookshelf/Low_poly_bookshelf.obj");
-
-		// low_poly_bookshelf->assignTexture("texture_diffuse1", resourceDirectory + "/cluster_assets/low_poly_bookshelf/textures/Plane_Bake1_pbr_diffuse.png");
-		// low_poly_bookshelf->assignTexture("texture_metalness1", resourceDirectory + "/cluster_assets/low_poly_bookshelf/textures/Plane_Bake1_pbr_metalness.png");
-		// low_poly_bookshelf->assignTexture("texture_roughness1", resourceDirectory + "/cluster_assets/low_poly_bookshelf/textures/Plane_Bake1_pbr_roughness.png");
-		// low_poly_bookshelf->assignTexture("texture_normal1", resourceDirectory + "/cluster_assets/low_poly_bookshelf/textures/Plane_Bake1_pbr_normal.jpg");
-
-		// low_poly_bookshelf = new AssimpModel(resourceDirectory + "/cluster_assets/low_poly_bookshelf/Low_poly_bookshelf.obj");
-
-		// low_poly_bookshelf->assignTexture("texture_diffuse1", resourceDirectory + "/cluster_assets/low_poly_bookshelf/textures/Plane_Bake1_pbr_diffuse.png");
-		// low_poly_bookshelf->assignTexture("texture_metalness1", resourceDirectory + "/cluster_assets/low_poly_bookshelf/textures/Plane_Bake1_pbr_metalness.png");
-		// low_poly_bookshelf->assignTexture("texture_roughness1", resourceDirectory + "/cluster_assets/low_poly_bookshelf/textures/Plane_Bake1_pbr_roughness.png");
-		// low_poly_bookshelf->assignTexture("texture_normal1", resourceDirectory + "/cluster_assets/low_poly_bookshelf/textures/Plane_Bake1_pbr_normal.jpg");
-
 		table_chairs1 = new AssimpModel(resourceDirectory + "/cluster_assets/table_chairs/table_chairs_3.obj");
-
 		table_chairs1->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/table_chairs/textures/table_chairs_3_diffuse.png");
 
 		table_chairs2 = new AssimpModel(resourceDirectory + "/cluster_assets/table_chairs/table_chairs_4.obj");
-
 		table_chairs2->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/table_chairs/textures/table_chairs_4_diffuse.png");
 
 		grandfather_clock = new AssimpModel(resourceDirectory + "/cluster_assets/grandfather_clock/grandfather_clock.obj");
-
 		grandfather_clock->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/grandfather_clock/textures/Clock_L_lambert1_BaseColor.tga.png");
 		grandfather_clock->assignTexture("texture_metalness", resourceDirectory + "/cluster_assets/grandfather_clock/textures/Clock_L_lambert1_Metallic.tga.png");
 		grandfather_clock->assignTexture("texture_roughness", resourceDirectory + "/cluster_assets/grandfather_clock/textures/Clock_L_lambert1_Roughness.tga.png");
@@ -674,19 +649,13 @@ public:
 		sky_sphere = new AssimpModel(resourceDirectory + "/sky_sphere/skybox_sphere.obj");
 		sky_sphere->assignTexture("texture_diffuse", resourceDirectory + "/sky_sphere/sky_sphere.fbm/infinite_lib2.png");
 
-		// border = new AssimpModel(resourceDirectory + "/border.obj");
-
-		// border = new AssimpModel(resourceDirectory + "/border.obj");
-
-		// load the sphere (spell)
 		sphere = new AssimpModel(resourceDirectory + "/SmoothSphere.obj");
 
-		// load enemies
 		iceElemental = new AssimpModel(resourceDirectory + "/IceElemental/IceElem.fbx");
 
-		// health bar
 		healthBar = new AssimpModel(resourceDirectory + "/Quad/hud_quad.obj");
 		healthBar->assignTexture("texture_diffuse", resourceDirectory + "/healthbar.bmp");
+
 		/*
 		* KEY COLLECTIBLE IS BROKEN. THIS IS THE COMMENTED OUT PROGRESS OF MADILINE SINCE PROJECT DOESN'T COMPILE WITH IT
 		//key
@@ -696,6 +665,7 @@ public:
 		keyCollectibles.push_back(key1);
 		*/
 		//lock
+
 		lock = new AssimpModel(resourceDirectory + "/Key_and_Lock/lockCopy.obj");
 		lockHandle = new AssimpModel(resourceDirectory + "/Key_and_Lock/lockHandle.obj");
 
@@ -704,32 +674,10 @@ public:
 		sphereAABBCalculated = true;
 		cout << "[DEBUG] Stored Base Sphere Local AABB." << endl;
 
-		// --- Initialize Enemy(s) ---
-		cout << "Initializing enemies..." << endl;
-		// Use the scale factor used in drawEnemies
-		// Body scale was (0.5f, bodyBaseScaleY * 1.6f, 0.5f) where bodyBaseScaleY = 0.8f => (0.5, 1.28, 0.5)
-		// glm::vec3 enemyCollisionScale = glm::vec3(0.5f, 1.28f, 0.5f); // Define the scale
-		// glm::vec3 enemyCollisionScale = glm::vec3(1.0f, 1.0f, 1.0f);
 		vec3 bossSpawnPos = bossRoom->getWorldOrigin();
-
-		// Check if sphere model is loaded before creating enemies that use it
-		if (sphere) {
-			// enemies.push_back(new Enemy(bossSpawnPos, 200.0f, 0.0f, sphere, enemyCollisionScale, vec3(0.0f))); // <<-- Pass sphere and scale
-			// cout << " Enemy placed at boss area: (" << bossSpawnPos.x << ", " << bossSpawnPos.y << ", " << bossSpawnPos.z << ")" << endl;
-			// enemies.push_back(new Enemy(libraryCenter + vec3(-5.0f, 0.8f, 8.0f), ENEMY_HP_MAX / 2, 2.0f, sphere, enemyCollisionScale, vec3(0.0f))); // <<-- Pass sphere and scale
-
-			// std::vector<vec3> enemySpawnPositions = library->getEnemySpawnPositions();
-			// for (const auto& spawnPos : enemySpawnPositions) {
-			// 	enemies.push_back(new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.z), ENEMY_HP_MAX, 2.0f, iceElemental, enemyCollisionScale, vec3(0.0f)));
-			// 	// cout << " Enemy placed at: (" << spawnPos.x << ", " << spawnPos.y << ", " << spawnPos.z << ")" << endl;
-			// }
-			initEnemies();
-
-			bossEnemy = new BossEnemy(bossSpawnPos, BOSS_HP_MAX, sphere, vec3(1.0f), vec3(0, 1, 0), BOSS_SPECIAL_ATTACK_COOLDOWN, SpellType::FIRE);
-		}
-		else {
-			cerr << "ERROR: Sphere model not loaded, cannot create enemies." << endl;
-		}
+		
+		initEnemies();
+		bossEnemy = new BossEnemy(bossSpawnPos, BOSS_HP_MAX, sphere, vec3(1.0f), vec3(0, 1, 0), BOSS_SPECIAL_ATTACK_COOLDOWN);
 	}
 
 	void SetMaterial(shared_ptr<Program> shader, Material color) {
@@ -1372,11 +1320,11 @@ public:
 			manAABBmax);
 
 		// Set uniforms and draw
-		if (curS->hasUniform("player")) glUniform1i(curS->getUniform("player"), GL_TRUE);
+		if (curS->hasUniform("texOnly")) glUniform1i(curS->getUniform("texOnly"), GL_TRUE);
 		if (curS->hasUniform("hasBones")) glUniform1i(curS->getUniform("hasBones"), GL_TRUE);
 		setModel(curS, Model);
+		if (curS->hasUniform("texOnly")) glUniform1i(curS->getUniform("texOnly"), GL_FALSE);
 		player_rig->Draw(curS);
-		if (curS->hasUniform("player")) glUniform1i(curS->getUniform("player"), GL_FALSE);
 		if (curS->hasUniform("hasBones")) glUniform1i(curS->getUniform("hasBones"), GL_FALSE);
 		curS->unbind();
 		Model->popMatrix();
@@ -1384,70 +1332,98 @@ public:
 
 	void drawBooks(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		shader->bind();
-
+		if (shader->hasUniform("texOnly")) glUniform1i(shader->getUniform("texOnly"), GL_TRUE);
 		for (const auto& book : books) {
 			// Common values for book halves
-			float halfThickness = book.scale.z * 0.5f;
-			glm::vec3 halfScaleVec = glm::vec3(book.scale.x, book.scale.y, halfThickness);
+			float bookThickness = book.scale.z * 0.15f;
+			vec3 coverScale = vec3(book.scale.x * 0.3, book.scale.y * 0.35, bookThickness);
+			vec3 pageScale = vec3(book.scale.x * 0.28f, book.scale.y * 0.33f, 0.01f);
 
-			// Set Material (e.g., brown for cover) - Apply once if same for both halves
-			SetMaterial(shader, Material::brown);
-
-
-			// --- Draw Left Cover/Pages ---
-			Model->pushMatrix(); // SAVE current stack state
-			{
-				// 1. Apply base world transformation
+			// BACK COVER (flat)
+			Model->pushMatrix(); {
 				Model->translate(book.position);
-
-				// Apply orientation - Use multMatrix if orientation is a quat
-				Model->multMatrix(glm::mat4_cast(book.orientation));
-
-				// 2. Apply opening rotation (relative to book's local Y)
-				if (book.state == BookState::OPENING || book.state == BookState::OPENED) {
-					Model->rotate(-book.openAngle * 0.5f, glm::vec3(0, 1, 0));
-				}
-
-				// 3. Apply offset for this half (relative to spine)
-				Model->translate(glm::vec3(0, 0, -halfThickness * 0.5f));
-
-				// 4. Apply scale for this half
-				Model->scale(halfScaleVec);
-
-				// 5. Set the uniform with the final matrix from the stack top
+				Model->multMatrix(mat4_cast(book.orientation));
+				Model->rotate(-Config::HALF_PI, vec3(1, 0, 0));
+				Model->translate(vec3(0, 0, -bookThickness * 0.5f));
+				Model->scale(coverScale);
 				setModel(shader, Model);
+				bookCover->Draw(shader);
+			} Model->popMatrix();
 
-				// 6. Draw
-				book.bookModel->Draw(shader);
-			}
-			Model->popMatrix(); // RESTORE saved stack state
+			// BACK PAGE(S) (flat)
+			Model->pushMatrix(); {
+				Model->translate(book.position);
+				Model->multMatrix(mat4_cast(book.orientation));
+				Model->rotate(-Config::HALF_PI, vec3(1, 0, 0));
+				Model->translate(vec3(0, 0, +(bookThickness * 0.25f)));
+				Model->scale(vec3(pageScale.x, pageScale.y, pageScale.z * 2.0f)); // offset pages so they are visible
+				setModel(shader, Model);
+				bookPaper->Draw(shader);
+			} Model->popMatrix();
 
-			// --- Draw Right Cover/Back ---
-			Model->pushMatrix(); // SAVE current stack state
-			{
-				// 1. Apply base world transformation
+			// PAGE 1 (delayed hinge opening)
+			Model->pushMatrix(); {
 				Model->translate(book.position);
 				Model->multMatrix(glm::mat4_cast(book.orientation));
-
-				// 2. Apply opening rotation
-				if (book.state == BookState::OPENING || book.state == BookState::OPENED) {
-					Model->rotate(book.openAngle * 0.5f, glm::vec3(0, 1, 0));
+				Model->rotate(-Config::HALF_PI, vec3(1, 0, 0));
+				if (book.state == BookState::OPENING || book.state == BookState::OPENED) { // hinge around the �spine� (world-Y after flatten)
+					constexpr float startDelay = radians(20.0f); // no page turn until cover > 20 degrees
+					float coverA = book.openAngle;
+					float pageAngle;
+					if (coverA <= startDelay) {
+						pageAngle = 0.0f;
+					}
+					else {
+						float t = (coverA - startDelay) / (book.maxOpenAngle - startDelay);
+						pageAngle = t * t * book.maxOpenAngle;
+					}
+					Model->rotate(pageAngle, vec3(0, 1, 0));
 				}
-
-				// 3. Apply offset for this half
-				Model->translate(glm::vec3(0, 0, halfThickness * 0.5f));
-
-				// 4. Apply scale for this half
-				Model->scale(halfScaleVec);
-
-				// 5. Set the uniform
+				Model->translate(vec3(0, 0, -(bookThickness * 0.25f))); // offset pages so they are visible
+				Model->scale(pageScale);
 				setModel(shader, Model);
+				bookPaper->Draw(shader);
+			} Model->popMatrix();
 
-				// 6. Draw
-				book.bookModel->Draw(shader);
-			}
-			Model->popMatrix(); // RESTORE saved stack state
-		}
+			// PAGE 2 (extra delayed hinge opening)
+			Model->pushMatrix(); {
+				Model->translate(book.position);
+				Model->multMatrix(glm::mat4_cast(book.orientation));
+				Model->rotate(-Config::HALF_PI, vec3(1, 0, 0));
+				if (book.state == BookState::OPENING || book.state == BookState::OPENED) { // hinge around the �spine� (world-Y after flatten)
+					constexpr float startDelay = radians(40.0f); // no page turn until cover > 40 degrees
+					float coverA = book.openAngle;
+					float pageAngle;
+					if (coverA <= startDelay) {
+						pageAngle = 0.0f;
+					}
+					else {
+						float t = (coverA - startDelay) / (book.maxOpenAngle - startDelay);
+						pageAngle = t * t * book.maxOpenAngle;
+					}
+					Model->rotate(pageAngle, vec3(0, 1, 0));
+				}
+				Model->translate(vec3(0, 0, -(bookThickness * 0.25f))); // offset pages so they are visible
+				Model->scale(pageScale);
+				setModel(shader, Model);
+				bookPaper->Draw(shader);
+			} Model->popMatrix();
+
+			// FRONT COVER (hinges outwards)
+			Model->pushMatrix(); {
+				Model->translate(book.position);
+				Model->multMatrix(glm::mat4_cast(book.orientation));
+				Model->rotate(-Config::HALF_PI, glm::vec3(1, 0, 0));
+				if (book.state == BookState::OPENING || book.state == BookState::OPENED) { // hinge around the spine (world-Y after flatten)
+					Model->rotate(book.openAngle, glm::vec3(0, 1, 0));
+				}
+				Model->translate(glm::vec3(0, 0, +bookThickness * 0.5f));
+				Model->scale(coverScale);
+				setModel(shader, Model);
+				bookCover->Draw(shader);
+			} Model->popMatrix();
+		} // END draw books loop
+		if (shader->hasUniform("texOnly")) glUniform1i(shader->getUniform("texOnly"), GL_FALSE);
 		shader->unbind();
 	}
 
@@ -1601,9 +1577,9 @@ public:
 			//Model->scale(vec3(0.25f));
 			Model->rotate(glm::radians(-90.0f), vec3(1.0f, 0.0f, 0.0f));
 			setModel(shader, Model);
-			if (shader == ShadowProg) glUniform1i(shader->getUniform("player"), GL_TRUE);
+			if (shader == ShadowProg) glUniform1i(shader->getUniform("texOnly"), GL_TRUE);
 			CatWizard->Draw(shader);
-			if (shader == ShadowProg) glUniform1i(shader->getUniform("player"), GL_FALSE);
+			if (shader == ShadowProg) glUniform1i(shader->getUniform("texOnly"), GL_FALSE);
 		} Model->popMatrix();
 		shader->unbind();
 	}
@@ -2263,6 +2239,7 @@ public:
 							}
 
 							books.emplace_back(cube, sphere, spawnPos, bookScale, bookOrientation, newSpellType);
+              //books.emplace_back(spawnPos, bookScale, bookOrientation, newSpellType);
 
 							Book& newBook = books.back();
 
@@ -2276,7 +2253,6 @@ public:
 				}
 			}
 		}
-
 		if (bossfightstarted) {
 			gridX = bossRoom->mapXtoGridX(player->getPosition().x);
 			gridZ = bossRoom->mapZtoGridY(player->getPosition().z);
