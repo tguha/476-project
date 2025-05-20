@@ -71,7 +71,7 @@ public:
 
 	float exposure = 1.0f;
 	float saturation = 1.0f;
-	
+
 	//Timeout for F Key
 	float fTimeout;
 
@@ -1336,7 +1336,7 @@ public:
 		else if (manState == Man_State::IDLE){
 			catwizard_animator->SetCurrentAnimation(player_idle);
 		}
-		
+
 		// Update bone matrices
 
 		vector<glm::mat4> transforms = catwizard_animator->GetFinalBoneMatrices();
@@ -1356,7 +1356,7 @@ public:
 		// Model->translate(characterMovement); // Use final player position
 		Model->translate(player->getPosition());
 		// *** USE CAMERA ROTATION FOR MODEL ***
-		
+
 
 		Model->rotate((player->getRotY()), vec3(0, 1, 0)); // <<-- FIXED ROTATION
 
@@ -1690,7 +1690,7 @@ public:
 				if (!keyAlreadyExists) {
 					keyCollectibles.emplace_back(key, enemy->getPosition(), 0.1f, Material::gold, SpellType::NONE);
 				}
-				drawKey(shader, Model);
+				// drawKey(shader, Model);
 				continue; // Skip null or dead enemies
 			}
 			shader->bind();
@@ -4227,7 +4227,7 @@ public:
 
 			}
 			else if (key == GLFW_KEY_A && action == GLFW_RELEASE) {
-				
+
 				//Movement Variable
 				movingLeft = false;
 			}
