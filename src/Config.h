@@ -63,7 +63,7 @@ namespace Config {
     constexpr float ICE_ELEMENTAL_MELEE_RANGE = 3.0f;
 
     // Projectile settings
-    constexpr float PROJECTILE_DAMAGE = 25.0f;
+    constexpr float PROJECTILE_DAMAGE = 100.0f;
 
     // Camera settings
     constexpr float CAMERA_DEFAULT_RADIUS = 5.0f;

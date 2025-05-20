@@ -28,7 +28,7 @@ enum class OrbState {
 
 enum class Man_State {
     WALKING,
-    STANDING
+    IDLE
 };
 
 enum class SpellType {
