@@ -1389,9 +1389,9 @@ public:
 			{
 				// 1. Apply base world transformation
 				Model->translate(book.position);
+
 				// Apply orientation - Use multMatrix if orientation is a quat
 				Model->multMatrix(glm::mat4_cast(book.orientation));
-				// If using Euler angles (vec3 rot), apply multiple Model->rotate(...) here
 
 				// 2. Apply opening rotation (relative to book's local Y)
 				if (book.state == BookState::OPENING || book.state == BookState::OPENED) {
@@ -1405,7 +1405,7 @@ public:
 				Model->scale(halfScaleVec);
 
 				// 5. Set the uniform with the final matrix from the stack top
-				setModel(shader, Model); // Assumes setModel uses Model->topMatrix()
+				setModel(shader, Model);
 
 				// 6. Draw
 				book.bookModel->Draw(shader);
@@ -1438,41 +1438,20 @@ public:
 			}
 			Model->popMatrix(); // RESTORE saved stack state
 		}
-
 		shader->unbind();
 	}
 
 	void drawSkybox(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		shader->bind(); // Use prog2 for simple colored shapes
-		Model->pushMatrix();
+		Model->pushMatrix(); {
 			Model->loadIdentity();
 			Model->translate(vec3(bossAreaCenter.x, bossAreaCenter.y, bossAreaCenter.z - 20)); // Center the sky sphere at the player position
 			Model->scale(vec3(5.0f)); // Scale up the sky sphere to cover the scene
-
 			setModel(shader, Model);
 			sky_sphere->Draw(shader);
-		Model->popMatrix();
+		} Model->popMatrix();
 		shader->unbind();
 	}
-
-	// void drawBorder(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model){
-	// 	shader->bind();
-
-	// 	glUniform3f(shader->getUniform("MatAmb"), 0.15f, 0.08f, 0.03f);
-	// 	glUniform3f(shader->getUniform("MatDif"), 0.6f, 0.3f, 0.1f);
-	// 	glUniform3f(shader->getUniform("MatSpec"), 0.1f, 0.1f, 0.1f);
-	// 	glUniform1f(shader->getUniform("MatShine"), 4.0f);
-	// 	glUniform1i(shader->getUniform("hasEmittance"), 0);
-
-	// 	Model->pushMatrix();
-	// 		Model->translate(bossAreaCenter);
-	// 		Model->scale(0.28f);
-	// 		setModel(shader, Model);
-	// 		border->Draw(shader);
-	// 	Model->popMatrix();
-	// 	shader->unbind();
-	// }
-
 
 	//TODO: Add particle effects to orbs
 	void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
@@ -1595,16 +1574,11 @@ public:
 				Model->loadIdentity();
 				Model->translate(currentDrawPosition);
 				Model->scale(currentDrawScale); // Use current scale
-
-				// --- Set Material & Draw ---
 				SetMaterial(simpleShader, orb.color);
-
 				setModel(simpleShader, Model);
 				orb.model->Draw(simpleShader);
-
 			} Model->popMatrix();
 		} // End drawing loop
-
 		simpleShader->unbind();
 	}
 
@@ -1679,7 +1653,6 @@ public:
 				bossfightstarted = false;
 				bossfightended = false;
 			}
-
 			bossEnemy->setAlive(); // Reset boss status to alive
 			initMapGen();
 			initEnemies(); // Reinitialize enemies
@@ -1717,7 +1690,6 @@ public:
 				Model->rotate(glm::radians(-90.0f), glm::vec3(1, 0, 0)); // rotate -90 degrees around x axis
 				SetMaterial(shader, Material::blue_body); // Set body material
 				if (shader->hasUniform("enemyAlpha")) glUniform1f(shader->getUniform("enemyAlpha"), enemy->getDamageTimer() / Config::ENEMY_HIT_DURATION);
-
 				setModel(shader, Model);
 				iceElemental->Draw(shader); // Draw the scaled sphere as the body
 			} Model->popMatrix();
