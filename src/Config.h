@@ -8,24 +8,27 @@
 // It's often better to use static const or constexpr for typed constants
 // instead of #define for better type safety and namespacing
 
-namespace Config {
-    // --- Global Game Settings ---
+namespace Config {// --- Global Game Settings (Config::<thing you want>)---
 
     // Debugging --- set all to false for release builds
     constexpr bool DEBUG_ENEMY_MOVEMENT = true; // Debug enemy movement
     constexpr bool DEBUG_ROOM_PLACEMENT = false; // Debugging room placement
-    inline static bool DEBUG_LIGHTING = false;
-    inline static bool DEBUG_GEOM = false;
-    constexpr bool DEBUG_SHADER = true; // Sets verbose flag for shaders
     constexpr bool DEBUG_TEX_LOADING = false;
     constexpr bool DEBUG_PLAYER_AABB = false;
     constexpr bool DEBUG_ORB_PICKUP = false;
 
     // Rendering & Shaders
     constexpr int MAX_BONES = 200;
-    inline static bool SHADOW = true;
     constexpr float ORTHO_SIZE = 60.0f;
     constexpr float PARTICLES = true;
+    constexpr bool DEBUG_SHADER = true; // Sets verbose flag for shaders
+    constexpr bool DEBUG_SHADER_PARAMS = false; // Debug lighting settings
+    inline static bool SHADOW = true;
+    inline static float EXPOSURE = 0.5f; // Default exposure
+    inline static float SATURATION = 2.7f; // Default saturation
+	inline static vec3 LIGHT_COLOR = vec3(1.0f, 1.0f, 1.0f); // Default light color
+    inline static bool DEBUG_LIGHTING = false;
+    inline static bool DEBUG_GEOM = false;
 
     // UI
     constexpr bool SHOW_HEALTHBAR = true;

@@ -75,7 +75,6 @@ public:
 	//Timeout for F Key
 	float fTimeout;
 
-
 	// Textures
 	shared_ptr<Texture> borderWallTex;
 	shared_ptr<Texture> libraryGroundTex;
@@ -3943,8 +3942,16 @@ public:
 		glDepthMask(GL_TRUE);
 	}
 
+	void debugMessages() {
+		if (Config::DEBUG_SHADER_PARAMS) {
+			cout << "Shader Parameters:" << endl;
+			cout << "Exposure: " << Config::EXPOSURE << endl;
+			cout << "Saturation: " << Config::SATURATION << endl;
+		}
+	}
+
 	void render(float frametime, float animTime) {
-		// Get current frame buffer size.
+		// Get current frame buffer size
 		int width, height;
 		glfwGetFramebufferSize(windowManager->getHandle(), &width, &height);
 		float aspect = width / (float)height;
@@ -3963,6 +3970,7 @@ public:
 		checkBossfight();
 		BossEnemyShoot(frametime);
 		restartGeneration();
+		debugMessages();
 
 		// Create the matrix stacks
 		auto Projection = make_shared<MatrixStack>();
@@ -3973,6 +3981,7 @@ public:
 		vec3 lightTarget = libraryCenter; // Light looks at library center
 		vec3 lightDir = normalize(lightPos - lightTarget); // Light direction
 		vec3 lightUp = vec3(0, 1, 0);
+		vec3 lc = Config::LIGHT_COLOR;
 		mat4 LO, LV, LSpace;
 
 		// ========================================================================
@@ -4051,10 +4060,10 @@ public:
 			glUniform1i(ShadowProg->getUniform("shadowDepth"), 10); // Set uniform for shadow map
 			// Set light and camera uniforms
 			glUniform3f(ShadowProg->getUniform("lightDir"), lightDir.x, lightDir.y, lightDir.z); // Set light direction
-			glUniform3f(ShadowProg->getUniform("lightColor"), 1.0f, 1.0f, 0.7f);
+			glUniform3f(ShadowProg->getUniform("lightColor"), lc.x, lc.y, lc.z);
 			glUniform3fv(ShadowProg->getUniform("cameraPos"), 1, glm::value_ptr(eye));
-			glUniform1f(ShadowProg->getUniform("exposure"), exposure);
-			glUniform1f(ShadowProg->getUniform("saturation"), saturation);
+			glUniform1f(ShadowProg->getUniform("exposure"), Config::EXPOSURE);
+			glUniform1f(ShadowProg->getUniform("saturation"), Config::SATURATION);
 			setCameraProjectionFromStack(ShadowProg, Projection);
 			setCameraViewFromStack(ShadowProg, View);
 			LSpace = LO * LV;
@@ -4139,16 +4148,15 @@ public:
 	}
 
 	void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
-		if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
-		{
-			glfwSetWindowShouldClose(window, GL_TRUE);
-		}
-
-		if (key == GLFW_KEY_EQUAL && action == GLFW_PRESS) exposure += 0.1f;
-		if (key == GLFW_KEY_MINUS && action == GLFW_PRESS) exposure -= 0.1f;
-
-		if (key == GLFW_KEY_1 && action == GLFW_PRESS) saturation -= 0.1f;
-		if (key == GLFW_KEY_2 && action == GLFW_PRESS) saturation += 0.1f;
+		if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) glfwSetWindowShouldClose(window, GL_TRUE);
+		
+		// Lighting / Shader settings
+		if (key == GLFW_KEY_1 && action == GLFW_PRESS) Config::SATURATION -= 0.1f;
+		if (key == GLFW_KEY_2 && action == GLFW_PRESS) Config::SATURATION += 0.1f;
+		if (key == GLFW_KEY_3 && action == GLFW_PRESS) Config::EXPOSURE += 0.1f;
+		if (key == GLFW_KEY_4 && action == GLFW_PRESS) Config::EXPOSURE -= 0.1f;
+		if (key == GLFW_KEY_9 && action == GLFW_PRESS) Config::DEBUG_LIGHTING = !Config::DEBUG_LIGHTING;
+		if (key == GLFW_KEY_0 && action == GLFW_PRESS) Config::DEBUG_GEOM = !Config::DEBUG_GEOM;
 
 		if (key == GLFW_KEY_F11 && action == GLFW_PRESS)
 		{
@@ -4259,12 +4267,7 @@ public:
 			}
 		}
 
-		if (!player->isAlive() && key == GLFW_KEY_R && action == GLFW_PRESS) { // Changed restart to R
-			restartGen = true;
-		}
-
-		if (key == GLFW_KEY_O && action == GLFW_PRESS) Config::DEBUG_LIGHTING = !Config::DEBUG_LIGHTING;
-		if (key == GLFW_KEY_P && action == GLFW_PRESS) Config::DEBUG_GEOM = !Config::DEBUG_GEOM;
+		if (!player->isAlive() && key == GLFW_KEY_R && action == GLFW_PRESS) restartGen = true; // Changed restart to R
 	}
 
 	void scrollCallback(GLFWwindow* window, double deltaX, double deltaY) {
