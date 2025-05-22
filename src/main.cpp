@@ -3948,6 +3948,7 @@ public:
 			cout << "Exposure: " << Config::EXPOSURE << endl;
 			cout << "Saturation: " << Config::SATURATION << endl;
 		}
+		if (Config::DEBUG_PLAYER_HP) cout << "Player HP (%): " << player->getHitpoints() / Config::PLAYER_HP_MAX << endl;
 	}
 
 	void render(float frametime, float animTime) {
@@ -3970,7 +3971,7 @@ public:
 		checkBossfight();
 		BossEnemyShoot(frametime);
 		restartGeneration();
-		debugMessages();
+		//debugMessages();
 
 		// Create the matrix stacks
 		auto Projection = make_shared<MatrixStack>();
@@ -4063,7 +4064,7 @@ public:
 			glUniform3f(ShadowProg->getUniform("lightColor"), lc.x, lc.y, lc.z);
 			glUniform3fv(ShadowProg->getUniform("cameraPos"), 1, glm::value_ptr(eye));
 			glUniform1f(ShadowProg->getUniform("exposure"), Config::EXPOSURE);
-			glUniform1f(ShadowProg->getUniform("saturation"), Config::SATURATION);
+			glUniform1f(ShadowProg->getUniform("saturation"), Config::SATURATION * (player->getHitpoints() / Config::PLAYER_HP_MAX));
 			setCameraProjectionFromStack(ShadowProg, Projection);
 			setCameraViewFromStack(ShadowProg, View);
 			LSpace = LO * LV;

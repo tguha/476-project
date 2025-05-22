@@ -16,6 +16,7 @@ namespace Config {// --- Global Game Settings (Config::<thing you want>)---
     constexpr bool DEBUG_TEX_LOADING = false;
     constexpr bool DEBUG_PLAYER_AABB = false;
     constexpr bool DEBUG_ORB_PICKUP = false;
+    constexpr bool DEBUG_PLAYER_HP = false;
 
     // Rendering & Shaders
     constexpr int MAX_BONES = 200;

@@ -185,12 +185,11 @@ void main() {
     // compute luminance (perceptual grayscale)
     float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));  
     vec3 gray = vec3(lum);
-    // saturation factor >1 will oversaturate, <1 desaturates
-    c = mix(gray, c, saturation);
+    c = mix(gray, c, saturation); // saturation factor >1 will oversaturate, <1 desaturates
 
     float rimPower = 2.0;
     float rim = pow(1.0 - max(dot(normal, V), 0.0), rimPower);
-    vec3 rimColor = vec3(1.0) * 0.1;        // tweak color & intensity
+    vec3 rimColor = vec3(1.0) * 0.1; // tweak color & intensity
     c += rim * rimColor;
 
     // enemy tint
