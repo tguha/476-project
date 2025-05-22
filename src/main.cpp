@@ -808,27 +808,6 @@ public:
 		}
 	}
 
-	void setProgFlags(shared_ptr<Program> shader, bool hasMat, bool hasBones) {
-		if (hasMat && shader->hasUniform("hasMaterial")) {
-			glUniform1i(shader->getUniform("hasMaterial"), GL_TRUE);
-		}
-		else if (shader->hasUniform("hasMaterial")) {
-			glUniform1i(shader->getUniform("hasMaterial"), GL_FALSE);
-		}
-
-		if (hasBones && shader->hasUniform("hasBones")) {
-			glUniform1i(shader->getUniform("hasBones"), GL_TRUE);
-		}
-		else if (shader->hasUniform("hasBones")) {
-			glUniform1i(shader->getUniform("hasBones"), GL_FALSE);
-		}
-	}
-
-	void clearProgFlags(shared_ptr<Program> shader) {
-		if (shader->hasUniform("hasMaterial")) glUniform1i(shader->getUniform("hasMaterial"), GL_FALSE);
-		if (shader->hasUniform("hasBones")) glUniform1i(shader->getUniform("hasBones"), GL_FALSE);
-	}
-
 	/* helper for sending top of the matrix strack to GPU */
 	void setModel(std::shared_ptr<Program> prog, std::shared_ptr<MatrixStack>M) {
 		glUniformMatrix4fv(prog->getUniform("M"), 1, GL_FALSE, value_ptr(M->topMatrix()));
@@ -875,8 +854,8 @@ public:
 			cout << "Warning: initGround() called more than once." << endl;
 			return;
 		}
-		// Ground plane from -groundSize to +groundSize in X and Z at groundY
 
+		// Ground plane from -groundSize to +groundSize in X and Z at groundY
 		float groundSize = Config::GROUND_SIZE;
 		float groundY = Config::GROUND_HEIGHT;
 
@@ -886,10 +865,12 @@ public:
 			 groundSize, groundY,  groundSize, // bottom-right
 			 groundSize, groundY, -groundSize  // top-right
 		};
+
 		// Normals point straight up
 		float GrndNorm[] = {
 			0, 1, 0,   0, 1, 0,   0, 1, 0,   0, 1, 0
 		};
+
 		// Indices for two triangles covering the quad
 		unsigned short idx[] = { 0, 1, 2,   0, 2, 3 };
 		g_GiboLen = 6; // Number of indices

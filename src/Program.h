@@ -1,22 +1,13 @@
-
 #pragma  once
-
-#ifndef LAB471_PROGRAM_H_INCLUDED
-#define LAB471_PROGRAM_H_INCLUDED
 
 #include <map>
 #include <string>
-
 #include <glad/glad.h>
-
 
 std::string readFileAsString(const std::string &fileName);
 
-class Program
-{
-
+class Program {
 public:
-
 	void setVerbose(const bool v) { verbose = v; }
 	bool isVerbose() const { return verbose; }
 
@@ -33,12 +24,10 @@ public:
 	GLuint getPid() const { return pid; }
 
 protected:
-
 	std::string vShaderName;
 	std::string fShaderName;
 
 private:
-
 	GLuint pid = 0;
 	std::map<std::string, GLint> attributes;
 	std::map<std::string, GLint> uniforms;
@@ -46,4 +35,3 @@ private:
 
 };
 
-#endif // LAB471_PROGRAM_H_INCLUDED
