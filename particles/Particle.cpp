@@ -51,7 +51,7 @@ void Particle::load(vec3 start, float r_low, float r_high, float g_low, float g_
 /* all particles born at the origin */
 void Particle::rebirth(float t, vec3 start, float r_low, float r_high, float g_low, 
 	float g_high, float b_low, float b_high, float scale_low, float scale_high)
-{
+{ //re-initializes particles basically (with new wrandom properties, recycles particles that are dead)
 	charge = Config::randFloat(0.0f, 1.0f) < 0.5 ? -1.0f : 1.0f;
 	m = 1.0f;
   	d = Config::randFloat(0.0f, 0.02f);
@@ -72,7 +72,7 @@ void Particle::rebirth(float t, vec3 start, float r_low, float r_high, float g_l
 
 void Particle::update(float t, float h, const vec3 &g, const vec3 start, float r_low, float r_high, float g_low, 
 	float g_high, float b_low, float b_high, float scale_low, float scale_high, float frameTime)
-{
+{ //called every frame for active particles, updates position based on velocity and frameTime
 	// if(t > tEnd) { // Removed automatic rebirth
 	// 	rebirth(t, start, r_low, r_high, g_low, g_high, b_low, b_high, scale_low, scale_high);
 	// }
@@ -83,7 +83,7 @@ void Particle::update(float t, float h, const vec3 &g, const vec3 start, float r
         x += v * frameTime; // Update position based on current velocity and frameTime
 
         // Fade out alpha over lifetime
-        float lifeProgress = (tEnd - t) / lifespan; // 얼마나 살았는지 (1.0 -> 0.0)
+        float lifeProgress = (tEnd - t) / lifespan; 
         color.a = glm::clamp(lifeProgress, 0.0f, 1.0f); // Alpha fades from 1 (full life) to 0 (dead)
     } else {
         color.a = 0.0f; // Particle is dead or has invalid lifespan, ensure its alpha is 0
@@ -103,16 +103,16 @@ void Particle::assignGroup(vec3 start, Entity* entity, float r_low, float r_high
 	rebirth(0.0f, start, r_low, r_high, g_low, g_high, b_low, b_high, scale_low, scale_high);
 }
 
-void Particle::calcCamDist(mat4 view) {
+void Particle::calcCamDist(mat4 view) { // used for depth sorting to make sure transparent particles are drawn after opaque ones
 	// Particle positions in camera space
 	vec4 camSpaceVec = view * vec4(x.x, x.y, x.z, 1.0f);
-	camDist = camSpaceVec.z;
+	camDist = camSpaceVec.z; 
 }
 
 void Particle::resize() {
 }
 
-// Implementation for the new launch method
+// Implementation for the new launch method, takes properties and applies them to the particle, used by spawnParticleBurst in particleGen for controleld effects
 void Particle::launch(float current_t, const glm::vec3& start_pos, const glm::vec3& initial_vel, float particle_lifespan, const glm::vec4& particle_color, float particle_scale)
 {
     this->x = start_pos;        // Set position
