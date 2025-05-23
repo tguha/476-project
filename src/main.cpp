@@ -190,6 +190,9 @@ public:
 	vec3 debugEye = vec3(0.0f, 0.0f, 0.0f);
 	float debugMovementSpeed = 0.2f;
 
+	bool enemyActive = true;
+	bool playerActive = true;
+
 	Man_State manState = Man_State::IDLE;
 
 	LibraryGen *library = new LibraryGen();
@@ -3939,12 +3942,12 @@ public:
 		float aspect = width / (float)height;
 
 		// --- Update Game Logic ---
-		charMove();
+		if (playerActive) { charMove(); }
 		updateCameraVectors();
 		updateBooks(frametime);
 		updateOrbs((float)glfwGetTime());
 		//updateKeys((float)glfwGetTime());
-		updateEnemies(frametime);
+		if (enemyActive) { updateEnemies(frametime); }
 		updateProjectiles(frametime);
 		updateFTimeout(frametime);
 		particleSystem->update(frametime); // Update particles
@@ -4140,7 +4143,7 @@ public:
 		if (key == GLFW_KEY_9 && action == GLFW_PRESS) Config::DEBUG_LIGHTING = !Config::DEBUG_LIGHTING;
 		if (key == GLFW_KEY_0 && action == GLFW_PRESS) Config::DEBUG_GEOM = !Config::DEBUG_GEOM;
 
-		if (key == GLFW_KEY_F11 && action == GLFW_PRESS)
+		if (key == GLFW_KEY_GRAVE_ACCENT && action == GLFW_PRESS)
 		{
 			//Fullscreen Mode
 			if (!windowMaximized) {
@@ -4239,7 +4242,16 @@ public:
 			canFightboss = true;
 		}
 		if (key == GLFW_KEY_K && action == GLFW_PRESS) {
+			//Debug Camera 
 			debugCamera = !debugCamera;
+		}
+		if (debugCamera && key == GLFW_KEY_N && action == GLFW_PRESS) {
+			//Debug Enemy Movement
+			enemyActive = !enemyActive;
+		}
+		if (debugCamera && key == GLFW_KEY_M && action == GLFW_PRESS) {
+			//Debug Player Movement Toggle
+			playerActive = !playerActive;
 		}
 
 		// Shoot fireball with SPACEBAR
@@ -4342,7 +4354,9 @@ int main(int argc, char* argv[]) {
 	glfwSetInputMode(windowManager->getHandle(), GLFW_STICKY_KEYS, GLFW_TRUE);
 
 	cout << "Controls: " << endl << "WASD: Move" << endl << "Mouse: Look around" << endl
-		<< "'F': Interact with book" << "F11 Fullscreen" << endl << "'L': Toggle cursor mode" << endl;
+		<< "'F': Interact with book" << endl<< "'~' Fullscreen" << endl << "'L': Toggle cursor mode" << endl
+		<< "[DEBUG] Press K To Enter Debug Camera Mode." << endl << "+/- Change Brightness, 1/2 Change Saturation"
+		<< endl << "While in Debug Camera mode, M toggles player movement and N toggles enemy movement" << endl;
 
 	// Loop until the user closes the window.
 	while (!glfwWindowShouldClose(windowManager->getHandle())) {
