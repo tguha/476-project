@@ -1812,6 +1812,9 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 				// Ensure a key is added only once per dead enemy if not already present
                 // This simple check assumes positions are unique enough for dead enemies.
                 // A more robust way would be to tag enemies that have already dropped a key.
+
+
+				/*
                 bool keyAlreadyExists = false;
                 for (const auto& key : keyCollectibles) {
                     // Approximate check, ideally use a unique ID from the enemy
@@ -1825,6 +1828,8 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
                 }
 				
 				drawKey(shader, Model );
+
+				*/
 				
 				continue; // Skip null or dead enemies
 			}
@@ -3881,7 +3886,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		
 		//keyCollectibles.emplace_back(key, vec3(0.0, 2.0, 0.0), 0.1f,  vec3(0.9, 0.9, 0.9));
 
-		//drawKey(prog2, Model);
+		drawKey(prog2, Model);
 
 
 
