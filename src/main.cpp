@@ -34,6 +34,7 @@
 #include "GameObjectTypes.h"
 #include "../particles/particleGen.h"
 #include "TextureManager.h"
+#include "Quadtree.h"
 
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -122,7 +123,7 @@ public:
 	//key collectibles
 	std::vector<Collectible> keyCollectibles;
 	int keysCollectedCount = 0;
-	
+
 	vector<Book> books; // vector of books to be drawn
 
 	AssimpModel* player_rig;
@@ -216,6 +217,8 @@ public:
 	GLuint visible = 0;
 	GLuint occlusionBoxVAO = 0;
 	GLuint occlusionBoxVBO = 0;
+	const int VISIBILITY_HISTORY_LENGTH = 5;
+	std::deque<bool> visibilityHistory; // History of visibility statese
 
 	float cameraVisibleCooldown = 0.0f; // Cooldown for camera visibility check
 	bool wasVisibleLastFrame = true;
@@ -231,6 +234,9 @@ public:
 	// Geometry for texture render
 	GLuint quad_VertexArrayID;
 	GLuint quad_vertexbuffer;
+
+	Quadtree *libraryQuadTree;
+	Quadtree *bossRoomQuadTree;
 
 	// Set up the FBO for storing the light's depth map
 	void initShadow() {
@@ -289,7 +295,7 @@ public:
 			float step = 0.45f;
 			float testRadius = desiredRadius;
 			float finalRadius = radius;
-			const float cooldownTime = 0.45f; // Cooldown time in seconds
+			const float cooldownTime = 1.0f; // Cooldown time in seconds
 			cameraVisibleCooldown -= AnimDeltaTime;
 
 			// if (visible == 0) {
@@ -298,6 +304,8 @@ public:
 			// } else {
 			// 	radius = glm::min(desiredRadius, radius + step);
 			// }
+
+			checkCameraCollision();
 
 			if (visible == 0) {
 				radius = glm::max(minRadius, radius - step);
@@ -309,8 +317,9 @@ public:
 				radius = glm::min(desiredRadius, radius + step);
 				wasVisibleLastFrame = true; // Mark as visible
 			}
+			// updateVisibilityHistory(visible, radius, minRadius, step, desiredRadius, cooldownTime);
 
-			radius = glm::mix(radius, finalRadius, 0.5f); // Smoothly interpolate radius
+			radius = glm::mix(radius, finalRadius, 0.15f); // Smoothly interpolate radius
 
 			// 4. Recalculate final eye based on adjusted radius
 			eye = playerPos - front * radius;
@@ -320,7 +329,7 @@ public:
 			player->setRotY(-(theta + radians(-90.0f)));
 			player->setRotX(phi);
 
-		manMoveDir = vec3(sin(player->getRotY()), 0, cos(player->getRotY()));
+			manMoveDir = vec3(sin(player->getRotY()), 0, cos(player->getRotY()));
 			right = normalize(cross(manMoveDir, up));
 
 				// lookAt = eye + front;
@@ -541,31 +550,31 @@ public:
 		grid = library->getGrid();
 
 		if (bossEntranceDir.y > 0) {
-			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(0) + 2), vec3(-1, 0, 0), 10.0f, borderWallTex);
+			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(0)), vec3(-1, 0, 0), 10.0f, borderWallTex);
 			addWall(gridSize.x - 3, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 10.0f, borderWallTex);
-			addWall(gridSize.x - 3, vec3(library->mapGridXtoWorldX((gridSize.x - 1) / 2), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 10.0f, borderWallTex);
-			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(0) + 2, 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
+			addWall(gridSize.x - 2, vec3(library->mapGridXtoWorldX((gridSize.x - 1) / 2), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 10.0f, borderWallTex);
+			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(0), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
 			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
 		}
 		else if (bossEntranceDir.y < 0) {
 			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 10.0f, borderWallTex);
-			addWall(gridSize.x - 3, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(0) + 2), vec3(-1, 0, 0), 10.0f, borderWallTex);
-			addWall(gridSize.x - 3, vec3(library->mapGridXtoWorldX((gridSize.x - 1) / 2), 0, library->mapGridYtoWorldZ(0) + 2), vec3(-1, 0, 0), 10.0f, borderWallTex);
-			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(0) + 2, 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
+			addWall(gridSize.x - 3, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(0)), vec3(-1, 0, 0), 10.0f, borderWallTex);
+			addWall(gridSize.x - 1, vec3(library->mapGridXtoWorldX((gridSize.x - 1) / 2), 0, library->mapGridYtoWorldZ(0)), vec3(-1, 0, 0), 10.0f, borderWallTex);
+			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(0), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
 			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
 		}
 		else if (bossEntranceDir.x > 0) {
 			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 10.0f, borderWallTex);
-			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(0) + 2), vec3(-1, 0, 0), 10.0f, borderWallTex);
+			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(0)), vec3(-1, 0, 0), 10.0f, borderWallTex);
 			addWall(gridSize.y - 3, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
-			addWall(gridSize.y - 3, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ((gridSize.y - 1) / 2)), vec3(0, 0, -1), 10.0f, borderWallTex);
-			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(0) + 2, 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
+			addWall(gridSize.y - 1, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ((gridSize.y - 1) / 2)), vec3(0, 0, -1), 10.0f, borderWallTex);
+			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(0) , 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
 		}
 		else if (bossEntranceDir.x < 0) {
-			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1) + 2), vec3(-1, 0, 0), 10.0f, borderWallTex);
+			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 10.0f, borderWallTex);
 			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(0)), vec3(-1, 0, 0), 10.0f, borderWallTex);
-			addWall(gridSize.y - 3, vec3(library->mapGridXtoWorldX(0) + 2, 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
-			addWall(gridSize.y - 3, vec3(library->mapGridXtoWorldX(0) + 2, 0, library->mapGridYtoWorldZ((gridSize.y - 1) / 2)), vec3(0, 0, -1), 10.0f, borderWallTex);
+			addWall(gridSize.y - 3, vec3(library->mapGridXtoWorldX(0), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
+			addWall(gridSize.y - 1, vec3(library->mapGridXtoWorldX(0), 0, library->mapGridYtoWorldZ((gridSize.y - 1) / 2)), vec3(0, 0, -1), 10.0f, borderWallTex);
 			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
 		}
 
@@ -574,6 +583,183 @@ public:
 		bossRoom->generate(bossGridSize, gridSize, glm::vec3(0, 0, 0), bossEntranceDir);
 		bossGrid = bossRoom->getGrid();
 		addLibGrnd(bossGridSize.x * 2, bossGridSize.y * 2, 0.0f, bossRoom->getWorldOrigin(), libraryGroundTex);
+	}
+
+	void initQuadTree() {
+		float cellSize = 2.0f; // Assuming square cells
+		int maxDepth = std::ceil(std::log2(std::max(gridSize.x, gridSize.y))); // Calculate max depth based on grid size
+		libraryQuadTree = new Quadtree(glm::vec2(0, 0), glm::vec2(grid.getSize().x * cellSize * 0.5f, grid.getSize().y * cellSize * 0.5f), maxDepth);
+		for (int z = 0; z < gridSize.y; ++z) {
+			for (int x = 0; x < gridSize.x; ++x) {
+				glm::ivec2 cellPos(x, z);
+				if (!grid.inBounds(cellPos)) continue; // Skip out-of-bounds cells
+				const auto& cell = grid[cellPos];
+				if ((cell.type != LibraryGen::CellType::CLUSTER) && (cell.type != LibraryGen::CellType::BORDER)) {
+					continue; // Skip non-cluster and non-border cells
+				}
+				// if (cell.type != LibraryGen::CellType::CLUSTER) continue; // Skip non-cluster cells
+
+				glm::vec3 clusterCenter = glm::vec3(library->mapGridXtoWorldX(cellPos.x), 0.0f, library->mapGridYtoWorldZ(cellPos.y));
+				glm::vec3 clusterBboxMin, clusterBboxMax;
+
+				if (cell.type == LibraryGen::CellType::CLUSTER) {
+						switch (cell.objectType) {
+							case LibraryGen::CellObjType::CANDELABRA:
+								clusterBboxMin = candelabra->getBoundingBoxMin();
+								clusterBboxMax = candelabra->getBoundingBoxMax();
+								break;
+							case LibraryGen::CellObjType::CHEST:
+								clusterBboxMin = chest->getBoundingBoxMin();
+								clusterBboxMax = chest->getBoundingBoxMax();
+								break;
+							case LibraryGen::CellObjType::GRANDFATHER_CLOCK:
+								clusterBboxMin = grandfather_clock->getBoundingBoxMin();
+								clusterBboxMax = grandfather_clock->getBoundingBoxMax();
+								break;
+							case LibraryGen::CellObjType::ROTATED_BOOKSHELF:
+							case LibraryGen::CellObjType::BOOKSHELF:
+								clusterBboxMin = book_shelf1->getBoundingBoxMin();
+								clusterBboxMax = book_shelf1->getBoundingBoxMax();
+								break;
+							case LibraryGen::CellObjType::TABLE_AND_CHAIR1:
+								clusterBboxMin = table_chairs1->getBoundingBoxMin();
+								clusterBboxMax = table_chairs1->getBoundingBoxMax();
+								break;
+							case LibraryGen::CellObjType::TABLE_AND_CHAIR2:
+								clusterBboxMin = table_chairs2->getBoundingBoxMin();
+								clusterBboxMax = table_chairs2->getBoundingBoxMax();
+								break;
+							case LibraryGen::CellObjType::SHELF_WITH_ABILITY:
+							case LibraryGen::CellObjType::SHELF_WITH_ABILITY_ROTATED:
+								clusterBboxMin = book_shelf2->getBoundingBoxMin();
+								clusterBboxMax = book_shelf2->getBoundingBoxMax();
+								break;
+							case LibraryGen::CellObjType::BOOKSTAND:
+								clusterBboxMin = bookstand->getBoundingBoxMin();
+								clusterBboxMax = bookstand->getBoundingBoxMax();
+								break;
+							default:
+								continue; // Skip unknown object types
+						}
+					} else if (cell.type == LibraryGen::CellType::BORDER) {
+						switch (cell.borderType) {
+							case LibraryGen::BorderType::TOP_BORDER:
+							case LibraryGen::BorderType::BOTTOM_BORDER:
+								clusterBboxMin = glm::vec3(-1.0f, 0.0f, -0.25f);
+								clusterBboxMax = glm::vec3(1.0f, 2.0f, 0.25f);
+								break;
+							case LibraryGen::BorderType::LEFT_BORDER:
+							case LibraryGen::BorderType::RIGHT_BORDER:
+								clusterBboxMin = glm::vec3(-0.25f, 0.0f, -1.0f);
+								clusterBboxMax = glm::vec3(0.25f, 2.0f, 1.0f);
+								break;
+							case LibraryGen::BorderType::LEFT_OF_BOSS_ENTRANCE:
+								if (bossEntranceDir.y > 0) {
+									clusterBboxMin = glm::vec3(-1.0f, 0.0f, -0.25f);
+									clusterBboxMax = glm::vec3(1.0f, 2.0f, 0.25f);
+								} else if (bossEntranceDir.y < 0) {
+									clusterBboxMin = glm::vec3(-1.0f, 0.0f, -0.25f);
+									clusterBboxMax = glm::vec3(1.0f, 2.0f, 0.25f);
+								} else if (bossEntranceDir.x > 0) {
+									clusterBboxMin = glm::vec3(-0.25f, 0.0f, -1.5f);
+									clusterBboxMax = glm::vec3(0.25f, 2.0f, 1.5f);
+								} else if (bossEntranceDir.x < 0) {
+									clusterBboxMin = glm::vec3(-0.25f, 0.0f, -1.5f);
+									clusterBboxMax = glm::vec3(0.25f, 2.0f, 1.5f);
+								} else {
+									continue; // Skip if boss entrance is not at the top
+								}
+								break;
+							case LibraryGen::BorderType::RIGHT_OF_BOSS_ENTRANCE:
+								if (bossEntranceDir.x > 0) {
+									clusterBboxMin = glm::vec3(-0.25f, 0.0f, -0.40f);
+									clusterBboxMax = glm::vec3(0.25f, 2.0f, 0.75f);
+								} else if (bossEntranceDir.x < 0) {
+									clusterBboxMin = glm::vec3(-0.25f, 0.0f, -0.40f);
+									clusterBboxMax = glm::vec3(0.25f, 2.0f, 0.75f);
+								}
+								else {
+									continue; // Skip if boss entrance is not at the top
+								}
+								break;
+							default:
+								// // For borders, we can use a simple bounding box
+								// clusterBboxMin = glm::vec3(-1.0f, 0.0f, -1.0f);
+								// clusterBboxMax = glm::vec3(1.0f, 2.0f, 1.0f);
+								// break;
+								continue; // Skip unknown border types
+						}
+
+					} else {
+						continue; // Skip non-cluster cells
+					}
+
+				// Calculate the world bounding box for the object
+				glm::mat4 objectTransform = glm::translate(glm::mat4(1.0f), clusterCenter);
+				objectTransform = glm::rotate(objectTransform, cell.transformData.rotation, glm::vec3(0, 1, 0));
+				objectTransform = glm::scale(objectTransform, cell.transformData.scale);
+
+				glm::vec3 clusterWorldMin, clusterWorldMax;
+				updateBoundingBox(clusterBboxMin, clusterBboxMax, objectTransform, clusterWorldMin, clusterWorldMax);
+
+				// Add the bounding box to the quadtree
+				int id = z * gridSize.x + x; // Unique ID for the cell
+				glm::vec2 quadaabb_center = glm::vec2(clusterCenter.x, clusterCenter.z);
+				QuadElement element(id, quadaabb_center, clusterWorldMin, clusterWorldMax);
+				libraryQuadTree->insert(element);
+				std::cout << "Inserted element with ID: " << id << " at position: (" << clusterCenter.x << ", " << clusterCenter.z << ")" << std::endl;
+			}
+		}
+		std::cout << "Library Quadtree initialized with " << libraryQuadTree->getElementCount() << " elements." << std::endl;
+
+		maxDepth = std::ceil(std::log2(std::max(bossGridSize.x, bossGridSize.y))); // Calculate max depth based on grid size
+		bossRoomQuadTree = new Quadtree(glm::vec2(bossRoom->getWorldOrigin().x, bossRoom->getWorldOrigin().z), glm::vec2(bossGrid.getSize().x * cellSize * 0.5f, bossGrid.getSize().y * cellSize * 0.5f), maxDepth);
+		for (int z = 0; z < bossGridSize.y; ++z) {
+			for (int x = 0; x < bossGridSize.x; ++x) {
+				glm::ivec2 cellPos = glm::ivec2(x, z);
+				if (!bossGrid.inBounds(cellPos)) continue; // Skip out-of-bounds cells
+
+				const auto& cell = bossGrid[cellPos];
+				if (cell.type == BossRoomGen::CellType::NONE) continue;
+				// if (bossfightstarted && !bossRoom->isInsideBossArea(cellPos)) return true;
+
+				glm::vec3 clusterBboxMin;
+				glm::vec3 clusterBboxMax;
+				glm::vec3 clusterCenter = glm::vec3(bossRoom->mapGridXtoWorldX(cellPos.x), libraryCenter.y, bossRoom->mapGridYtoWorldZ(cellPos.y));
+
+				switch (cell.objectType) {
+					case BossRoomGen::CellObjType::BOOKSHELF:
+						clusterBboxMin = book_shelf1->getBoundingBoxMin();
+						clusterBboxMax = book_shelf1->getBoundingBoxMax();
+						break;
+					case BossRoomGen::CellObjType::GLOWING_SHELF:
+						clusterBboxMin = book_shelf2->getBoundingBoxMin();
+						clusterBboxMax = book_shelf2->getBoundingBoxMax();
+						break;
+					case BossRoomGen::CellObjType::DOOR:
+						clusterBboxMin = door->getBoundingBoxMin();
+						clusterBboxMax = door->getBoundingBoxMax();
+						break;
+					default:
+						continue; // Skip unknown object types
+				}
+
+				glm::mat4 objectTransform = glm::translate(glm::mat4(1.0f), clusterCenter);
+				objectTransform = glm::rotate(objectTransform, cell.transformData.rotation, glm::vec3(0, 1, 0));
+				objectTransform = glm::scale(objectTransform, cell.transformData.scale);
+				glm::vec3 clusterWorldMin, clusterWorldMax;
+				updateBoundingBox(clusterBboxMin, clusterBboxMax, objectTransform, clusterWorldMin, clusterWorldMax);
+
+				int id = z * bossGridSize.x + x; // Unique ID for the cell
+				glm::vec2 quadaabb_center = glm::vec2(clusterCenter.x, clusterCenter.z);
+				QuadElement element(id, quadaabb_center, clusterWorldMin, clusterWorldMax);
+				bossRoomQuadTree->insert(element, 10);
+				std::cout << "Inserted boss room element with ID: " << id << " at position: (" << clusterCenter.x << ", " << clusterCenter.z << ")" << std::endl;
+			}
+		}
+
+		std::cout << "Boss Room Quadtree initialized with " << bossRoomQuadTree->getElementCount() << " elements." << std::endl;
+
 	}
 
 	void initGeom(const std::string& resourceDirectory) { // NOTE: PROBLEMS GETTING ANIMATION FROM "Fixed" FBX
@@ -674,8 +860,8 @@ public:
 		cout << "[DEBUG] Stored Base Sphere Local AABB." << endl;
 
 		vec3 bossSpawnPos = bossRoom->getWorldOrigin();
-		
-		initEnemies();
+
+		// initEnemies();
 		bossEnemy = new BossEnemy(bossSpawnPos, BOSS_HP_MAX, sphere, vec3(1.0f), vec3(0, 1, 0), BOSS_SPECIAL_ATTACK_COOLDOWN, SpellType::FIRE);
 	}
 
@@ -1621,7 +1807,10 @@ public:
 			}
 			bossEnemy->setAlive(); // Reset boss status to alive
 			initMapGen();
-			initEnemies(); // Reinitialize enemies
+			libraryQuadTree->cleanup(); // Clean up the quad tree
+			bossRoomQuadTree->cleanup(); // Clean up the boss room quad tree
+			initQuadTree(); // Reinitialize the quad tree
+			// initEnemies(); // Reinitialize enemies
 			bossActiveSpells.clear();
 			// enemies.push_back(new Enemy(libraryCenter + vec3(-5.0f, 0.8f, 8.0f), 50.0f, 2.0f, sphere, glm::vec3(0.5f, 1.28f, 0.5f), vec3(0.0f))); // <<-- Pass sphere and scale
 			activeSpells.clear(); // Clear active spells
@@ -2179,170 +2368,234 @@ public:
 		int radiusInCells = static_cast<int>(std::ceil(gridInteractionRadius / cellWidth));
 
 		if (!bossfightstarted) {
-			for (int dz = -radiusInCells; dz <= radiusInCells && !interacted; ++dz) {
-				for (int dx = -radiusInCells; dx <= radiusInCells && !interacted; ++dx) {
-					glm::ivec2 gridPos(gridX + dx, gridZ + dz);
+			std::vector<const QuadElement*> bookElements;
+			libraryQuadTree->query(glm::vec2(player->getPosition().x, player->getPosition().z), glm::vec2(gridInteractionRadius), bookElements);
+			for (int i = 0; i < bookElements.size() && !interacted; ++i) {
+				const QuadElement* e = bookElements[i];
+				int gridx = library->mapXtoGridX(e->center.x);
+				int gridZ = library->mapZtoGridY(e->center.y);
+				glm::ivec2 gridPos(gridx, gridZ);
+				if (!grid.inBounds(gridPos)) continue; // Skip out-of-bounds cells
+				LibraryGen::Cell cell = grid[gridPos];
+				if (cell.objectType == LibraryGen::CellObjType::SHELF_WITH_ABILITY || grid[gridPos].objectType == LibraryGen::CellObjType::SHELF_WITH_ABILITY_ROTATED) {
+					// float shelfWorldX = libraryCenter.x - gridWorldWidth * 0.5f + (x + 0.5f) * cellWidth;
+					// float shelfWorldZ = libraryCenter.z - gridWorldDepth * 0.5f + (z + 0.5f) * cellDepth;
+					float shelfWorldX = e->center.x; // Center the shelf in the cell
+					float shelfWorldZ = e->center.y; // Center the shelf in the cell
+					glm::vec3 shelfCenterPos = glm::vec3(shelfWorldX, groundY + 1.0f, shelfWorldZ);
 
-					if (!grid.inBounds(gridPos)) continue; // Skip out-of-bounds cells
+					// glm::vec3 diff = shelfCenterPos - characterMovement;
+					glm::vec3 diff = shelfCenterPos - player->getPosition();
+					diff.y = 0.0f; // Ignore Y difference for interaction distance
+					float distSq = dot(diff, diff); // Use dot product for squared distance
 
-					if (grid[gridPos].objectType == LibraryGen::CellObjType::SHELF_WITH_ABILITY || grid[gridPos].objectType == LibraryGen::CellObjType::SHELF_WITH_ABILITY_ROTATED) {
-						// float shelfWorldX = libraryCenter.x - gridWorldWidth * 0.5f + (x + 0.5f) * cellWidth;
-						// float shelfWorldZ = libraryCenter.z - gridWorldDepth * 0.5f + (z + 0.5f) * cellDepth;
-						float shelfWorldX = library->mapGridXtoWorldX(gridX); // Center the shelf in the cell
-						float shelfWorldZ = library->mapGridYtoWorldZ(gridZ); // Center the shelf in the cell
-						glm::vec3 shelfCenterPos = glm::vec3(shelfWorldX, groundY + 1.0f, shelfWorldZ);
+					if (distSq <= interactionRadiusSq) {
 
-						// glm::vec3 diff = shelfCenterPos - characterMovement;
-						glm::vec3 diff = shelfCenterPos - player->getPosition();
-						diff.y = 0.0f; // Ignore Y difference for interaction distance
-						float distSq = dot(diff, diff); // Use dot product for squared distance
+						// --- ADJUST Spawn Height ---
+						float minSpawnHeight = 1.8f; // Minimum height above groundY
+						float maxSpawnHeight = 2.8f; // Maximum height above groundY
+						float spawnHeight = groundY + Config::randFloat(minSpawnHeight, maxSpawnHeight); // <-- ADJUSTED height range
 
-						if (distSq <= interactionRadiusSq) {
+						glm::vec3 spawnPos = glm::vec3(shelfWorldX, spawnHeight, shelfWorldZ);
 
-							// --- ADJUST Spawn Height ---
-							float minSpawnHeight = 1.8f; // Minimum height above groundY
-							float maxSpawnHeight = 2.8f; // Maximum height above groundY
-							float spawnHeight = groundY + Config::randFloat(minSpawnHeight, maxSpawnHeight); // <-- ADJUSTED height range
+						glm::vec3 bookScale = glm::vec3(0.7f, 0.9f, 0.2f);
+						glm::quat bookOrientation = glm::angleAxis(glm::radians(Config::randFloat(-10.f, 10.f)), glm::vec3(0, 1, 0));
+						// glm::vec3 orbColor = glm::vec3(Config::randFloat(0.2f, 1.0f), Config::randFloat(0.2f, 1.0f), Config::randFloat(0.2f, 1.0f)); // Color now set by book
 
-							glm::vec3 spawnPos = glm::vec3(shelfWorldX, spawnHeight, shelfWorldZ);
-
-							glm::vec3 bookScale = glm::vec3(0.7f, 0.9f, 0.2f);
-							glm::quat bookOrientation = glm::angleAxis(glm::radians(Config::randFloat(-10.f, 10.f)), glm::vec3(0, 1, 0));
-							// glm::vec3 orbColor = glm::vec3(Config::randFloat(0.2f, 1.0f), Config::randFloat(0.2f, 1.0f), Config::randFloat(0.2f, 1.0f)); // Color now set by book
-
-							// Cycle through spell types for newly spawned books/orbs
-							// static int nextSpellTypeIndex = 1; // Start with FIRE (index 1 in SpellType enum)
-							SpellType newSpellType = static_cast<SpellType>(nextSpellTypeIndex);
-							nextSpellTypeIndex++;
-							if (nextSpellTypeIndex > 3) { // Assuming 3 spell types: FIRE, ICE, LIGHTNING
-								nextSpellTypeIndex = 1; // Cycle back to FIRE
-							}
-
-							books.emplace_back(spawnPos, bookScale, bookOrientation, newSpellType);
-              //books.emplace_back(spawnPos, bookScale, bookOrientation, newSpellType);
-
-							Book& newBook = books.back();
-
-							// --- PASS Player Position to startFalling ---
-							// newBook.startFalling(groundY, characterMovement); // <<-- MODIFIED call
-							newBook.startFalling(groundY, player->getPosition());
-
-							interacted = true;
+						// Cycle through spell types for newly spawned books/orbs
+						// static int nextSpellTypeIndex = 1; // Start with FIRE (index 1 in SpellType enum)
+						SpellType newSpellType = static_cast<SpellType>(nextSpellTypeIndex);
+						nextSpellTypeIndex++;
+						if (nextSpellTypeIndex > 3) { // Assuming 3 spell types: FIRE, ICE, LIGHTNING
+							nextSpellTypeIndex = 1; // Cycle back to FIRE
 						}
+
+						books.emplace_back(spawnPos, bookScale, bookOrientation, newSpellType);
+		//books.emplace_back(spawnPos, bookScale, bookOrientation, newSpellType);
+
+						Book& newBook = books.back();
+
+						// --- PASS Player Position to startFalling ---
+						// newBook.startFalling(groundY, characterMovement); // <<-- MODIFIED call
+						newBook.startFalling(groundY, player->getPosition());
+
+						interacted = true;
+
 					}
 				}
 			}
 		}
+
 		if (bossfightstarted) {
-			gridX = bossRoom->mapXtoGridX(player->getPosition().x);
-			gridZ = bossRoom->mapZtoGridY(player->getPosition().z);
+			std::vector<const QuadElement*> bookElements;
+			bossRoomQuadTree->query(glm::vec2(player->getPosition().x, player->getPosition().z), glm::vec2(gridInteractionRadius), bookElements);
+			for (int i = 0; i < bookElements.size() && !interacted; ++i) {
+				const QuadElement* e = bookElements[i];
+				int gridx = bossRoom->mapXtoGridX(e->center.x);
+				int gridZ = bossRoom->mapZtoGridY(e->center.y);
+				glm::ivec2 gridPos(gridx, gridZ);
+				if (!bossGrid.inBounds(gridPos)) continue; // Skip out-of-bounds cells
+				BossRoomGen::Cell cell = bossGrid[gridPos];
+				if (cell.objectType == BossRoomGen::CellObjType::GLOWING_SHELF) {
+					// float shelfWorldX = libraryCenter.x - gridWorldWidth * 0.5f + (x + 0.5f) * cellWidth;
+					// float shelfWorldZ = libraryCenter.z - gridWorldDepth * 0.5f + (z + 0.5f) * cellDepth;
+					float shelfWorldX = e->center.x; // Center the shelf in the cell
+					float shelfWorldZ = e->center.y; // Center the shelf in the cell
+					glm::vec3 shelfCenterPos = glm::vec3(shelfWorldX, groundY + 1.0f, shelfWorldZ);
 
-			for (int dz = -radiusInCells; dz <= radiusInCells && !interacted; ++dz) {
-				for (int dx = -radiusInCells; dx <= radiusInCells && !interacted; ++dx) {
-					glm::ivec2 gridPos(gridX + dx, gridZ + dz);
+					// glm::vec3 diff = shelfCenterPos - characterMovement;
+					glm::vec3 diff = shelfCenterPos - player->getPosition();
+					diff.y = 0.0f; // Ignore Y difference for interaction distance
+					float distSq = dot(diff, diff); // Use dot product for squared distance
 
-					if (!bossGrid.inBounds(gridPos)) continue; // Skip out-of-bounds cells
+					if (distSq <= interactionRadiusSq) {
 
-					if (bossGrid[gridPos].objectType == BossRoomGen::CellObjType::GLOWING_SHELF) {
-						// float shelfWorldX = libraryCenter.x - gridWorldWidth * 0.5f + (x + 0.5f) * cellWidth;
-						// float shelfWorldZ = libraryCenter.z - gridWorldDepth * 0.5f + (z + 0.5f) * cellDepth;
-						float shelfWorldX = bossRoom->mapGridXtoWorldX(gridX); // Center the shelf in the cell
-						float shelfWorldZ = bossRoom->mapGridYtoWorldZ(gridZ); // Center the shelf in the cell
-						glm::vec3 shelfCenterPos = glm::vec3(shelfWorldX, groundY + 1.0f, shelfWorldZ);
+						// --- ADJUST Spawn Height ---
+						float minSpawnHeight = 1.8f; // Minimum height above groundY
+						float maxSpawnHeight = 2.8f; // Maximum height above groundY
+						float spawnHeight = groundY + Config::randFloat(minSpawnHeight, maxSpawnHeight); // <-- ADJUSTED height range
 
-						// glm::vec3 diff = shelfCenterPos - characterMovement;
-						glm::vec3 diff = shelfCenterPos - player->getPosition();
-						diff.y = 0.0f; // Ignore Y difference for interaction distance
-						float distSq = dot(diff, diff); // Use dot product for squared distance
+						glm::vec3 spawnPos = glm::vec3(shelfWorldX, spawnHeight, shelfWorldZ);
 
-						if (distSq <= interactionRadiusSq) {
+						glm::vec3 bookScale = glm::vec3(0.7f, 0.9f, 0.2f);
+						glm::quat bookOrientation = glm::angleAxis(glm::radians(Config::randFloat(-10.f, 10.f)), glm::vec3(0, 1, 0));
+						// glm::vec3 orbColor = glm::vec3(Config::randFloat(0.2f, 1.0f), Config::randFloat(0.2f, 1.0f), Config::randFloat(0.2f, 1.0f)); // Color now set by book
 
-							// --- ADJUST Spawn Height ---
-							float minSpawnHeight = 1.8f; // Minimum height above groundY
-							float maxSpawnHeight = 2.8f; // Maximum height above groundY
-							float spawnHeight = groundY + Config::randFloat(minSpawnHeight, maxSpawnHeight); // <-- ADJUSTED height range
-
-							glm::vec3 spawnPos = glm::vec3(shelfWorldX, spawnHeight, shelfWorldZ);
-
-							glm::vec3 bookScale = glm::vec3(0.7f, 0.9f, 0.2f);
-							glm::quat bookOrientation = glm::angleAxis(glm::radians(Config::randFloat(-10.f, 10.f)), glm::vec3(0, 1, 0));
-							// glm::vec3 orbColor = glm::vec3(Config::randFloat(0.2f, 1.0f), Config::randFloat(0.2f, 1.0f), Config::randFloat(0.2f, 1.0f)); // Color now set by book
-
-							// Cycle through spell types for newly spawned books/orbs
-							// static int nextSpellTypeIndex = 1; // Start with FIRE (index 1 in SpellType enum)
-							SpellType newSpellType = static_cast<SpellType>(nextSpellTypeIndex);
-							nextSpellTypeIndex++;
-							if (nextSpellTypeIndex > 3) { // Assuming 3 spell types: FIRE, ICE, LIGHTNING
-								nextSpellTypeIndex = 1; // Cycle back to FIRE
-							}
-
-							books.emplace_back(spawnPos, bookScale, bookOrientation, newSpellType);
-
-							Book& newBook = books.back();
-
-							// --- PASS Player Position to startFalling ---
-							// newBook.startFalling(groundY, characterMovement); // <<-- MODIFIED call
-							newBook.startFalling(groundY, player->getPosition());
-
-							interacted = true;
+						// Cycle through spell types for newly spawned books/orbs
+						// static int nextSpellTypeIndex = 1; // Start with FIRE (index 1 in SpellType enum)
+						SpellType newSpellType = static_cast<SpellType>(nextSpellTypeIndex);
+						nextSpellTypeIndex++;
+						if (nextSpellTypeIndex > 3) { // Assuming 3 spell types: FIRE, ICE, LIGHTNING
+							nextSpellTypeIndex = 1; // Cycle back to FIRE
 						}
+
+						books.emplace_back(spawnPos, bookScale, bookOrientation, newSpellType);
+		//books.emplace_back(spawnPos, bookScale, bookOrientation, newSpellType);
+
+						Book& newBook = books.back();
+
+						// --- PASS Player Position to startFalling ---
+						// newBook.startFalling(groundY, characterMovement); // <<-- MODIFIED call
+						newBook.startFalling(groundY, player->getPosition());
+
+						interacted = true;
+
 					}
 				}
 			}
 		}
 
-		// only check if player is in bounds of the grid
-		// if (grid.inBounds(glm::ivec2(gridX, gridZ))) {
-		// for (int z = 0; z < grid.getSize().y && !interacted; ++z) {
-		// 	for (int x = 0; x < grid.getSize().x && !interacted; ++x) {
-		// 		glm::ivec2 gridPos(x, z);
-		// 		if (grid[gridPos].objectType == LibraryGen::CellObjType::SHELF_WITH_ABILITY || grid[gridPos].objectType == LibraryGen::CellObjType::SHELF_WITH_ABILITY_ROTATED) {
-		// 			// float shelfWorldX = libraryCenter.x - gridWorldWidth * 0.5f + (x + 0.5f) * cellWidth;
-		// 			// float shelfWorldZ = libraryCenter.z - gridWorldDepth * 0.5f + (z + 0.5f) * cellDepth;
-		// 			float shelfWorldX = library->mapGridXtoWorldX(x); // Center the shelf in the cell
-		// 			float shelfWorldZ = library->mapGridYtoWorldZ(z); // Center the shelf in the cell
-		// 			glm::vec3 shelfCenterPos = glm::vec3(shelfWorldX, groundY + 1.0f, shelfWorldZ);
+		// if (!bossfightstarted) {
+		// 	for (int dz = -radiusInCells; dz <= radiusInCells && !interacted; ++dz) {
+		// 		for (int dx = -radiusInCells; dx <= radiusInCells && !interacted; ++dx) {
+		// 			glm::ivec2 gridPos(gridX + dx, gridZ + dz);
 
-		// 			// glm::vec3 diff = shelfCenterPos - characterMovement;
-		// 			glm::vec3 diff = shelfCenterPos - player->getPosition();
-		// 			diff.y = 0.0f; // Ignore Y difference for interaction distance
-		// 			float distSq = dot(diff, diff); // Use dot product for squared distance
+		// 			if (!grid.inBounds(gridPos)) continue; // Skip out-of-bounds cells
 
-		// 			if (distSq <= interactionRadiusSq) {
+		// 			if (grid[gridPos].objectType == LibraryGen::CellObjType::SHELF_WITH_ABILITY || grid[gridPos].objectType == LibraryGen::CellObjType::SHELF_WITH_ABILITY_ROTATED) {
+		// 				// float shelfWorldX = libraryCenter.x - gridWorldWidth * 0.5f + (x + 0.5f) * cellWidth;
+		// 				// float shelfWorldZ = libraryCenter.z - gridWorldDepth * 0.5f + (z + 0.5f) * cellDepth;
+		// 				float shelfWorldX = library->mapGridXtoWorldX(gridX); // Center the shelf in the cell
+		// 				float shelfWorldZ = library->mapGridYtoWorldZ(gridZ); // Center the shelf in the cell
+		// 				glm::vec3 shelfCenterPos = glm::vec3(shelfWorldX, groundY + 1.0f, shelfWorldZ);
 
-		// 				// --- ADJUST Spawn Height ---
-		// 				float minSpawnHeight = 1.8f; // Minimum height above groundY
-		// 				float maxSpawnHeight = 2.8f; // Maximum height above groundY
-		// 				float spawnHeight = groundY + Config::randFloat(minSpawnHeight, maxSpawnHeight); // <-- ADJUSTED height range
+		// 				// glm::vec3 diff = shelfCenterPos - characterMovement;
+		// 				glm::vec3 diff = shelfCenterPos - player->getPosition();
+		// 				diff.y = 0.0f; // Ignore Y difference for interaction distance
+		// 				float distSq = dot(diff, diff); // Use dot product for squared distance
 
-		// 				glm::vec3 spawnPos = glm::vec3(shelfWorldX, spawnHeight, shelfWorldZ);
+		// 				if (distSq <= interactionRadiusSq) {
 
-		// 				glm::vec3 bookScale = glm::vec3(0.7f, 0.9f, 0.2f);
-		// 				glm::quat bookOrientation = glm::angleAxis(glm::radians(Config::randFloat(-10.f, 10.f)), glm::vec3(0, 1, 0));
-		// 				// glm::vec3 orbColor = glm::vec3(Config::randFloat(0.2f, 1.0f), Config::randFloat(0.2f, 1.0f), Config::randFloat(0.2f, 1.0f)); // Color now set by book
+		// 					// --- ADJUST Spawn Height ---
+		// 					float minSpawnHeight = 1.8f; // Minimum height above groundY
+		// 					float maxSpawnHeight = 2.8f; // Maximum height above groundY
+		// 					float spawnHeight = groundY + Config::randFloat(minSpawnHeight, maxSpawnHeight); // <-- ADJUSTED height range
 
-		// 				// Cycle through spell types for newly spawned books/orbs
-		// 				// static int nextSpellTypeIndex = 1; // Start with FIRE (index 1 in SpellType enum)
-		// 				SpellType newSpellType = static_cast<SpellType>(nextSpellTypeIndex);
-		// 				nextSpellTypeIndex++;
-		// 				if (nextSpellTypeIndex > 3) { // Assuming 3 spell types: FIRE, ICE, LIGHTNING
-		// 					nextSpellTypeIndex = 1; // Cycle back to FIRE
+		// 					glm::vec3 spawnPos = glm::vec3(shelfWorldX, spawnHeight, shelfWorldZ);
+
+		// 					glm::vec3 bookScale = glm::vec3(0.7f, 0.9f, 0.2f);
+		// 					glm::quat bookOrientation = glm::angleAxis(glm::radians(Config::randFloat(-10.f, 10.f)), glm::vec3(0, 1, 0));
+		// 					// glm::vec3 orbColor = glm::vec3(Config::randFloat(0.2f, 1.0f), Config::randFloat(0.2f, 1.0f), Config::randFloat(0.2f, 1.0f)); // Color now set by book
+
+		// 					// Cycle through spell types for newly spawned books/orbs
+		// 					// static int nextSpellTypeIndex = 1; // Start with FIRE (index 1 in SpellType enum)
+		// 					SpellType newSpellType = static_cast<SpellType>(nextSpellTypeIndex);
+		// 					nextSpellTypeIndex++;
+		// 					if (nextSpellTypeIndex > 3) { // Assuming 3 spell types: FIRE, ICE, LIGHTNING
+		// 						nextSpellTypeIndex = 1; // Cycle back to FIRE
+		// 					}
+
+		// 					books.emplace_back(spawnPos, bookScale, bookOrientation, newSpellType);
+        //       //books.emplace_back(spawnPos, bookScale, bookOrientation, newSpellType);
+
+		// 					Book& newBook = books.back();
+
+		// 					// --- PASS Player Position to startFalling ---
+		// 					// newBook.startFalling(groundY, characterMovement); // <<-- MODIFIED call
+		// 					newBook.startFalling(groundY, player->getPosition());
+
+		// 					interacted = true;
 		// 				}
-
-		// 				books.emplace_back(cube, sphere, spawnPos, bookScale, bookOrientation, newSpellType);
-
-		// 				Book& newBook = books.back();
-
-		// 				// --- PASS Player Position to startFalling ---
-		// 				// newBook.startFalling(groundY, characterMovement); // <<-- MODIFIED call
-		// 				newBook.startFalling(groundY, player->getPosition());
-
-		// 				interacted = true;
-		// 				break;
 		// 			}
 		// 		}
 		// 	}
 		// }
+		// if (bossfightstarted) {
+		// 	gridX = bossRoom->mapXtoGridX(player->getPosition().x);
+		// 	gridZ = bossRoom->mapZtoGridY(player->getPosition().z);
+
+		// 	for (int dz = -radiusInCells; dz <= radiusInCells && !interacted; ++dz) {
+		// 		for (int dx = -radiusInCells; dx <= radiusInCells && !interacted; ++dx) {
+		// 			glm::ivec2 gridPos(gridX + dx, gridZ + dz);
+
+		// 			if (!bossGrid.inBounds(gridPos)) continue; // Skip out-of-bounds cells
+
+		// 			if (bossGrid[gridPos].objectType == BossRoomGen::CellObjType::GLOWING_SHELF) {
+		// 				// float shelfWorldX = libraryCenter.x - gridWorldWidth * 0.5f + (x + 0.5f) * cellWidth;
+		// 				// float shelfWorldZ = libraryCenter.z - gridWorldDepth * 0.5f + (z + 0.5f) * cellDepth;
+		// 				float shelfWorldX = bossRoom->mapGridXtoWorldX(gridX); // Center the shelf in the cell
+		// 				float shelfWorldZ = bossRoom->mapGridYtoWorldZ(gridZ); // Center the shelf in the cell
+		// 				glm::vec3 shelfCenterPos = glm::vec3(shelfWorldX, groundY + 1.0f, shelfWorldZ);
+
+		// 				// glm::vec3 diff = shelfCenterPos - characterMovement;
+		// 				glm::vec3 diff = shelfCenterPos - player->getPosition();
+		// 				diff.y = 0.0f; // Ignore Y difference for interaction distance
+		// 				float distSq = dot(diff, diff); // Use dot product for squared distance
+
+		// 				if (distSq <= interactionRadiusSq) {
+
+		// 					// --- ADJUST Spawn Height ---
+		// 					float minSpawnHeight = 1.8f; // Minimum height above groundY
+		// 					float maxSpawnHeight = 2.8f; // Maximum height above groundY
+		// 					float spawnHeight = groundY + Config::randFloat(minSpawnHeight, maxSpawnHeight); // <-- ADJUSTED height range
+
+		// 					glm::vec3 spawnPos = glm::vec3(shelfWorldX, spawnHeight, shelfWorldZ);
+
+		// 					glm::vec3 bookScale = glm::vec3(0.7f, 0.9f, 0.2f);
+		// 					glm::quat bookOrientation = glm::angleAxis(glm::radians(Config::randFloat(-10.f, 10.f)), glm::vec3(0, 1, 0));
+		// 					// glm::vec3 orbColor = glm::vec3(Config::randFloat(0.2f, 1.0f), Config::randFloat(0.2f, 1.0f), Config::randFloat(0.2f, 1.0f)); // Color now set by book
+
+		// 					// Cycle through spell types for newly spawned books/orbs
+		// 					// static int nextSpellTypeIndex = 1; // Start with FIRE (index 1 in SpellType enum)
+		// 					SpellType newSpellType = static_cast<SpellType>(nextSpellTypeIndex);
+		// 					nextSpellTypeIndex++;
+		// 					if (nextSpellTypeIndex > 3) { // Assuming 3 spell types: FIRE, ICE, LIGHTNING
+		// 						nextSpellTypeIndex = 1; // Cycle back to FIRE
+		// 					}
+
+		// 					books.emplace_back(spawnPos, bookScale, bookOrientation, newSpellType);
+
+		// 					Book& newBook = books.back();
+
+		// 					// --- PASS Player Position to startFalling ---
+		// 					// newBook.startFalling(groundY, characterMovement); // <<-- MODIFIED call
+		// 					newBook.startFalling(groundY, player->getPosition());
+
+		// 					interacted = true;
+		// 				}
+		// 			}
+		// 		}
+		// 	}
 		// }
 
 
@@ -2420,296 +2673,150 @@ public:
 		int gridX = library->mapXtoGridX(checkPos.x);
 		int gridZ = library->mapZtoGridY(checkPos.z);
 
-		glm::ivec2 gridPos(gridX, gridZ);
-
-		// float gridtoworldX = library->mapGridXtoWorldX(gridPos.x); // check back against the specific world position
-		// float gridtoworldZ = library->mapGridYtoWorldZ(gridPos.y);
-
-		if (grid.inBounds(gridPos)) {
-			if (grid[gridPos].type == LibraryGen::CellType::BORDER) {
-				return true; // Collision with border
-			}
-			for (int dz = -radiusInCells; dz <= radiusInCells; ++dz) {
-				for (int dx = -radiusInCells; dx <= radiusInCells; ++dx) {
-					glm::ivec2 cellPos = glm::ivec2(gridX + dx, gridZ + dz);
-					if (!grid.inBounds(cellPos)) continue; // Skip out-of-bounds cells
-
-					const auto& cell = grid[cellPos];
-					if (cell.type != LibraryGen::CellType::CLUSTER) continue; // Only check for shelves
-
-					glm::vec3 clusterBboxMin;
-					glm::vec3 clusterBboxMax;
-					glm::vec3 clusterCenter = glm::vec3(library->mapGridXtoWorldX(cellPos.x), libraryCenter.y, library->mapGridYtoWorldZ(cellPos.y));
-
-					switch (cell.objectType) {
-						case LibraryGen::CellObjType::CANDELABRA:
-							clusterBboxMin = candelabra->getBoundingBoxMin();
-							clusterBboxMax = candelabra->getBoundingBoxMax();
-							break;
-						case LibraryGen::CellObjType::CHEST:
-							clusterBboxMin = chest->getBoundingBoxMin();
-							clusterBboxMax = chest->getBoundingBoxMax();
-							break;
-						case LibraryGen::CellObjType::GRANDFATHER_CLOCK:
-							clusterBboxMin = grandfather_clock->getBoundingBoxMin();
-							clusterBboxMax = grandfather_clock->getBoundingBoxMax();
-							break;
-						case LibraryGen::CellObjType::ROTATED_BOOKSHELF:
-						case LibraryGen::CellObjType::BOOKSHELF:
-							clusterBboxMin = book_shelf1->getBoundingBoxMin();
-							clusterBboxMax = book_shelf1->getBoundingBoxMax();
-							break;
-						case LibraryGen::CellObjType::TABLE_AND_CHAIR1:
-							clusterBboxMin = table_chairs1->getBoundingBoxMin();
-							clusterBboxMax = table_chairs1->getBoundingBoxMax();
-							break;
-						case LibraryGen::CellObjType::TABLE_AND_CHAIR2:
-							clusterBboxMin = table_chairs2->getBoundingBoxMin();
-							clusterBboxMax = table_chairs2->getBoundingBoxMax();
-							break;
-						case LibraryGen::CellObjType::SHELF_WITH_ABILITY:
-						case LibraryGen::CellObjType::SHELF_WITH_ABILITY_ROTATED:
-							clusterBboxMin = book_shelf2->getBoundingBoxMin();
-							clusterBboxMax = book_shelf2->getBoundingBoxMax();
-							break;
-						case LibraryGen::CellObjType::BOOKSTAND:
-							clusterBboxMin = bookstand->getBoundingBoxMin();
-							clusterBboxMax = bookstand->getBoundingBoxMax();
-							break;
-						default:
-							continue; // Skip unknown object types
-					}
-
-					glm::mat4 clusterTransform = glm::translate(glm::mat4(1.0f), clusterCenter);
-					clusterTransform = glm::rotate(clusterTransform, cell.transformData.rotation, glm::vec3(0, 1, 0));
-					clusterTransform = glm::scale(clusterTransform, cell.transformData.scale);
-
-					glm::vec3 clusterWorldMin, clusterWorldMax;
-					updateBoundingBox(clusterBboxMin, clusterBboxMax, clusterTransform, clusterWorldMin, clusterWorldMax);
-
-					// if (checkAABBCollision(playerWorldMin, playerWorldMax, clusterWorldMin, clusterWorldMax)) {
-					// 	std::cout << "[DEBUG] Collision DETECTED with shelf at grid (" << gridX << "," << gridZ << ")" << std::endl;
-					// 	return true; // Collision found
-					// }
-					if (checkSphereCollision(checkPos, 0.25f, clusterWorldMin, clusterWorldMax)) {
-						// std::cout << "[DEBUG] Collision DETECTED with shelf at grid (" << gridX << "," << gridZ << ")" << std::endl;
-						return true; // Collision found
-					}
-				}
+		std::vector<const QuadElement*> nearby_elements;
+		libraryQuadTree->query(glm::vec2(checkPos.x, checkPos.z), glm::vec2(gridCollisionRadius, gridCollisionRadius), nearby_elements);
+		for (const auto* e : nearby_elements) {
+			if (checkSphereCollision(checkPos, 0.25f, e->aabb_min, e->aabb_max)) {
+				// std::cout << "[DEBUG] Collision DETECTED with shelf at grid (" << gridX << "," << gridZ << ")" << std::endl;
+				return true; // Collision found
 			}
 		}
 
-		gridX = bossRoom->mapXtoGridX(checkPos.x);
-		gridZ = bossRoom->mapZtoGridY(checkPos.z);
+		std::vector<const QuadElement*> nearby_boss_elements;
+		bossRoomQuadTree->query(glm::vec2(checkPos.x, checkPos.z), glm::vec2(gridCollisionRadius, gridCollisionRadius), nearby_boss_elements);
+		for (const auto* e : nearby_boss_elements) {
+			int bossGridX = bossRoom->mapXtoGridX(e->center.x);
+			int bossGridZ = bossRoom->mapZtoGridY(e->center.y);
+			glm::ivec2 bossGridPos = glm::ivec2(bossGridX, bossGridZ);
+			BossRoomGen::Cell cell = bossGrid[bossGridPos];
 
-		gridPos = glm::ivec2(gridX, gridZ);
+			glm::vec3 clusterWorldMin = e->aabb_min;
+			glm::vec3 clusterWorldMax = e->aabb_max;
 
-		if (bossGrid.inBounds(gridPos)) {
-			for (int dz = -radiusInCells; dz <= radiusInCells; ++dz) {
-				for (int dx = -radiusInCells; dx <= radiusInCells; ++dx) {
-					glm::ivec2 cellPos = glm::ivec2(gridX + dx, gridZ + dz);
-					if (!bossGrid.inBounds(cellPos)) continue; // Skip out-of-bounds cells
-
-					const auto& cell = bossGrid[cellPos];
-					if (cell.type == BossRoomGen::CellType::NONE) continue;
-					// if (bossfightstarted && !bossRoom->isInsideBossArea(cellPos)) return true;
-
-					glm::vec3 clusterBboxMin;
-					glm::vec3 clusterBboxMax;
-					glm::vec3 clusterCenter = glm::vec3(bossRoom->mapGridXtoWorldX(cellPos.x), libraryCenter.y, bossRoom->mapGridYtoWorldZ(cellPos.y));
-
-					switch (cell.objectType) {
-						case BossRoomGen::CellObjType::BOOKSHELF:
-							clusterBboxMin = book_shelf1->getBoundingBoxMin();
-							clusterBboxMax = book_shelf1->getBoundingBoxMax();
-							break;
-						case BossRoomGen::CellObjType::GLOWING_SHELF:
-							clusterBboxMin = book_shelf2->getBoundingBoxMin();
-							clusterBboxMax = book_shelf2->getBoundingBoxMax();
-							break;
-						case BossRoomGen::CellObjType::DOOR:
-							clusterBboxMin = door->getBoundingBoxMin();
-							clusterBboxMax = door->getBoundingBoxMax();
-							break;
-						default:
-							continue; // Skip unknown object types
-						}
-
-					glm::mat4 clusterTransform = glm::translate(glm::mat4(1.0f), clusterCenter);
-					clusterTransform = glm::rotate(clusterTransform, cell.transformData.rotation, glm::vec3(0, 1, 0));
-					clusterTransform = glm::scale(clusterTransform, cell.transformData.scale);
-					glm::vec3 clusterWorldMin, clusterWorldMax;
-					updateBoundingBox(clusterBboxMin, clusterBboxMax, clusterTransform, clusterWorldMin, clusterWorldMax);
-
-					// Checks collision with the side shelves
-					if (cell.borderType == BossRoomGen::BorderType::ENTRANCE_SIDE) {
-						if (checkSphereCollision(checkPos, 0.25f, clusterWorldMin, clusterWorldMax)) {
-							std::cout << "[DEBUG] Collision DETECTED with shelf at grid (" << gridX << "," << gridZ << ")" << std::endl;
-							return true; // Collision found
-						}
-					}
-					// Prevents entering the boss room until canFightboss is true
-					else if (cell.borderType == BossRoomGen::BorderType::ENTRANCE_MIDDLE && !canFightboss) {
-						if (checkSphereCollision(checkPos, 0.25f, clusterWorldMin, clusterWorldMax)) {
-							std::cout << "[DEBUG] Collision DETECTED with shelf at grid (" << gridX << "," << gridZ << ")" << std::endl;
-							return true; // Collision found
-						}
-					} // for when done with the boss fight
-					else if (cell.borderType == BossRoomGen::BorderType::EXIT_MIDDLE && bossfightended && !bossEnemy->isAlive()) {
-						if (checkSphereCollision(checkPos, 0.25f, clusterWorldMin, clusterWorldMax)) {
-							bossfightended = false;
-							restartGen = true;
-							return false;
-						}
-					}
-					// these two are to prevent leaving the boss area once the fight has started
-					else if (cell.borderType == BossRoomGen::BorderType::CIRCULAR_BORDER && bossfightstarted) {
-						if (checkSphereCollision(checkPos, 0.25f, clusterWorldMin, clusterWorldMax)) {
-							return true;
-						}
-					}
-					else if (cell.borderType == BossRoomGen::BorderType::ENTRANCE_MIDDLE && bossfightstarted) {
-						if (checkSphereCollision(checkPos, 0.25f, clusterWorldMin, clusterWorldMax)) {
-							return true;
-						}
-					}
-					// checks general collision with shelves inside boss area
-					else if (cell.type == BossRoomGen::CellType::CLUSTER) {
-						if (checkSphereCollision(checkPos, 0.5f, clusterWorldMin, clusterWorldMax)) {
-							return true;
-						}
-					}
+			// Checks collision with the side shelves
+			if (cell.borderType == BossRoomGen::BorderType::ENTRANCE_SIDE) {
+				if (checkSphereCollision(checkPos, 0.25f, clusterWorldMin, clusterWorldMax)) {
+					std::cout << "[DEBUG] Collision DETECTED with shelf at grid (" << gridX << "," << gridZ << ")" << std::endl;
+					return true; // Collision found
 				}
 			}
+			// Prevents entering the boss room until canFightboss is true
+			else if (cell.borderType == BossRoomGen::BorderType::ENTRANCE_MIDDLE && !canFightboss) {
+				if (checkSphereCollision(checkPos, 0.25f, clusterWorldMin, clusterWorldMax)) {
+					std::cout << "[DEBUG] Collision DETECTED with shelf at grid (" << gridX << "," << gridZ << ")" << std::endl;
+					return true; // Collision found
+				}
+			} // for when done with the boss fight
+			else if (cell.borderType == BossRoomGen::BorderType::EXIT_MIDDLE && bossfightended && !bossEnemy->isAlive()) {
+				if (checkSphereCollision(checkPos, 0.25f, clusterWorldMin, clusterWorldMax)) {
+					bossfightended = false;
+					restartGen = true;
+					return false;
+				}
+			}
+			// these two are to prevent leaving the boss area once the fight has started
+			else if (cell.borderType == BossRoomGen::BorderType::ENTRANCE_MIDDLE && bossfightstarted) {
+				if (checkSphereCollision(checkPos, 0.25f, clusterWorldMin, clusterWorldMax)) {
+					return true;
+				}
+			}
+			else if (cell.borderType == BossRoomGen::BorderType::EXIT_MIDDLE && bossfightstarted) {
+				if (checkSphereCollision(checkPos, 0.25f, clusterWorldMin, clusterWorldMax)) {
+					return true;
+				}
+			} else if (bossfightstarted || bossfightended) {
+				if (checkSphereCollision(checkPos, 0.25f, clusterWorldMin, clusterWorldMax)) {
+					return true;
+				}
+			}
+			// checks general collision with shelves inside boss area
+			else if (cell.type == BossRoomGen::CellType::CLUSTER) {
+				if (checkSphereCollision(checkPos, 0.5f, clusterWorldMin, clusterWorldMax)) {
+					return true;
+				}
+			}
+
 		}
-
-
-		// spatial detection for boss room grid
 
 		// gridX = bossRoom->mapXtoGridX(checkPos.x);
 		// gridZ = bossRoom->mapZtoGridY(checkPos.z);
 
-		// gridPos = glm::ivec2(gridX, gridZ);
+		// glm::ivec2 gridPos = glm::ivec2(gridX, gridZ);
 
-		// float gridtoworldX = bossRoom->mapGridXtoWorldX(gridPos.x); // check back against the specific world position
-		// float gridtoworldZ = bossRoom->mapGridYtoWorldZ(gridPos.y);
+		// if (bossGrid.inBounds(gridPos)) {
+		// 	for (int dz = -radiusInCells; dz <= radiusInCells; ++dz) {
+		// 		for (int dx = -radiusInCells; dx <= radiusInCells; ++dx) {
+		// 			glm::ivec2 cellPos = glm::ivec2(gridX + dx, gridZ + dz);
+		// 			if (!bossGrid.inBounds(cellPos)) continue; // Skip out-of-bounds cells
 
-		// if (bossGrid.inBounds(glm::ivec2(gridX, gridZ))) {
-		// 	// std::cout << "[DEBUG] Player Position: (" << checkPos.x << "," << checkPos.y << "," << checkPos.z << ")" << std::endl;
-		// 	// std::cout << "[DEBUG] Grid Position: (" << gridX << "," << gridZ << ")" << std::endl;
-		// 	// std::cout << "[DEBUG] Grid to World Position: (" << gridtoworldX << "," << libraryCenter.y << "," << gridtoworldZ << ")" << std::endl;
-		// 	// std::cout << "Grid Cell Value: " << static_cast<int>(grid[gridPos].type) << std::endl;
+		// 			const auto& cell = bossGrid[cellPos];
+		// 			if (cell.type == BossRoomGen::CellType::NONE) continue;
+		// 			// if (bossfightstarted && !bossRoom->isInsideBossArea(cellPos)) return true;
 
-		// 	if (bossGrid[gridPos].borderType == BossRoomGen::BorderType::ENTRANCE_SIDE) {
-		// 		glm::vec3 pos = glm::vec3(gridtoworldX, libraryCenter.y, gridtoworldZ); // Base position on ground
+		// 			glm::vec3 clusterBboxMin;
+		// 			glm::vec3 clusterBboxMax;
+		// 			glm::vec3 clusterCenter = glm::vec3(bossRoom->mapGridXtoWorldX(cellPos.x), libraryCenter.y, bossRoom->mapGridYtoWorldZ(cellPos.y));
 
-		// 		if (checkSphereCollision(pos, 2.0f, playerWorldMin, playerWorldMax)) {
-		// 			std::cout << "[DEBUG] Collision DETECTED with shelf at grid (" << gridX << "," << gridZ << ")" << std::endl;
-		// 			return true; // Collision found
-		// 		}
-		// 	}
-		// }
+		// 			switch (cell.objectType) {
+		// 				case BossRoomGen::CellObjType::BOOKSHELF:
+		// 					clusterBboxMin = book_shelf1->getBoundingBoxMin();
+		// 					clusterBboxMax = book_shelf1->getBoundingBoxMax();
+		// 					break;
+		// 				case BossRoomGen::CellObjType::GLOWING_SHELF:
+		// 					clusterBboxMin = book_shelf2->getBoundingBoxMin();
+		// 					clusterBboxMax = book_shelf2->getBoundingBoxMax();
+		// 					break;
+		// 				case BossRoomGen::CellObjType::DOOR:
+		// 					clusterBboxMin = door->getBoundingBoxMin();
+		// 					clusterBboxMax = door->getBoundingBoxMax();
+		// 					break;
+		// 				default:
+		// 					continue; // Skip unknown object types
+		// 				}
 
-		// gridX = bossRoom->mapXtoGridX(checkPos.x);
-		// gridZ = bossRoom->mapZtoGridY(checkPos.z);
+		// 			glm::mat4 clusterTransform = glm::translate(glm::mat4(1.0f), clusterCenter);
+		// 			clusterTransform = glm::rotate(clusterTransform, cell.transformData.rotation, glm::vec3(0, 1, 0));
+		// 			clusterTransform = glm::scale(clusterTransform, cell.transformData.scale);
+		// 			glm::vec3 clusterWorldMin, clusterWorldMax;
+		// 			updateBoundingBox(clusterBboxMin, clusterBboxMax, clusterTransform, clusterWorldMin, clusterWorldMax);
 
-		// gridPos = glm::ivec2(gridX, gridZ);
-
-		// gridtoworldX = bossRoom->mapGridXtoWorldX(gridPos.x); // check back against the specific world position
-		// gridtoworldZ = bossRoom->mapGridYtoWorldZ(gridPos.y);
-
-		// if (bossGrid.inBounds(glm::ivec2(gridX, gridZ))) {
-		// 	if (bossGrid[gridPos].borderType == BossRoomGen::BorderType::ENTRANCE_SIDE) {
-		// 		glm::vec3 pos = glm::vec3(gridtoworldX, libraryCenter.y, gridtoworldZ); // Base position on ground
-
-		// 		if (checkSphereCollision(pos, 3.0f, playerWorldMin, playerWorldMax)) {
-		// 			std::cout << "[DEBUG] Collision DETECTED with shelf at grid (" << gridX << "," << gridZ << ")" << std::endl;
-		// 			return true; // Collision found
-		// 		}
-		// 	}
-		// 	// prevents entering the boss room
-		// 	else if ((bossGrid[gridPos].borderType == BossRoomGen::BorderType::ENTRANCE_MIDDLE && !canFightboss)) {
-		// 		glm::vec3 pos = glm::vec3(gridtoworldX, libraryCenter.y, gridtoworldZ); // Base position on ground
-		// 		if (checkSphereCollision(pos, 2.0f, playerWorldMin, playerWorldMax)) {
-		// 			std::cout << "[DEBUG] Collision DETECTED with shelf at grid (" << gridX << "," << gridZ << ")" << std::endl;
-		// 			return true; // Collision found
-		// 		}
-		// 	}
-		// 	else if (bossfightstarted && !bossRoom->isInsideBossArea(gridPos)) {
-		// 		return true;
-		// 	}
-		// 	// else if (bossRoom->isInsideBossArea(gridPos) && canFightboss) {
-		// 	// 	return true;
-		// 	// }
-		// 	// // prevents player from leaving the boss room
-		// 	// else if ((canFightboss && bossEnemy->isAlive() && bossGrid[gridPos].borderType == BossRoomGen::BorderType::EXIT_MIDDLE) ||
-		// 	// 	(bossRoom->isInsideBossArea(gridPos) && canFightboss && bossEnemy->isAlive() && bossGrid[gridPos].borderType == BossRoomGen::BorderType::ENTRANCE_MIDDLE)) {
-		// 	// 	return true;
-		// 	// }
-		// 	// when boss is dead player is able to leave the boss room and will restart the generation
-		// 	else if ((bossfightended && !bossEnemy->isAlive() && bossGrid[gridPos].borderType == BossRoomGen::BorderType::EXIT_MIDDLE)) {
-		// 		bossfightended = false;
-		// 		restartGen = true;
-		// 		return true;
-		// 	}
-		// }
-
-		// for (int z = 0; z < grid.getSize().y; ++z) {
-		// 	for (int x = 0; x < grid.getSize().x; ++x) {
-		// 		glm::ivec2 gridPos(x, z);
-		// 		if (grid[gridPos] == LibraryGen::SHELF) {
-		// 			// 3. Calculate this shelf's World AABB
-		// 			float worldX = libraryCenter.x - gridWorldWidth * 0.5f + (x + 0.5f) * cellWidth;
-		// 			float worldZ = libraryCenter.z - gridWorldDepth * 0.5f + (z + 0.5f) * cellDepth;
-		// 			glm::vec3 shelfPos = vec3(worldX, libraryCenter.y, worldZ); // Base position on ground
-
-		// 			// Shelf transform (Position only, assuming no rotation for collision)
-		// 			// The scale is applied to the local AABB above
-		// 			glm::mat4 shelfTransform = glm::translate(glm::mat4(1.0f), shelfPos);
-
-		// 			glm::vec3 shelfWorldMin, shelfWorldMax;
-		// 			updateBoundingBox(collisionShelfLocalMin, collisionShelfLocalMax, shelfTransform, shelfWorldMin, shelfWorldMax);
-
-		// 			// 4. Check for Overlap
-		// 			if (checkAABBCollision(playerWorldMin, playerWorldMax, shelfWorldMin, shelfWorldMax)) {
-		// 				// cout << "[DEBUG] Collision DETECTED with shelf at grid (" << x << "," << z << ")" << endl;
-		// 				return true; // Collision found
+		// 			// Checks collision with the side shelves
+		// 			if (cell.borderType == BossRoomGen::BorderType::ENTRANCE_SIDE) {
+		// 				if (checkSphereCollision(checkPos, 0.25f, clusterWorldMin, clusterWorldMax)) {
+		// 					std::cout << "[DEBUG] Collision DETECTED with shelf at grid (" << gridX << "," << gridZ << ")" << std::endl;
+		// 					return true; // Collision found
+		// 				}
 		// 			}
-		// 		} else if (grid[gridPos] == LibraryGen::TOP_BORDER || grid[gridPos] == LibraryGen::BOTTOM_BORDER) {
-		// 			// 3. Calculate this shelf's World AABB
-		// 			float worldX = libraryCenter.x - gridWorldWidth * 0.5f + (x + 0.5f) * cellWidth;
-		// 			float worldZ = libraryCenter.z - gridWorldDepth * 0.5f + (z + 0.5f) * cellDepth;
-		// 			glm::vec3 shelfPos = vec3(worldX, libraryCenter.y, worldZ); // Base position on ground
-
-		// 			// Shelf transform (Position only, assuming no rotation for collision)
-		// 			// The scale is applied to the local AABB above
-		// 			glm::mat4 shelfTransform = glm::translate(glm::mat4(1.0f), shelfPos);
-
-		// 			glm::vec3 shelfWorldMin, shelfWorldMax;
-		// 			updateBoundingBox(collisionShelfLocalMin, collisionShelfLocalMax, shelfTransform, shelfWorldMin, shelfWorldMax);
-
-		// 			// 4. Check for Overlap
-		// 			if (checkAABBCollision(playerWorldMin, playerWorldMax, shelfWorldMin, shelfWorldMax)) {
-		// 				// cout << "[DEBUG] Collision DETECTED with shelf at grid (" << x << "," << z << ")" << endl;
-		// 				return true; // Collision found
+		// 			// Prevents entering the boss room until canFightboss is true
+		// 			else if (cell.borderType == BossRoomGen::BorderType::ENTRANCE_MIDDLE && !canFightboss) {
+		// 				if (checkSphereCollision(checkPos, 0.25f, clusterWorldMin, clusterWorldMax)) {
+		// 					std::cout << "[DEBUG] Collision DETECTED with shelf at grid (" << gridX << "," << gridZ << ")" << std::endl;
+		// 					return true; // Collision found
+		// 				}
+		// 			} // for when done with the boss fight
+		// 			else if (cell.borderType == BossRoomGen::BorderType::EXIT_MIDDLE && bossfightended && !bossEnemy->isAlive()) {
+		// 				if (checkSphereCollision(checkPos, 0.25f, clusterWorldMin, clusterWorldMax)) {
+		// 					bossfightended = false;
+		// 					restartGen = true;
+		// 					return false;
+		// 				}
 		// 			}
-		// 		} else if (grid[gridPos] == LibraryGen::LEFT_BORDER || grid[gridPos] == LibraryGen::RIGHT_BORDER) {
-		// 			// 3. Calculate this shelf's World AABB
-		// 			float worldX = libraryCenter.x - gridWorldWidth * 0.5f + (x + 0.5f) * cellWidth;
-		// 			float worldZ = libraryCenter.z - gridWorldDepth * 0.5f + (z + 0.5f) * cellDepth;
-		// 			glm::vec3 shelfPos = vec3(worldX, libraryCenter.y, worldZ); // Base position on ground
-
-		// 			// Shelf transform (Position only, assuming no rotation for collision)
-		// 			// The scale is applied to the local AABB above
-		// 			glm::mat4 shelfTransform = glm::translate(glm::mat4(1.0f), shelfPos) * glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), vec3(0, 1, 0)); // Rotate for left/right walls
-
-		// 			glm::vec3 shelfWorldMin, shelfWorldMax;
-		// 			updateBoundingBox(collisionShelfLocalMin, collisionShelfLocalMax, shelfTransform, shelfWorldMin, shelfWorldMax);
-
-		// 			// 4. Check for Overlap
-		// 			if (checkAABBCollision(playerWorldMin, playerWorldMax, shelfWorldMin, shelfWorldMax)) {
-		// 				// cout << "[DEBUG] Collision DETECTED with shelf at grid (" << x << "," << z << ")" << endl;
-		// 				return true; // Collision found
+		// 			// these two are to prevent leaving the boss area once the fight has started
+		// 			else if (cell.borderType == BossRoomGen::BorderType::CIRCULAR_BORDER && bossfightstarted) {
+		// 				if (checkSphereCollision(checkPos, 0.25f, clusterWorldMin, clusterWorldMax)) {
+		// 					return true;
+		// 				}
+		// 			}
+		// 			else if (cell.borderType == BossRoomGen::BorderType::ENTRANCE_MIDDLE && bossfightstarted) {
+		// 				if (checkSphereCollision(checkPos, 0.25f, clusterWorldMin, clusterWorldMax)) {
+		// 					return true;
+		// 				}
+		// 			}
+		// 			// checks general collision with shelves inside boss area
+		// 			else if (cell.type == BossRoomGen::CellType::CLUSTER) {
+		// 				if (checkSphereCollision(checkPos, 0.5f, clusterWorldMin, clusterWorldMax)) {
+		// 					return true;
+		// 				}
 		// 			}
 		// 		}
 		// 	}
@@ -3079,45 +3186,6 @@ public:
 
 			bool hitSomething = false;
 
-			if (hitSomething) {
-				bossActiveSpells.erase(bossActiveSpells.begin() + i);
-				continue;
-			}
-
-			// Emit particles for the boss's fireball visual effect
-			/*if (particleSystem) {
-				int particles_to_spawn = 5;
-                float current_particle_system_time = particleSystem->getCurrentTime();
-
-				// Define boss fireball particle properties (can be different from player's)
-				float p_speed_min = proj.speed * 0.2f;
-				float p_speed_max = proj.speed * 0.6f;
-				float p_spread = 0.7f;
-				float p_lifespan_min = 0.4f;
-				float p_lifespan_max = 0.8f;
-				// glm::vec4 p_color_start = glm::vec4(0.8f, 0.2f, 1.0f, 1.0f); // Purpleish
-				// glm::vec4 p_color_end = glm::vec4(0.5f, 0.1f, 0.7f, 0.8f);   // Darker Purple
-				glm::vec4 p_color_start = glm::vec4(1.0f, 0.5f, 0.0f, 1.0f); // Bright Orange/Yellow (similar to player)
-				glm::vec4 p_color_end = glm::vec4(0.8f, 0.1f, 0.0f, 0.5f);   // Darker Red/Orange, fading (similar to player)
-				// float p_scale_min = 0.2f;
-				// float p_scale_max = 0.35f;
-				float p_scale_min = 0.4f; // Larger fire particles for boss
-				float p_scale_max = 0.8f;  // Larger fire particles for boss
-
-                particleSystem->spawnParticleBurst(proj.position,
-                                                 proj.direction,
-                                                 particles_to_spawn,
-                                                 current_particle_system_time,
-                                                 p_speed_min, p_speed_max,
-                                                 p_spread,
-                                                 p_lifespan_min, p_lifespan_max,
-                                                 p_color_start, p_color_end,
-                                                 p_scale_min, p_scale_max);
-			}*/
-
-			// Check collision with player
-			// For simplicity, using a sphere check around player center for now.
-
 			glm::vec3 playerCenter = player->getPosition() + glm::vec3(0, 1.0f, 0); // Approx player center
 			float playerRadius = 0.5f; // Approx player radius
 
@@ -3125,6 +3193,22 @@ public:
 				cout << "[DEBUG] Boss Spell HIT player!" << endl;
 				player->takeDamage(damageAmount);
 				proj.active = false;
+				hitSomething = true;
+				continue;
+			}
+
+			std::vector<const QuadElement*> nearby_objects;
+			bossRoomQuadTree->query(glm::vec2(proj.position.x, proj.position.z), glm::vec2(0.5f, 0.5f), nearby_objects);
+			for (const auto* e : nearby_objects) {
+				if (checkSphereCollision(proj.position, 0.5f, e->aabb_min, e->aabb_max)) {
+					cout << "[DEBUG] Boss Spell HIT shelf!" << endl;
+					proj.active = false;
+					hitSomething = true;
+					break; // Stop checking after first hit
+				}
+			}
+
+			if (hitSomething) {
 				bossActiveSpells.erase(bossActiveSpells.begin() + i);
 				continue;
 			}
@@ -3932,6 +4016,31 @@ public:
 		if (Config::DEBUG_PLAYER_HP) cout << "Player HP (%): " << player->getHitpoints() / Config::PLAYER_HP_MAX << endl;
 	}
 
+	void checkCameraCollision() {
+		if (!libraryQuadTree || !bossRoomQuadTree) return; // Ensure trees are initialized
+		float cameraBoundingRadius = 1.0f;
+		if (!bossfightstarted) {
+			std::vector<const QuadElement*> objectElements;
+			libraryQuadTree->query(glm::vec2(eye.x, eye.z), glm::vec2(cameraBoundingRadius), objectElements);
+			for (const auto* element : objectElements) {
+				if (checkSphereCollision(eye, 0.25f, element->aabb_min, element->aabb_max)) {
+					visible = 0;
+				}
+			}
+		} else if (bossfightstarted) {
+			std::vector<const QuadElement*> objectElements;
+			bossRoomQuadTree->query(glm::vec2(eye.x, eye.z), glm::vec2(cameraBoundingRadius), objectElements);
+			for (const auto* element : objectElements) {
+				if (checkSphereCollision(eye, 0.25f, element->aabb_min, element->aabb_max)) {
+					visible = 0;
+				}
+			}
+		} else {
+			visible = 1; // Default to visible if no collision detected
+		}
+
+	}
+
 	void render(float frametime, float animTime) {
 		// Get current frame buffer size
 		int width, height;
@@ -4131,7 +4240,7 @@ public:
 
 	void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
 		if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) glfwSetWindowShouldClose(window, GL_TRUE);
-		
+
 		// Lighting / Shader settings
 		if (key == GLFW_KEY_1 && action == GLFW_PRESS) Config::SATURATION -= 0.1f;
 		if (key == GLFW_KEY_2 && action == GLFW_PRESS) Config::SATURATION += 0.1f;
@@ -4335,6 +4444,7 @@ int main(int argc, char* argv[]) {
 	application->initMapGen();
 	application->initGeom(resourceDir);
 	application->initGround();
+	application->initQuadTree();
 	glGenQueries(1, &application->occlusionQueryID);
 
 	auto lastTime = chrono::high_resolution_clock::now();

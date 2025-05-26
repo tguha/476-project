@@ -384,21 +384,29 @@ void LibraryGen::placeBorder() {
         // in middle of the right wall assuming even number of cells
         grid[glm::ivec2(grid.getSize().x - 1, grid.getSize().y / 2)] = Cell(CellType::BOSS_ENTRANCE); // Right entrance
         grid[glm::ivec2(grid.getSize().x - 1, grid.getSize().y / 2 - 1)] = Cell(CellType::BOSS_ENTRANCE); // Right entrance
+         grid[glm::ivec2(grid.getSize().x - 1, grid.getSize().y / 2 + 1)] = Cell(CellType::BORDER, BorderType::RIGHT_OF_BOSS_ENTRANCE); // Right of boss entrance
+        grid[glm::ivec2(grid.getSize().x - 1, grid.getSize().y / 2 - 2)] = Cell(CellType::BORDER, BorderType::LEFT_OF_BOSS_ENTRANCE); // Left of boss entrance
         avoidPoints.push_back(glm::vec2(grid.getSize().x - 1, grid.getSize().y / 2)); // Add to avoid points
         avoidPoints.push_back(glm::vec2(grid.getSize().x - 1, grid.getSize().y / 2 - 1)); // Add to avoid points
     } else if (bossEntranceDir.x < 0) {
         grid[glm::ivec2(0, grid.getSize().y / 2)] = Cell(CellType::BOSS_ENTRANCE); // Left entrance
         grid[glm::ivec2(0, grid.getSize().y / 2 - 1)] = Cell(CellType::BOSS_ENTRANCE); // Left entrance
+        grid[glm::ivec2(0, grid.getSize().y / 2 + 1)] = Cell(CellType::BORDER, BorderType::RIGHT_OF_BOSS_ENTRANCE); // Right of boss entrance
+        grid[glm::ivec2(0, grid.getSize().y / 2 - 2)] = Cell(CellType::BORDER, BorderType::LEFT_OF_BOSS_ENTRANCE); // Right of boss entrance
         avoidPoints.push_back(glm::vec2(0, grid.getSize().y / 2)); // Add to avoid points
         avoidPoints.push_back(glm::vec2(0, grid.getSize().y / 2 - 1)); // Add to avoid points
     } else if (bossEntranceDir.y > 0) {
         grid[glm::ivec2(grid.getSize().x / 2, grid.getSize().y - 1)] = Cell(CellType::BOSS_ENTRANCE); // Top entrance
         grid[glm::ivec2(grid.getSize().x / 2 - 1, grid.getSize().y - 1)] = Cell(CellType::BOSS_ENTRANCE); // Top entrance
+        grid[glm::ivec2(grid.getSize().x / 2 + 1, grid.getSize().y - 1)] = Cell(CellType::BORDER, BorderType::RIGHT_OF_BOSS_ENTRANCE); // Right of boss entrance
+        grid[glm::ivec2(grid.getSize().x / 2 - 2, grid.getSize().y - 1)] = Cell(CellType::BORDER, BorderType::LEFT_OF_BOSS_ENTRANCE); // Right of boss entrance
         avoidPoints.push_back(glm::vec2(grid.getSize().x / 2, grid.getSize().y - 1)); // Add to avoid points
         avoidPoints.push_back(glm::vec2(grid.getSize().x / 2 - 1, grid.getSize().y - 1)); // Add to avoid points
     } else if (bossEntranceDir.y < 0) {
         grid[glm::ivec2(grid.getSize().x / 2, 0)] = Cell(CellType::BOSS_ENTRANCE); // Bottom entrance
         grid[glm::ivec2(grid.getSize().x / 2 - 1, 0)] = Cell(CellType::BOSS_ENTRANCE); // Bottom entrance
+        grid[glm::ivec2(grid.getSize().x / 2 + 1, 0)] = Cell(CellType::BORDER, BorderType::RIGHT_OF_BOSS_ENTRANCE); // Right of boss entrance
+        grid[glm::ivec2(grid.getSize().x / 2 - 2, 0)] = Cell(CellType::BORDER, BorderType::LEFT_OF_BOSS_ENTRANCE); // Right of boss entrance
         avoidPoints.push_back(glm::vec2(grid.getSize().x / 2, 0)); // Add to avoid points
         avoidPoints.push_back(glm::vec2(grid.getSize().x / 2 - 1, 0)); // Add to avoid points
     }
