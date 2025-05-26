@@ -71,14 +71,39 @@ void Enemy::takeDamage(float damage) {
 void Enemy::update(Player* player, float deltaTime) {
     // Drop down if not alive
     if (!isAlive()) {
-        this->setPosition(this->getPosition() - glm::vec3(0.0f, 3.0f, 0.0f));
+        this->setPosition(this->getPosition() - glm::vec3(0.0f, 10.0f, 0.0f));
         return;
     }
 
     // Aggro logic
-    if (glm::distance(this->getPosition(), player->getPosition()) <= this->getAggroRange() || this->isHit()) {
+    glm::vec3 enemyPos = this->getPosition();
+    glm::vec3 playerPos = player->getPosition();
+
+    // Flatten positions to XZ plane
+    glm::vec3 flatEnemyPos = glm::vec3(enemyPos.x, 0.0f, enemyPos.z);
+    glm::vec3 flatPlayerPos = glm::vec3(playerPos.x, 0.0f, playerPos.z);
+
+    // Check if player is in front of enemy forward vector
+    float rotYRad = glm::radians(this->getRotY());
+    glm::vec3 forward = glm::normalize(glm::vec3(sin(rotYRad), 0.0f, cos(rotYRad)));
+    glm::vec3 toPlayer = glm::normalize(flatPlayerPos - flatEnemyPos);
+    float isInFront = glm::dot(forward, toPlayer);
+
+    // Enemy sight angle
+    float angleThreshold = glm::cos(glm::radians(15.0f));
+
+    // Aggro logic
+    bool playerInFront = isInFront > angleThreshold;
+    float distanceToPlayer = glm::distance(flatEnemyPos, flatPlayerPos);
+    bool withinAggroRange = distanceToPlayer <= this->getAggroRange();
+
+    if ((playerInFront && withinAggroRange) || this->isHit()) {
         setAggro(true);
     }
+
+    // if (((glm::distance(this->getPosition(), player->getPosition()) <= this->getAggroRange()) && (isInFront == 1.0f)) || this->isHit()) {
+    //     setAggro(true);
+    // }
 
     if ((glm::distance(this->getPosition(), player->getPosition()) <= this->meleeRange) && this->isAggro()) {
         this->meleeAttack(player, deltaTime);
