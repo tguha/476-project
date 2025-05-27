@@ -53,7 +53,6 @@ public:
 	int window_height = Config::DEFAULT_WINDOW_HEIGHT;
 
 	// Our shader programs
-	// Our shader programs
 	shared_ptr<Program> particleProg;
 	shared_ptr<Program> DepthProg;
 	shared_ptr<Program> DepthProgDebug;
@@ -61,6 +60,7 @@ public:
 	shared_ptr<Program> DebugProg;
 	shared_ptr<Program> hudProg;
 	shared_ptr<Program> redFlashProg;
+	shared_ptr<Program> pawsProg;
 
 	// ground data - Reused for all flat ground planes
 	GLuint GrndBuffObj = 0, GrndNorBuffObj = 0, GIndxBuffObj = 0; // Initialize to 0
@@ -80,6 +80,7 @@ public:
 	shared_ptr<Texture> libraryGroundTex;
 	shared_ptr<Texture> carpetTex;
 	shared_ptr<Texture> particleAlphaTex;
+	shared_ptr<Texture> pawTex;
 
 	vector<WallObject> borderWalls;
 	std::set<WallObjKey> borderWallKeys; // Set to track unique keys
@@ -148,7 +149,6 @@ public:
 	glm::vec3 start_lightcycle1_pos = glm::vec3(-384, -11, 31);
 	glm::vec3 start_lightcycle2_pos = glm::vec3(-365, -11, 9.1);
 
-
 	float theta = glm::radians(Config::CAMERA_DEFAULT_THETA_DEGREES); // controls yaw
 	float phi = glm::radians(Config::CAMERA_DEFAULT_PHI_DEGREES); // controls pitch
 	float radius = Config::CAMERA_DEFAULT_RADIUS;
@@ -164,7 +164,6 @@ public:
 
 	bool mouseIntialized = false;
 	double lastX, lastY;
-
 
 	int debug = 0;
 	int debug_pos = 0;
@@ -231,6 +230,16 @@ public:
 	// Geometry for texture render
 	GLuint quad_VertexArrayID;
 	GLuint quad_vertexbuffer;
+
+	// --- Paw Prints ---
+	// CPU: record and upload a list of paw prints
+	// maintain up to a maximum and replace the oldest when adding a new print
+	// GPU: handles everything else 
+	deque<PawPrint> prints;
+	void onStep(vec3 worldPos, float facingAngle) {
+		prints.push_back({ {worldPos.x, worldPos.z}, facingAngle, float(glfwGetTime()) });
+		if (prints.size() > Config::PRINTS_MAX) prints.pop_front();
+	}
 
 	// Set up the FBO for storing the light's depth map
 	void initShadow() {
@@ -398,6 +407,12 @@ public:
 		DebugProg->setShaderNames(resourceDirectory + "/pass_vert.glsl", resourceDirectory + "/pass_texfrag.glsl");
 		DebugProg->init();
 
+		// Init GLSL pawsProg for paw prints behind character
+		pawsProg = make_shared<Program>();
+		pawsProg->setVerbose(Config::DEBUG_SHADER);
+		pawsProg->setShaderNames(resourceDirectory + "/paws_vert.glsl", resourceDirectory + "/paws_frag.glsl");
+		pawsProg->init();
+
 		// Add unfigorm and attrubutes to each of the programs
 		DepthProg->addUniform("LP");
 		DepthProg->addUniform("LV");
@@ -417,32 +432,22 @@ public:
 		ShadowProg->addUniform("lightDir");
 		ShadowProg->addUniform("lightColor");
 		ShadowProg->addUniform("cameraPos");
-		ShadowProg->addAttribute("vertPos");
-		ShadowProg->addAttribute("vertNor");
-		ShadowProg->addAttribute("vertTex");
-
 		ShadowProg->addUniform("uMaps");
 		ShadowProg->addUniform("shadowDepth");
-
 		ShadowProg->addUniform("hasMaterial");
 		ShadowProg->addUniform("hasBones");
-
 		ShadowProg->addUniform("MatAlbedo");
 		ShadowProg->addUniform("MatRough");
 		ShadowProg->addUniform("MatMetal");
 		ShadowProg->addUniform("MatEmit");
-
 		ShadowProg->addUniform("enemyAlpha");
-
 		ShadowProg->addUniform("texOnly");
-
 		ShadowProg->addUniform("exposure");
 		ShadowProg->addUniform("saturation");
-
-		for (int i = 0; i < Config::MAX_BONES; i++) {
-			ShadowProg->addUniform("finalBonesMatrices[" + to_string(i) + "]");
-		}
-
+		for (int i = 0; i < Config::MAX_BONES; i++) ShadowProg->addUniform("finalBonesMatrices[" + to_string(i) + "]");
+		ShadowProg->addAttribute("vertPos");
+		ShadowProg->addAttribute("vertNor");
+		ShadowProg->addAttribute("vertTex");
 		ShadowProg->bind();
 		GLint loc = ShadowProg->getUniform("uMaps");
 		GLint units[6] = { 0,1,2,3,4,5 };
@@ -450,6 +455,17 @@ public:
 		ShadowProg->unbind();
 
 		initShadow();
+
+		pawsProg->addUniform("P");
+		pawsProg->addUniform("V");
+		pawsProg->addUniform("M");
+		pawsProg->addUniform("num");
+		pawsProg->addUniform("pos");
+		pawsProg->addUniform("angle");
+		pawsProg->addUniform("time");
+		pawsProg->addUniform("curTime");
+		pawsProg->addUniform("pawTex");
+		pawsProg->addUniform("grndTex");
 
 		hudProg = make_shared<Program>();
 		hudProg->setVerbose(true);
@@ -484,6 +500,12 @@ public:
 		redFlashProg->addUniform("alpha");
 
 		updateCameraVectors();
+
+		pawTex = make_shared<Texture>();
+		pawTex->setFilename(resourceDirectory + "/paw_print.png");
+		pawTex->init();
+		pawTex->setUnit(1);
+		pawTex->setWrapModes(GL_REPEAT, GL_REPEAT);
 
 		borderWallTex = make_shared<Texture>();
 		//borderWallTex->setFilename(resourceDirectory + "/sky_sphere/sky_sphere.fbm/infinite_lib2.png");
@@ -4054,7 +4076,46 @@ public:
 			ShadowProg->unbind();
 		}
 
-		if (Config::PARTICLES && particleProg) {
+		//===================
+		// Second Pass Cont.
+		//===================
+
+		if (Config::DRAW_PAW_PRINTS) {
+			pawsProg->bind();
+			int num = (int)prints.size(); // only draw as many paw prints as we have left (removed on timer)
+			vec2 posArr[Config::PRINTS_MAX];
+			float angArr[Config::PRINTS_MAX], timeArr[Config::PRINTS_MAX];
+			for (int i = 0; i < num; ++i) { // reformat data for gpu
+				posArr[i] = prints[i].pos;
+				angArr[i] = prints[i].angle;
+				timeArr[i] = prints[i].spawnTime;
+			}
+
+			glUniformMatrix4fv(pawsProg->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
+			glUniformMatrix4fv(pawsProg->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
+			glUniformMatrix4fv(pawsProg->getUniform("M"), 1, GL_FALSE, value_ptr(Model->topMatrix()));
+
+			glUniform1i(pawsProg->getUniform("num"), num);
+			glUniform2fv(pawsProg->getUniform("pos"), num, &posArr[0].x);
+			glUniform1fv(pawsProg->getUniform("angle"), num, angArr);
+			glUniform1fv(pawsProg->getUniform("time"), num, timeArr);
+			glUniform1f(pawsProg->getUniform("curTime"), (float)glfwGetTime());
+
+			glActiveTexture(GL_TEXTURE0 + pawTex->getUnit());
+			glBindTexture(GL_TEXTURE_2D, pawTex->getID());
+			glUniform1i(pawsProg->getUniform("pawTex"), pawTex->getUnit());
+
+			glActiveTexture(GL_TEXTURE0);
+			glBindTexture(GL_TEXTURE_2D, libraryGroundTex->getID());
+			glUniform1i(pawsProg->getUniform("grndTex"), 0);
+
+			glBindVertexArray(GroundVertexArrayID);
+			glDrawElements(GL_TRIANGLES, g_GiboLen, GL_UNSIGNED_SHORT, 0);
+
+			pawsProg->unbind();
+		}
+
+		if (Config::DRAW_PARTICLES) {
 			particleProg->bind();
 			// glPointSize(10.0f); // Remove this line, size is now per-particle in shader
 			glUniformMatrix4fv(particleProg->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
@@ -4065,7 +4126,7 @@ public:
 			particleProg->unbind();
 		}
 
-		if (Config::SHOW_HEALTHBAR) { // Draw the health bar
+		if (Config::DRAW_HEALTHBAR) { // Draw the health bar
 			//cout << "Drawing healthbar" << endl;
 			drawHealthBar();
 			drawEnemyHealthBars(View->topMatrix(), Projection->topMatrix());
@@ -4075,7 +4136,7 @@ public:
 			}
 		}
 
-		if (player->getDamageTimer() > 0.0f) {
+		if (Config::DRAW_PLAYER_DAMAGE && player->getDamageTimer() > 0.0f) {
 			player->setDamageTimer(player->getDamageTimer() - frametime);
 
 			float alpha = player->getDamageTimer() / Config::PLAYER_HIT_DURATION;
@@ -4084,7 +4145,7 @@ public:
 
 			drawDamageIndicator(alpha);
 		}
-		else if (!player->isAlive() && !debugCamera) {
+		else if (Config::DRAW_PLAYER_DAMAGE && !player->isAlive() && !debugCamera) {
 			// If player is dead, show red flash
 			movingForward = false;
 			movingBackward = false;
@@ -4093,7 +4154,7 @@ public:
 			drawDamageIndicator(1.0f);
 		}
 
-		if (Config::SHOW_MINIMAP) { // Draw the mini map
+		if (Config::DRAW_MINIMAP) { // Draw the mini map
 			ShadowProg->bind();
 			//cout << "Drawing minimap" << endl;
 			glClear(GL_DEPTH_BUFFER_BIT);
@@ -4161,6 +4222,7 @@ public:
 					cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
 					cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
 				}
+				onStep(player->getPosition(), player->getRotY());
 			}
 			else if (key == GLFW_KEY_W && action == GLFW_RELEASE) {
 				//Movement Variable
@@ -4176,6 +4238,7 @@ public:
 					cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
 				}
 
+				onStep(player->getPosition(), player->getRotY());
 			}
 			else if (key == GLFW_KEY_S && action == GLFW_RELEASE) {
 				//Movement Variable
@@ -4191,6 +4254,7 @@ public:
 					cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
 				}
 
+				onStep(player->getPosition(), player->getRotY());
 			}
 			else if (key == GLFW_KEY_A && action == GLFW_RELEASE) {
 
@@ -4206,6 +4270,8 @@ public:
 					cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
 					cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
 				}
+
+				onStep(player->getPosition(), player->getRotY());
 			}
 			else if (key == GLFW_KEY_D && action == GLFW_RELEASE) {
 				//Movement Variable
