@@ -41,6 +41,8 @@
 #include <glm/gtx/quaternion.hpp>
 #include <glm/gtx/vector_angle.hpp>
 
+#define USE_INSTANCING 0
+
 using namespace std;
 using namespace glm;
 
@@ -1998,7 +2000,9 @@ public:
 			// enemies.push_back(new Enemy(libraryCenter + vec3(-5.0f, 0.8f, 8.0f), 50.0f, 2.0f, sphere, glm::vec3(0.5f, 1.28f, 0.5f), vec3(0.0f))); // <<-- Pass sphere and scale
 			activeSpells.clear(); // Clear active spells
 			unlock = false;
-			// initInstancingMatrices();
+			#if USE_INSTANCING
+			initInstancingMatrices();
+			#endif
 		}
 	}
 
@@ -4158,12 +4162,14 @@ public:
 
 		drawLibGrnd(prog, Model); // Draw the library ground
 
-
+		#if USE_INSTANCING
+		drawLibInstancing(prog, CULL);
+		#else
 		// 2. Draw the Static Library Shelves
 		drawLibrary(prog, Model, CULL);
-		// drawLibInstancing(prog, CULL); // Draw the library shelves with culling
 
 		drawBossRoom(prog, Model, CULL); // Draw the boss room
+		#endif
 
 		//// disable color writes
 		//glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
@@ -4230,12 +4236,14 @@ public:
 
 		drawLibGrnd(prog, Model); // Draw the library ground
 
-
+		#if USE_INSTANCING
+		drawLibInstancing(prog, false); // Draw the library shelves without culling
+		#else
 		// 2. Draw the Static Library Shelves
 		drawLibrary(prog, Model, true);
-		// drawLibInstancing(prog, true); // Draw the library shelves with culling
 
 		drawBossRoom(prog, Model, true); // Draw the boss room
+		#endif
 
 		// disable color writes
 		glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
@@ -4518,8 +4526,12 @@ public:
 			// drawDoor(prog2, Model);
 			// drawBooks(prog2, Model);
 			// drawEnemies(prog2, Model);
+			#if USE_INSTANCING
+			drawLibInstancing(ShadowProg, false); // Draw the library shelves without culling
+			#else
 			drawLibrary(ShadowProg, Model, false);
 			drawBossRoom(ShadowProg, Model, false);
+			#endif
 			// drawLibInstancing(ShadowProg, false); // Draw the library shelves without culling
 			drawBossEnemy(ShadowProg, Model);
 			// drawOrbs(prog2, Model);
@@ -4748,7 +4760,9 @@ int main(int argc, char* argv[]) {
 	application->initGeom(resourceDir);
 	application->initGround();
 	application->initQuadTree();
-	// application->initInstancingMatrices();
+	#if USE_INSTANCING
+	application->initInstancingMatrices();
+	#endif
 	glGenQueries(1, &application->occlusionQueryID);
 
 	auto lastTime = chrono::high_resolution_clock::now();
