@@ -169,6 +169,8 @@ public:
 	//key collectibles
 	std::vector<Collectible> keyCollectibles;
 	int keysCollectedCount = 0;
+	 //bool keyAlreadyExists = false;
+	 //bool enemyLastPos = false;
 
 	//  vector of books
 	vector<Book> books;
@@ -375,6 +377,7 @@ public:
 		if(key == GLFW_KEY_U && action == GLFW_PRESS){
 			unlock = true;
 			canFightboss = true;
+			removeKeys(); 
 		}
 		if (key == GLFW_KEY_K && action == GLFW_PRESS) {
 			debugCamera = !debugCamera;
@@ -1814,8 +1817,9 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
                 // A more robust way would be to tag enemies that have already dropped a key.
 
 
-				/*
-                bool keyAlreadyExists = false;
+				
+                bool keyAlreadyExists = false; //some local bools and need some global bools
+				bool enemyLastPos = false;
                 for (const auto& key : keyCollectibles) {
                     // Approximate check, ideally use a unique ID from the enemy
                     if (glm::distance(key.position, enemy->getPosition()) < 0.1f) { 
@@ -1823,13 +1827,22 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
                         break;
                     }
                 }
-                if (!keyAlreadyExists) {
-                    keyCollectibles.emplace_back(key, enemy->getPosition(), 0.1f, vec3(0.9, 0.9, 0.9), SpellType::NONE); 
+					glm:: vec3 keyPos = enemy->getPosition();
+
+                if (!keyAlreadyExists ) { //&& !enemyLastPos
+				
+					//get enemy pos once, then don't change it until change pick it up?
+					keyPos.y = keyPos.y - 1.5f;
+					//std::cout << "key position " << keyPos.x << " " << keyPos.y << " " << keyPos.z << " " << std::endl;
+
+                    keyCollectibles.emplace_back(key, keyPos, 0.1f, vec3(0.9, 0.9, 0.9), SpellType::NONE); 
+					drawKey(shader, Model );
+					//enemyLastPos = true;
                 }
 				
-				drawKey(shader, Model );
+				
 
-				*/
+				
 				
 				continue; // Skip null or dead enemies
 			}
@@ -3504,7 +3517,6 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 				checkSphereCollision(player->getPosition(), 4.0f, key.AABBmin, key.AABBmax)
 				//checkSphereCollision(player->getPosition(), 2.0f, orb.AABBmin, orb.AABBmax)
 				
-				
 				) {
 				key.collected = true;
 				// key.state = OrbState::COLLECTED; // Optionally set state
@@ -3551,48 +3563,20 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 			// --- Set up transformations ---
 			Model->pushMatrix();
 				Model->loadIdentity();
-				Model->translate(vec3(0.0f, 0.5f, 0.5f)); //last enemy pos
+				Model->translate(currentDrawPosition); //last enemy pos
 				Model->scale(2.0f);
 				Model->rotate(glm::radians(90.0f), vec3(1.0f, 0.0f, 0.0f));
 				Model->rotate(glm::radians(-90.0f), vec3(0.0f, 1.0f, 0.0f));
 
-
 				// --- Set Material & Draw ---
-				// (Material setting code remains the same)
 				SetMaterialMan(shader, 5); //gold
-
 				setModel(shader, Model);
-				//orb.model->Draw(simpleShader);
 				key.model->Draw(shader);
 
 			Model->popMatrix();
 		} // End drawing loop
 
-		//Model->popMatrix();
 		shader->unbind();
-
-		
-		// shader->bind();
-
-		// // --- Set up transformations ---
-		// Model->pushMatrix();
-		// Model->loadIdentity();
-		// Model->translate(vec3(0.0f, 0.5f, 0.5f)); //last enemy pos
-		// Model->scale(2.0f);
-		// Model->rotate(glm::radians(90.0f), vec3(1.0f, 0.0f, 0.0f));
-		// Model->rotate(glm::radians(-90.0f), vec3(0.0f, 1.0f, 0.0f));
-
-
-		// // --- Set Material & Draw ---
-		// // (Material setting code remains the same)
-		// SetMaterialMan(shader, 5); //gold
-
-		// setModel(shader, Model);
-		// //orb.model->Draw(simpleShader);
-		// key->Draw(shader);
-
-		// Model->popMatrix();
-		// shader->unbind();
 	}
 
 	void updateKeys(float currentTime) {
@@ -3602,6 +3586,22 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 				key.updateLevitation(currentTime);
 			}
 		}
+	}
+
+	void removeKeys(){
+		if(keysCollectedCount <= 0){
+			cout << "[DEBUG] Cannot remove: No keys." << endl;
+			return; 
+		}	
+
+		keysCollectedCount--;
+		for(auto it = keyCollectibles.begin(); it != keyCollectibles.end(); ++it){
+			if (it->collected){
+				keyCollectibles.erase(it);
+				break;
+			}
+		}
+		
 	}
 
 	void drawBossHealthBar(glm::mat4 viewMatrix, glm::mat4 projMatrix) {
@@ -3878,7 +3878,6 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		//testing drawing lock and key
 		if(unlock){
 			updateLock(prog2, Model);
-			// drawKey(prog2, Model);
 		}
 		else{
 			drawLock(prog2, Model);
@@ -3886,7 +3885,7 @@ void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		
 		//keyCollectibles.emplace_back(key, vec3(0.0, 2.0, 0.0), 0.1f,  vec3(0.9, 0.9, 0.9));
 
-		drawKey(prog2, Model);
+		//drawKey(prog2, Model);
 
 
 
