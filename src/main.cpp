@@ -238,6 +238,25 @@ public:
 	Quadtree *libraryQuadTree;
 	Quadtree *bossRoomQuadTree;
 
+	std::vector<glm::mat4> book_shelf1Matrices;
+	std::vector<glm::mat4> book_shelf2Matrices;
+	std::vector<glm::mat4> bookstandMatrices;
+	std::vector<glm::mat4> table_chairs1Matrices;
+	std::vector<glm::mat4> table_chairs2Matrices;
+	std::vector<glm::mat4> chestMatrices;
+	std::vector<glm::mat4> candelabraMatrices;
+	std::vector<glm::mat4> clockMatrices;
+	std::vector<glm::mat4> doorMatrices;
+
+	std::vector<glm::mat4> vbook_shelf1Matrices;
+	std::vector<glm::mat4> vbook_shelf2Matrices;
+	std::vector<glm::mat4> vbookstandMatrices;
+	std::vector<glm::mat4> vtable_chairs1Matrices;
+	std::vector<glm::mat4> vtable_chairs2Matrices;
+	std::vector<glm::mat4> vchestMatrices;
+	std::vector<glm::mat4> vcandelabraMatrices;
+	std::vector<glm::mat4> vclockMatrices;
+
 	// Set up the FBO for storing the light's depth map
 	void initShadow() {
 		glGenFramebuffers(1, &depthMapFBO); // Generate FBO for shadow depth
@@ -429,12 +448,14 @@ public:
 		ShadowProg->addAttribute("vertPos");
 		ShadowProg->addAttribute("vertNor");
 		ShadowProg->addAttribute("vertTex");
+		ShadowProg->addAttribute("InstancedOffset");
 
 		ShadowProg->addUniform("uMaps");
 		ShadowProg->addUniform("shadowDepth");
 
 		ShadowProg->addUniform("hasMaterial");
 		ShadowProg->addUniform("hasBones");
+		ShadowProg->addUniform("hasInstancing");
 
 		ShadowProg->addUniform("MatAlbedo");
 		ShadowProg->addUniform("MatRough");
@@ -552,7 +573,7 @@ public:
 		if (bossEntranceDir.y > 0) {
 			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(0)), vec3(-1, 0, 0), 10.0f, borderWallTex);
 			addWall(gridSize.x - 3, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 10.0f, borderWallTex);
-			addWall(gridSize.x - 2, vec3(library->mapGridXtoWorldX((gridSize.x - 1) / 2), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 10.0f, borderWallTex);
+			addWall(gridSize.x - 1, vec3(library->mapGridXtoWorldX((gridSize.x - 1) / 2), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 10.0f, borderWallTex);
 			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(0), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
 			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
 		}
@@ -584,6 +605,168 @@ public:
 		bossGrid = bossRoom->getGrid();
 		addLibGrnd(bossGridSize.x * 2, bossGridSize.y * 2, 0.0f, bossRoom->getWorldOrigin(), libraryGroundTex);
 	}
+
+	void initInstancingMatrices() {
+		// Clear previous frame data
+		book_shelf1Matrices.clear();
+		book_shelf2Matrices.clear();
+		bookstandMatrices.clear();
+		table_chairs1Matrices.clear();
+		table_chairs2Matrices.clear();
+		chestMatrices.clear();
+		candelabraMatrices.clear();
+		clockMatrices.clear();
+		doorMatrices.clear();
+
+
+		for (int z = 0; z < grid.getSize().y; ++z) {
+			for (int x = 0; x < grid.getSize().x; ++x) {
+				glm::ivec2 gridPos(x, z);
+				if (grid[gridPos].type != LibraryGen::CellType::CLUSTER)
+					continue;
+
+				float i = library->mapGridXtoWorldX(x);
+				float j = library->mapGridYtoWorldZ(z);
+				glm::vec3 pos(i, libraryCenter.y, j);
+				float rotation = grid[gridPos].transformData.rotation;
+				glm::vec3 scale = grid[gridPos].transformData.scale;
+				glm::mat4 model = glm::mat4(1.0f);
+				model = glm::translate(model, pos);
+
+
+				auto addInstance = [&](std::vector<glm::mat4>& container) {
+					glm::mat4 instModel = model;
+					instModel = glm::rotate(instModel, rotation, glm::vec3(0, 1, 0));
+					instModel = glm::scale(instModel, scale);
+					container.push_back(instModel);
+				};
+
+				using CT = LibraryGen::ClusterType;
+				using OT = LibraryGen::CellObjType;
+
+				switch (grid[gridPos].clusterType) {
+					case CT::SHELF1: addInstance(book_shelf1Matrices); break;
+					case CT::SHELF2: addInstance(book_shelf1Matrices); break;
+					case CT::SHELF3: addInstance(book_shelf1Matrices); break;
+					case CT::ONLY_CANDELABRA: addInstance(candelabraMatrices); break;
+					case CT::ONLY_CHEST: addInstance(chestMatrices); break;
+					case CT::ONLY_TABLE:
+						addInstance(table_chairs1Matrices);
+						addLibGrnd(5.0f, 5.0f, 1.0f, vec3(i, libraryCenter.y + 0.1f, j), carpetTex);
+						break;
+					case CT::ONLY_CLOCK: addInstance(clockMatrices); break;
+					case CT::ONLY_BOOKSTAND: addInstance(bookstandMatrices); break;
+
+					case CT::LAYOUT1:
+						switch (grid[gridPos].objectType) {
+							case OT::BOOKSHELF: addInstance(book_shelf1Matrices); break;
+							case OT::ROTATED_BOOKSHELF: addInstance(book_shelf1Matrices); break;
+							case OT::TABLE_AND_CHAIR1:
+							case OT::TABLE_AND_CHAIR2:
+								addInstance(table_chairs1Matrices);
+								addLibGrnd(5.0f, 5.0f, 1.0f, vec3(i, libraryCenter.y + 0.1f, j), carpetTex);
+								break;
+							case OT::CHEST: addInstance(chestMatrices); break;
+							case OT::CANDELABRA: addInstance(candelabraMatrices); break;
+							case OT::GRANDFATHER_CLOCK: addInstance(clockMatrices); break;
+							default: break;
+						}
+						break;
+
+					case CT::GLOWING_SHELF1:
+						switch (grid[gridPos].objectType) {
+							case OT::SHELF_WITH_ABILITY: addInstance(book_shelf2Matrices); break;
+							case OT::BOOKSHELF: addInstance(book_shelf1Matrices); break;
+							default: break;
+						}
+						break;
+
+					case CT::GLOWING_SHELF2:
+						switch (grid[gridPos].objectType) {
+							case OT::SHELF_WITH_ABILITY_ROTATED:
+								addInstance(book_shelf2Matrices); break;
+							case OT::ROTATED_BOOKSHELF:
+								addInstance(book_shelf1Matrices); break;
+							default: break;
+						}
+						break;
+
+					default:
+						break;
+				}
+			}
+		}
+
+		// -- Append boss room objects to instancing arrays --
+		for (int z = 0; z < bossGrid.getSize().y; ++z) {
+			for (int x = 0; x < bossGrid.getSize().x; ++x) {
+				glm::ivec2 gridPos(x, z);
+
+				float i = bossRoom->mapGridXtoWorldX(x);
+				float j = bossRoom->mapGridYtoWorldZ(z);
+				glm::vec3 pos(i, libraryCenter.y, j);
+				float rotation = bossGrid[gridPos].transformData.rotation;
+				glm::vec3 scale = bossGrid[gridPos].transformData.scale;
+				glm::mat4 model = glm::translate(glm::mat4(1.0f), pos);
+				model = glm::rotate(model, glm::radians(rotation), glm::vec3(0, 1, 0));
+				model = glm::scale(model, scale);
+
+				auto addInstance = [&](std::vector<glm::mat4>& container) {
+					container.push_back(model);
+				};
+
+				using CT = BossRoomGen::CellType;
+				using BT = BossRoomGen::BorderType;
+				using OT = BossRoomGen::CellObjType;
+
+				const auto& cell = bossGrid[gridPos];
+
+				switch (cell.type) {
+					case CT::BORDER:
+						addInstance(book_shelf1Matrices);
+						break;
+
+					case CT::ENTRANCE:
+						if (cell.borderType == BT::ENTRANCE_SIDE) {
+							addInstance(book_shelf1Matrices);
+						} else if (cell.borderType == BT::ENTRANCE_MIDDLE) {
+							addInstance(doorMatrices);
+						}
+						break;
+
+					case CT::EXIT:
+						if (cell.borderType == BT::EXIT_SIDE) {
+							addInstance(book_shelf1Matrices);
+						} else if (cell.borderType == BT::EXIT_MIDDLE) {
+							addInstance(doorMatrices);
+						}
+						break;
+
+					case CT::CLUSTER:
+						if (cell.clusterType == BossRoomGen::ClusterType::SHELF1) {
+							if (cell.objectType == OT::GLOWING_SHELF) {
+								addInstance(book_shelf2Matrices);
+							}
+						}
+						break;
+
+					default:
+						break;
+				}
+			}
+		}
+
+		book_shelf1->InitializeInstancing(book_shelf1Matrices);
+		book_shelf2->InitializeInstancing(book_shelf2Matrices);
+		bookstand->InitializeInstancing(bookstandMatrices);
+		table_chairs1->InitializeInstancing(table_chairs1Matrices);
+		table_chairs2->InitializeInstancing(table_chairs2Matrices);
+		chest->InitializeInstancing(chestMatrices);
+		candelabra->InitializeInstancing(candelabraMatrices);
+		grandfather_clock->InitializeInstancing(clockMatrices);
+
+	}
+
 
 	void initQuadTree() {
 		float cellSize = 2.0f; // Assuming square cells
@@ -645,13 +828,13 @@ public:
 						switch (cell.borderType) {
 							case LibraryGen::BorderType::TOP_BORDER:
 							case LibraryGen::BorderType::BOTTOM_BORDER:
-								clusterBboxMin = glm::vec3(-1.0f, 0.0f, -0.25f);
-								clusterBboxMax = glm::vec3(1.0f, 2.0f, 0.25f);
+								clusterBboxMin = glm::vec3(-2.0f, 0.0f, -0.25f);
+								clusterBboxMax = glm::vec3(2.0f, 2.0f, 0.25f);
 								break;
 							case LibraryGen::BorderType::LEFT_BORDER:
 							case LibraryGen::BorderType::RIGHT_BORDER:
-								clusterBboxMin = glm::vec3(-0.25f, 0.0f, -1.0f);
-								clusterBboxMax = glm::vec3(0.25f, 2.0f, 1.0f);
+								clusterBboxMin = glm::vec3(-0.25f, 0.0f, -2.0f);
+								clusterBboxMax = glm::vec3(0.25f, 2.0f, 2.0f);
 								break;
 							case LibraryGen::BorderType::LEFT_OF_BOSS_ENTRANCE:
 								if (bossEntranceDir.y > 0) {
@@ -861,7 +1044,7 @@ public:
 
 		vec3 bossSpawnPos = bossRoom->getWorldOrigin();
 
-		// initEnemies();
+		initEnemies();
 		bossEnemy = new BossEnemy(bossSpawnPos, BOSS_HP_MAX, sphere, vec3(1.0f), vec3(0, 1, 0), BOSS_SPECIAL_ATTACK_COOLDOWN, SpellType::FIRE);
 	}
 
@@ -1810,11 +1993,12 @@ public:
 			libraryQuadTree->cleanup(); // Clean up the quad tree
 			bossRoomQuadTree->cleanup(); // Clean up the boss room quad tree
 			initQuadTree(); // Reinitialize the quad tree
-			// initEnemies(); // Reinitialize enemies
+			initEnemies(); // Reinitialize enemies
 			bossActiveSpells.clear();
 			// enemies.push_back(new Enemy(libraryCenter + vec3(-5.0f, 0.8f, 8.0f), 50.0f, 2.0f, sphere, glm::vec3(0.5f, 1.28f, 0.5f), vec3(0.0f))); // <<-- Pass sphere and scale
 			activeSpells.clear(); // Clear active spells
 			unlock = false;
+			// initInstancingMatrices();
 		}
 	}
 
@@ -1851,6 +2035,122 @@ public:
 			} Model->popMatrix();
 			shader->unbind();
 		} // End loop through enemies
+	}
+
+	void drawLibInstancing(shared_ptr<Program> shader, bool cullFlag) {
+		vbook_shelf1Matrices.clear(); // Clear matrices for the next draw call
+		vbook_shelf2Matrices.clear();
+		vbookstandMatrices.clear();
+		vtable_chairs2Matrices.clear();
+		vtable_chairs1Matrices.clear();
+		vchestMatrices.clear();
+		vcandelabraMatrices.clear();
+		vclockMatrices.clear();
+
+		if (!shader || !book_shelf1 || grid.getSize().x == 0 || grid.getSize().y == 0) return; // Safety checks
+		shader->bind();
+		if (shader->hasUniform("hasInstancing")) glUniform1i(shader->getUniform("hasInstancing"), GL_TRUE);
+
+		for (unsigned int i = 0; i < book_shelf1Matrices.size(); ++i) {
+			glm::vec3 pos = glm::vec3(book_shelf1Matrices[i][3][0],
+				book_shelf1Matrices[i][3][1],
+				book_shelf1Matrices[i][3][2]);
+			if (!cullFlag || !ViewFrustCull(pos, 2.0f, planes)) {
+				vbook_shelf1Matrices.push_back(book_shelf1Matrices[i]);
+			}
+		}
+
+		for (unsigned int i = 0; i < book_shelf2Matrices.size(); ++i) {
+			glm::vec3 pos = glm::vec3(book_shelf2Matrices[i][3]);
+			if (!cullFlag || !ViewFrustCull(pos, 2.0f, planes)) {
+				vbook_shelf2Matrices.push_back(book_shelf2Matrices[i]);
+			}
+		}
+
+		for (unsigned int i = 0; i < bookstandMatrices.size(); ++i) {
+			glm::vec3 pos = glm::vec3(bookstandMatrices[i][3]);
+			if (!cullFlag || !ViewFrustCull(pos, 2.0f, planes)) {
+				vbookstandMatrices.push_back(bookstandMatrices[i]);
+			}
+		}
+
+		for (unsigned int i = 0; i < table_chairs1Matrices.size(); ++i) {
+			glm::vec3 pos = glm::vec3(table_chairs1Matrices[i][3]);
+			if (!cullFlag || !ViewFrustCull(pos, 2.0f, planes)) {
+				vtable_chairs1Matrices.push_back(table_chairs1Matrices[i]);
+			}
+		}
+
+		for (unsigned int i = 0; i < table_chairs2Matrices.size(); ++i) {
+			glm::vec3 pos = glm::vec3(table_chairs2Matrices[i][3]);
+			if (!cullFlag || !ViewFrustCull(pos, 2.0f, planes)) {
+				vtable_chairs2Matrices.push_back(table_chairs2Matrices[i]);
+			}
+		}
+
+		for (unsigned int i = 0; i < chestMatrices.size(); ++i) {
+			glm::vec3 pos = glm::vec3(chestMatrices[i][3]);
+			if (!cullFlag || !ViewFrustCull(pos, 2.0f, planes)) {
+				vchestMatrices.push_back(chestMatrices[i]);
+			}
+		}
+
+		for (unsigned int i = 0; i < candelabraMatrices.size(); ++i) {
+			glm::vec3 pos = glm::vec3(candelabraMatrices[i][3]);
+			if (!cullFlag || !ViewFrustCull(pos, 2.0f, planes)) {
+				vcandelabraMatrices.push_back(candelabraMatrices[i]);
+			}
+		}
+
+		for (unsigned int i = 0; i < clockMatrices.size(); ++i) {
+			glm::vec3 pos = glm::vec3(clockMatrices[i][3]);
+			if (!cullFlag || !ViewFrustCull(pos, 2.0f, planes)) {
+				vclockMatrices.push_back(clockMatrices[i]);
+			}
+		}
+
+
+		book_shelf1->updateInstancingOffsetVBO(vbook_shelf1Matrices);
+		book_shelf2->updateInstancingOffsetVBO(vbook_shelf2Matrices);
+		bookstand->updateInstancingOffsetVBO(vbookstandMatrices);
+		table_chairs2->updateInstancingOffsetVBO(vtable_chairs2Matrices);
+		table_chairs1->updateInstancingOffsetVBO(vtable_chairs1Matrices);
+		chest->updateInstancingOffsetVBO(vchestMatrices);
+		candelabra->updateInstancingOffsetVBO(vcandelabraMatrices);
+		grandfather_clock->updateInstancingOffsetVBO(vclockMatrices);
+
+		book_shelf1->DrawInstanced(vbook_shelf1Matrices);
+		book_shelf2->DrawInstanced(vbook_shelf2Matrices);
+		bookstand->DrawInstanced(vbookstandMatrices);
+		table_chairs2->DrawInstanced(vtable_chairs2Matrices);
+		table_chairs1->DrawInstanced(vtable_chairs1Matrices);
+		chest->DrawInstanced(vchestMatrices);
+		candelabra->DrawInstanced(vcandelabraMatrices);
+		grandfather_clock->DrawInstanced(vclockMatrices);
+
+		// for (unsigned int i = 0; i < book_shelf1->meshes.size(); ++i) {
+		// 	glBindVertexArray(book_shelf1->meshes[i].VAO);
+		// 	glDrawElementsInstanced(GL_TRIANGLES,
+		// 		static_cast<unsigned int>(book_shelf1->meshes[i].indices.size()),
+		// 		GL_UNSIGNED_INT,
+		// 		0,
+		// 		vbook_shelf1Matrices.size());
+		// 	glBindVertexArray(0);
+		// }
+
+		if (shader->hasUniform("hasInstancing")) glUniform1i(shader->getUniform("hasInstancing"), GL_FALSE);
+
+		// Entrance door logic
+		if (!unlock) {
+			glm::mat4 doorentranceMatrix = doorMatrices[0];
+			glUniformMatrix4fv(shader->getUniform("M"), 1, GL_FALSE, value_ptr(doorentranceMatrix));
+			door->Draw(shader);
+		}
+
+		glm::mat4 doorexitMatrix = doorMatrices[1];
+		glUniformMatrix4fv(shader->getUniform("M"), 1, GL_FALSE, value_ptr(doorexitMatrix));
+		door->Draw(shader); // Draw the exit door
+		shader->unbind();
 	}
 
 	void drawLibrary(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model, bool cullFlag) {
@@ -3861,6 +4161,7 @@ public:
 
 		// 2. Draw the Static Library Shelves
 		drawLibrary(prog, Model, CULL);
+		// drawLibInstancing(prog, CULL); // Draw the library shelves with culling
 
 		drawBossRoom(prog, Model, CULL); // Draw the boss room
 
@@ -3932,6 +4233,7 @@ public:
 
 		// 2. Draw the Static Library Shelves
 		drawLibrary(prog, Model, true);
+		// drawLibInstancing(prog, true); // Draw the library shelves with culling
 
 		drawBossRoom(prog, Model, true); // Draw the boss room
 
@@ -4218,13 +4520,14 @@ public:
 			// drawEnemies(prog2, Model);
 			drawLibrary(ShadowProg, Model, false);
 			drawBossRoom(ShadowProg, Model, false);
+			// drawLibInstancing(ShadowProg, false); // Draw the library shelves without culling
 			drawBossEnemy(ShadowProg, Model);
 			// drawOrbs(prog2, Model);
 			drawMiniPlayer(ShadowProg, Model);
 			drawBorderWalls(ShadowProg, Model);
 			// SetMaterialMan(prog2,6 );
 			drawLibGrnd(ShadowProg, Model);
-			drawBossRoom(ShadowProg, Model, false); //boss room not drawing
+			// drawBossRoom(ShadowProg, Model, false); //boss room not drawing
 			drawEnemies(ShadowProg, Model);
 			ShadowProg->unbind();
 		}
@@ -4445,6 +4748,7 @@ int main(int argc, char* argv[]) {
 	application->initGeom(resourceDir);
 	application->initGround();
 	application->initQuadTree();
+	// application->initInstancingMatrices();
 	glGenQueries(1, &application->occlusionQueryID);
 
 	auto lastTime = chrono::high_resolution_clock::now();
