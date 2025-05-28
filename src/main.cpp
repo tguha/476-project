@@ -1050,7 +1050,7 @@ public:
 
 		vec3 bossSpawnPos = bossRoom->getWorldOrigin();
 
-		// initEnemies();
+		initEnemies();
 		bossEnemy = new BossEnemy(bossSpawnPos, BOSS_HP_MAX, sphere, vec3(1.0f), vec3(0, 1, 0), BOSS_SPECIAL_ATTACK_COOLDOWN, SpellType::FIRE);
 	}
 
@@ -2011,7 +2011,7 @@ public:
 			libraryQuadTree->cleanup(); // Clean up the quad tree
 			bossRoomQuadTree->cleanup(); // Clean up the boss room quad tree
 			initQuadTree(); // Reinitialize the quad tree
-			// initEnemies(); // Reinitialize enemies
+			initEnemies(); // Reinitialize enemies
 			bossActiveSpells.clear();
 			// enemies.push_back(new Enemy(libraryCenter + vec3(-5.0f, 0.8f, 8.0f), 50.0f, 2.0f, sphere, glm::vec3(0.5f, 1.28f, 0.5f), vec3(0.0f))); // <<-- Pass sphere and scale
 			activeSpells.clear(); // Clear active spells
