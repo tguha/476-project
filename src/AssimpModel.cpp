@@ -561,9 +561,11 @@ void AssimpModel::DrawInstanced(const std::vector<glm::mat4>& instanceOffsetMatr
 				0,
 				instanceOffsetMatrices.size());
 			glBindVertexArray(0);
+
+        glActiveTexture(GL_TEXTURE0);
     }
 
-    glActiveTexture(GL_TEXTURE0);
+    // glActiveTexture(GL_TEXTURE0);
 
 
 }

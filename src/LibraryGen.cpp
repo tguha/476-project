@@ -48,6 +48,7 @@ void LibraryGen::generate(glm::ivec2 size, glm::vec3 worldOrigin, glm::vec3 spaw
     int numberOfClusters = 40;
 
     placeClusters(numberOfClusters);
+    enemySpawnPositions.clear(); // Clear any existing enemy spawn positions
     placeEnemies(Config::NUM_ENEMIES); // Place enemies in the library
 
     std::cout << "Placed " << clusterCenters.size() << " clusters." << std::endl;

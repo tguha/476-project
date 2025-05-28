@@ -2,15 +2,15 @@
 #include <stack>
 #include <iostream>
 
-Quadtree::Quadtree(glm::vec2 center, glm::vec2 half_size, int max_depth)
-    : center(center), half_size(half_size), max_depth(max_depth) {
+Quadtree::Quadtree(glm::vec2 center, glm::vec2 half_size)
+    : center(center), half_size(half_size) {
 }
 
 void Quadtree::subdivide() {
-    top_right = new Quadtree(center + glm::vec2(half_size.x * 0.5f, half_size.y * 0.5f), half_size * 0.5f, max_depth - 1);
-    top_left = new Quadtree(center + glm::vec2(-half_size.x * 0.5f, half_size.y * 0.5f), half_size * 0.5f, max_depth - 1);
-    bottom_right = new Quadtree(center + glm::vec2(half_size.x * 0.5f, -half_size.y * 0.5f), half_size * 0.5f, max_depth - 1);
-    bottom_left = new Quadtree(center + glm::vec2(-half_size.x * 0.5f, -half_size.y * 0.5f), half_size * 0.5f, max_depth - 1);
+    top_right = new Quadtree(center + glm::vec2(half_size.x * 0.5f, half_size.y * 0.5f), half_size * 0.5f);
+    top_left = new Quadtree(center + glm::vec2(-half_size.x * 0.5f, half_size.y * 0.5f), half_size * 0.5f);
+    bottom_right = new Quadtree(center + glm::vec2(half_size.x * 0.5f, -half_size.y * 0.5f), half_size * 0.5f);
+    bottom_left = new Quadtree(center + glm::vec2(-half_size.x * 0.5f, -half_size.y * 0.5f), half_size * 0.5f);
     subdivided = true;
 }
 
@@ -21,11 +21,13 @@ bool Quadtree::insert(const QuadElement& element, int capacity) {
     }
 
     // Check if the element can b
-    if (elements.size() < capacity) {
+    if (elements.size() < capacity && !subdivided) {
+        // If we haven't subdivided yet and we have space, add the element
         elements.push_back(element);
         return true;
     } else {
         if (!subdivided) {
+            // If we have reached capacity and haven't subdivided yet, we need to subdivide
             subdivide();
         }
     }
@@ -50,13 +52,20 @@ void Quadtree::query(const glm::vec2& query_center, const glm::vec2& query_half_
         }
     }
 
-    if (subdivided) {
-        // Recursively query the child quadrants and combine results
-        top_right->query(query_center, query_half_size, result);
-        top_left->query(query_center, query_half_size, result);
-        bottom_right->query(query_center, query_half_size, result);
-        bottom_left->query(query_center, query_half_size, result);
+    // if (subdivided) {
+    //     // Recursively query the child quadrants and combine results
+    //     top_right->query(query_center, query_half_size, result);
+    //     top_left->query(query_center, query_half_size, result);
+    //     bottom_right->query(query_center, query_half_size, result);
+    //     bottom_left->query(query_center, query_half_size, result);
+    // }
+    if (!subdivided) {
+        return; // No need to check children if not subdivided
     }
+    top_right->query(query_center, query_half_size, result);
+    top_left->query(query_center, query_half_size, result);
+    bottom_right->query(query_center, query_half_size, result);
+    bottom_left->query(query_center, query_half_size, result);
 }
 
 void Quadtree::cleanup() {

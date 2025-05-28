@@ -771,23 +771,25 @@ public:
 
 
 	void initQuadTree() {
+		int count = 0;
 		float cellSize = 2.0f; // Assuming square cells
-		int maxDepth = std::ceil(std::log2(std::max(gridSize.x, gridSize.y))); // Calculate max depth based on grid size
-		libraryQuadTree = new Quadtree(glm::vec2(0, 0), glm::vec2(grid.getSize().x * cellSize * 0.5f, grid.getSize().y * cellSize * 0.5f), maxDepth);
-		for (int z = 0; z < gridSize.y; ++z) {
-			for (int x = 0; x < gridSize.x; ++x) {
+		libraryQuadTree = new Quadtree(glm::vec2(0, 0), glm::vec2(grid.getSize().x * cellSize * 0.5f, grid.getSize().y * cellSize * 0.5f));
+		for (int z = 0; z < grid.getSize().y; ++z) {
+			for (int x = 0; x < grid.getSize().x; ++x) {
 				glm::ivec2 cellPos(x, z);
 				if (!grid.inBounds(cellPos)) continue; // Skip out-of-bounds cells
-				const auto& cell = grid[cellPos];
+				LibraryGen::Cell cell = grid[cellPos];
 				if ((cell.type != LibraryGen::CellType::CLUSTER) && (cell.type != LibraryGen::CellType::BORDER)) {
 					continue; // Skip non-cluster and non-border cells
 				}
 				// if (cell.type != LibraryGen::CellType::CLUSTER) continue; // Skip non-cluster cells
 
-				glm::vec3 clusterCenter = glm::vec3(library->mapGridXtoWorldX(cellPos.x), 0.0f, library->mapGridYtoWorldZ(cellPos.y));
+				float i = library->mapGridXtoWorldX(x);
+				float j = library->mapGridYtoWorldZ(z);
+				glm::vec3 clusterCenter = glm::vec3(i, libraryCenter.y, j);
 				glm::vec3 clusterBboxMin, clusterBboxMax;
 
-				if (cell.type == LibraryGen::CellType::CLUSTER) {
+				if (grid[cellPos].type == LibraryGen::CellType::CLUSTER) {
 						switch (cell.objectType) {
 							case LibraryGen::CellObjType::CANDELABRA:
 								clusterBboxMin = candelabra->getBoundingBoxMin();
@@ -818,6 +820,7 @@ public:
 							case LibraryGen::CellObjType::SHELF_WITH_ABILITY_ROTATED:
 								clusterBboxMin = book_shelf2->getBoundingBoxMin();
 								clusterBboxMax = book_shelf2->getBoundingBoxMax();
+								count++;
 								break;
 							case LibraryGen::CellObjType::BOOKSTAND:
 								clusterBboxMin = bookstand->getBoundingBoxMin();
@@ -890,15 +893,16 @@ public:
 				// Add the bounding box to the quadtree
 				int id = z * gridSize.x + x; // Unique ID for the cell
 				glm::vec2 quadaabb_center = glm::vec2(clusterCenter.x, clusterCenter.z);
-				QuadElement element(id, quadaabb_center, clusterWorldMin, clusterWorldMax);
-				libraryQuadTree->insert(element);
-				std::cout << "Inserted element with ID: " << id << " at position: (" << clusterCenter.x << ", " << clusterCenter.z << ")" << std::endl;
+				QuadElement element(id, quadaabb_center, cellPos, clusterWorldMin, clusterWorldMax);
+				libraryQuadTree->insert(element, 5);
+				// std::cout << "Inserted element with ID: " << id << " at position: (" << clusterCenter.x << ", " << clusterCenter.z << ")" << std::endl;
 			}
 		}
+		std::cout << "GLOWING SHELF COUNT: " << count << std::endl;
 		std::cout << "Library Quadtree initialized with " << libraryQuadTree->getElementCount() << " elements." << std::endl;
+		std::cout << "Subdivisions: " << libraryQuadTree->getMaxSubdivisions() << std::endl;
 
-		maxDepth = std::ceil(std::log2(std::max(bossGridSize.x, bossGridSize.y))); // Calculate max depth based on grid size
-		bossRoomQuadTree = new Quadtree(glm::vec2(bossRoom->getWorldOrigin().x, bossRoom->getWorldOrigin().z), glm::vec2(bossGrid.getSize().x * cellSize * 0.5f, bossGrid.getSize().y * cellSize * 0.5f), maxDepth);
+		bossRoomQuadTree = new Quadtree(glm::vec2(bossRoom->getWorldOrigin().x, bossRoom->getWorldOrigin().z), glm::vec2(bossGrid.getSize().x * cellSize * 0.5f, bossGrid.getSize().y * cellSize * 0.5f));
 		for (int z = 0; z < bossGridSize.y; ++z) {
 			for (int x = 0; x < bossGridSize.x; ++x) {
 				glm::ivec2 cellPos = glm::ivec2(x, z);
@@ -937,9 +941,9 @@ public:
 
 				int id = z * bossGridSize.x + x; // Unique ID for the cell
 				glm::vec2 quadaabb_center = glm::vec2(clusterCenter.x, clusterCenter.z);
-				QuadElement element(id, quadaabb_center, clusterWorldMin, clusterWorldMax);
+				QuadElement element(id, quadaabb_center, cellPos, clusterWorldMin, clusterWorldMax);
 				bossRoomQuadTree->insert(element, 10);
-				std::cout << "Inserted boss room element with ID: " << id << " at position: (" << clusterCenter.x << ", " << clusterCenter.z << ")" << std::endl;
+				// std::cout << "Inserted boss room element with ID: " << id << " at position: (" << clusterCenter.x << ", " << clusterCenter.z << ")" << std::endl;
 			}
 		}
 
@@ -1046,7 +1050,7 @@ public:
 
 		vec3 bossSpawnPos = bossRoom->getWorldOrigin();
 
-		initEnemies();
+		// initEnemies();
 		bossEnemy = new BossEnemy(bossSpawnPos, BOSS_HP_MAX, sphere, vec3(1.0f), vec3(0, 1, 0), BOSS_SPECIAL_ATTACK_COOLDOWN, SpellType::FIRE);
 	}
 
@@ -1561,17 +1565,29 @@ public:
 	}
 
 	void initEnemies() {
-		if (enemies.size() == 0) {
-			std::vector<vec3> enemySpawnPositions = library->getEnemySpawnPositions();
+		// if (enemies.size() == 0) {
+		// 	std::vector<vec3> enemySpawnPositions = library->getEnemySpawnPositions();
 
-			for (auto e = enemies.begin(); e != enemies.end(); ++e) {
-				enemies.erase(e);
-			}
+		// 	for (auto e = enemies.begin(); e != enemies.end(); ++e) {
+		// 		enemies.erase(e);
+		// 	}
 
-			for (const auto& spawnPos : enemySpawnPositions) {
-				enemies.push_back(new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.z), ENEMY_HP_MAX, 2.0f, iceElemental, vec3(1.0f), vec3(0.0f)));
-				// cout << " Enemy placed at: (" << spawnPos.x << ", " << spawnPos.y << ", " << spawnPos.z << ")" << endl;
-			}
+		// 	for (const auto& spawnPos : enemySpawnPositions) {
+		// 		enemies.push_back(new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.z), ENEMY_HP_MAX, 2.0f, iceElemental, vec3(1.0f), vec3(0.0f)));
+		// 		// cout << " Enemy placed at: (" << spawnPos.x << ", " << spawnPos.y << ", " << spawnPos.z << ")" << endl;
+		// 	}
+		// }
+		std::vector<vec3> enemySpawnPositions = library->getEnemySpawnPositions();
+
+		// for (auto e = enemies.begin(); e != enemies.end(); ++e) {
+		// 	enemies.erase(e);
+		// }
+
+		enemies.clear(); // Clear existing enemies
+
+		for (const auto& spawnPos : enemySpawnPositions) {
+			enemies.push_back(new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.z), ENEMY_HP_MAX, 2.0f, iceElemental, vec3(1.0f), vec3(0.0f)));
+			// cout << " Enemy placed at: (" << spawnPos.x << ", " << spawnPos.y << ", " << spawnPos.z << ")" << endl;
 		}
 	}
 
@@ -1995,7 +2011,7 @@ public:
 			libraryQuadTree->cleanup(); // Clean up the quad tree
 			bossRoomQuadTree->cleanup(); // Clean up the boss room quad tree
 			initQuadTree(); // Reinitialize the quad tree
-			initEnemies(); // Reinitialize enemies
+			// initEnemies(); // Reinitialize enemies
 			bossActiveSpells.clear();
 			// enemies.push_back(new Enemy(libraryCenter + vec3(-5.0f, 0.8f, 8.0f), 50.0f, 2.0f, sphere, glm::vec3(0.5f, 1.28f, 0.5f), vec3(0.0f))); // <<-- Pass sphere and scale
 			activeSpells.clear(); // Clear active spells
@@ -2676,12 +2692,13 @@ public:
 			libraryQuadTree->query(glm::vec2(player->getPosition().x, player->getPosition().z), glm::vec2(gridInteractionRadius), bookElements);
 			for (int i = 0; i < bookElements.size() && !interacted; ++i) {
 				const QuadElement* e = bookElements[i];
-				int gridx = library->mapXtoGridX(e->center.x);
-				int gridZ = library->mapZtoGridY(e->center.y);
-				glm::ivec2 gridPos(gridx, gridZ);
-				if (!grid.inBounds(gridPos)) continue; // Skip out-of-bounds cells
-				LibraryGen::Cell cell = grid[gridPos];
-				if (cell.objectType == LibraryGen::CellObjType::SHELF_WITH_ABILITY || grid[gridPos].objectType == LibraryGen::CellObjType::SHELF_WITH_ABILITY_ROTATED) {
+				// int gridx = library->mapXtoGridX(e->center.x);
+				// int gridZ = library->mapZtoGridY(e->center.y);
+				// glm::ivec2 gridPos(gridx, gridZ);
+				// if (!grid.inBounds(gridPos)) continue; // Skip out-of-bounds cells
+				LibraryGen::Cell cell = grid[e->grid_position];
+				std::cout << "Checking cell at (" << e->grid_position.x << ", " << e->grid_position.y << ") with object type: " << static_cast<int>(cell.objectType) << std::endl;
+				if (cell.objectType == LibraryGen::CellObjType::SHELF_WITH_ABILITY || cell.objectType == LibraryGen::CellObjType::SHELF_WITH_ABILITY_ROTATED) {
 					// float shelfWorldX = libraryCenter.x - gridWorldWidth * 0.5f + (x + 0.5f) * cellWidth;
 					// float shelfWorldZ = libraryCenter.z - gridWorldDepth * 0.5f + (z + 0.5f) * cellDepth;
 					float shelfWorldX = e->center.x; // Center the shelf in the cell
@@ -2735,11 +2752,11 @@ public:
 			bossRoomQuadTree->query(glm::vec2(player->getPosition().x, player->getPosition().z), glm::vec2(gridInteractionRadius), bookElements);
 			for (int i = 0; i < bookElements.size() && !interacted; ++i) {
 				const QuadElement* e = bookElements[i];
-				int gridx = bossRoom->mapXtoGridX(e->center.x);
-				int gridZ = bossRoom->mapZtoGridY(e->center.y);
-				glm::ivec2 gridPos(gridx, gridZ);
-				if (!bossGrid.inBounds(gridPos)) continue; // Skip out-of-bounds cells
-				BossRoomGen::Cell cell = bossGrid[gridPos];
+				// int gridx = bossRoom->mapXtoGridX(e->center.x);
+				// int gridZ = bossRoom->mapZtoGridY(e->center.y);
+				// glm::ivec2 gridPos(gridx, gridZ);
+				// if (!bossGrid.inBounds(gridPos)) continue; // Skip out-of-bounds cells
+				BossRoomGen::Cell cell = bossGrid[e->grid_position];
 				if (cell.objectType == BossRoomGen::CellObjType::GLOWING_SHELF) {
 					// float shelfWorldX = libraryCenter.x - gridWorldWidth * 0.5f + (x + 0.5f) * cellWidth;
 					// float shelfWorldZ = libraryCenter.z - gridWorldDepth * 0.5f + (z + 0.5f) * cellDepth;
@@ -2982,6 +2999,11 @@ public:
 		for (const auto* e : nearby_elements) {
 			if (checkSphereCollision(checkPos, 0.25f, e->aabb_min, e->aabb_max)) {
 				// std::cout << "[DEBUG] Collision DETECTED with shelf at grid (" << gridX << "," << gridZ << ")" << std::endl;
+				// int gridx = library->mapXtoGridX(e->center.x);
+				// int gridZ = library->mapZtoGridY(e->center.y);
+				// glm::ivec2 gridPos = glm::ivec2(gridx, gridZ);
+				LibraryGen::Cell cell = grid[e->grid_position];
+				std::cout << "Checking cell at (" << e->grid_position.x << ", " << e->grid_position.y << ") with object type: " << static_cast<int>(cell.objectType) << std::endl;
 				return true; // Collision found
 			}
 		}
@@ -2989,10 +3011,10 @@ public:
 		std::vector<const QuadElement*> nearby_boss_elements;
 		bossRoomQuadTree->query(glm::vec2(checkPos.x, checkPos.z), glm::vec2(gridCollisionRadius, gridCollisionRadius), nearby_boss_elements);
 		for (const auto* e : nearby_boss_elements) {
-			int bossGridX = bossRoom->mapXtoGridX(e->center.x);
-			int bossGridZ = bossRoom->mapZtoGridY(e->center.y);
-			glm::ivec2 bossGridPos = glm::ivec2(bossGridX, bossGridZ);
-			BossRoomGen::Cell cell = bossGrid[bossGridPos];
+			// int bossGridX = bossRoom->mapXtoGridX(e->center.x);
+			// int bossGridZ = bossRoom->mapZtoGridY(e->center.y);
+			// glm::ivec2 bossGridPos = glm::ivec2(bossGridX, bossGridZ);
+			BossRoomGen::Cell cell = bossGrid[e->grid_position];
 
 			glm::vec3 clusterWorldMin = e->aabb_min;
 			glm::vec3 clusterWorldMax = e->aabb_max;
@@ -3000,14 +3022,14 @@ public:
 			// Checks collision with the side shelves
 			if (cell.borderType == BossRoomGen::BorderType::ENTRANCE_SIDE) {
 				if (checkSphereCollision(checkPos, 0.25f, clusterWorldMin, clusterWorldMax)) {
-					std::cout << "[DEBUG] Collision DETECTED with shelf at grid (" << gridX << "," << gridZ << ")" << std::endl;
+					std::cout << "[DEBUG] Collision DETECTED with shelf at grid (" << e->grid_position.x << "," << e->grid_position.y << ")" << std::endl;
 					return true; // Collision found
 				}
 			}
 			// Prevents entering the boss room until canFightboss is true
 			else if (cell.borderType == BossRoomGen::BorderType::ENTRANCE_MIDDLE && !canFightboss) {
 				if (checkSphereCollision(checkPos, 0.25f, clusterWorldMin, clusterWorldMax)) {
-					std::cout << "[DEBUG] Collision DETECTED with shelf at grid (" << gridX << "," << gridZ << ")" << std::endl;
+					std::cout << "[DEBUG] Collision DETECTED with shelf at grid (" << e->grid_position.x << "," << e->grid_position.y << ")" << std::endl;
 					return true; // Collision found
 				}
 			} // for when done with the boss fight
