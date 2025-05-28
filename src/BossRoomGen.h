@@ -132,11 +132,11 @@ class BossRoomGen {
         };
 
         std::map<ClusterType, int> MaxobjAmount = {
-            {ClusterType::SHELF1, 1},
+            // {ClusterType::SHELF1, },
         };
 
         std::map<ClusterType, int> objAmount = {
-            {ClusterType::SHELF1, 0},
+            // {ClusterType::SHELF1, 0},
         };
 
         std::vector<ClusterType> clusterOptions = {
