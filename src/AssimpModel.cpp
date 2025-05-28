@@ -3,7 +3,9 @@
 #include <iostream>
 #include "stb_image.h"
 #include "AssimpGLMHelpers.h"
+#include "TextureManager.h"
 #include <filesystem>
+
 
 
 AssimpModel::AssimpModel(std::string const &path, bool gamma) : gammaCorrection(gamma) {
@@ -491,3 +493,79 @@ int AssimpModel::getMeshSize(int meshIndex) const {
     return 0; // Return 0 if mesh index is out of bounds
 }
 
+void AssimpModel::InitializeInstancing(const std::vector<glm::mat4>& instanceOffsetMatrices) {
+    // This function is a placeholder for instancing logic
+    // It can be used to set up instance data for rendering multiple instances of the model
+    // For now, it does nothing
+    glGenBuffers(1, &instancingOffsetVBO);
+    glBindBuffer(GL_ARRAY_BUFFER, instancingOffsetVBO);
+    glBufferData(GL_ARRAY_BUFFER, instanceOffsetMatrices.size() * sizeof(glm::mat4), instanceOffsetMatrices.data(), GL_STATIC_DRAW);
+
+    for (unsigned int i = 0; i < this->meshes.size(); i++) {
+        unsigned int VAO = this->meshes[i].VAO;
+        glBindVertexArray(VAO);
+
+        // Set attribute pointers for instancing matrix (4 times vec4)
+        glEnableVertexAttribArray(7); // Assuming 7 is the next available attribute index
+        glVertexAttribPointer(7, 4, GL_FLOAT, GL_FALSE, sizeof(glm::mat4), (void*)0);
+        glEnableVertexAttribArray(8);
+        glVertexAttribPointer(8, 4, GL_FLOAT, GL_FALSE, sizeof(glm::mat4), (void*)(sizeof(glm::vec4)));
+        glEnableVertexAttribArray(9);
+        glVertexAttribPointer(9, 4, GL_FLOAT, GL_FALSE, sizeof(glm::mat4), (void*)(2 * sizeof(glm::vec4)));
+        glEnableVertexAttribArray(10);
+        glVertexAttribPointer(10, 4, GL_FLOAT, GL_FALSE, sizeof(glm::mat4), (void*)(3 * sizeof(glm::vec4)));
+
+        glVertexAttribDivisor(7, 1); // Set divisor for instancing
+        glVertexAttribDivisor(8, 1);
+        glVertexAttribDivisor(9, 1);
+        glVertexAttribDivisor(10, 1);
+
+        glBindVertexArray(0);
+    }
+
+}
+
+void AssimpModel::updateInstancingOffsetVBO(const std::vector<glm::mat4>& instanceOffsetMatrices) {
+    glBindBuffer(GL_ARRAY_BUFFER, instancingOffsetVBO);
+    glBufferData(GL_ARRAY_BUFFER, instanceOffsetMatrices.size() * sizeof(glm::mat4), instanceOffsetMatrices.data(), GL_STATIC_DRAW);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+}
+
+void AssimpModel::DrawInstanced(const std::vector<glm::mat4>& instanceOffsetMatrices) {
+
+    for (unsigned int i = 0; i < this->meshes.size(); ++i) {
+        GLuint ids[6] = { 0, 0, 0, 0, 0, 0 };
+        for (const auto& t : meshes[i].textures) {
+            if (t.type == "texture_diffuse")   ids[0] = t.id;
+            if (t.type == "texture_specular")  ids[1] = t.id;
+            if (t.type == "texture_roughness") ids[2] = t.id;
+            if (t.type == "texture_metalness") ids[3] = t.id;
+            if (t.type == "texture_normal")    ids[4] = t.id;
+            if (t.type == "texture_emission")  ids[5] = t.id;
+        }
+
+        for (int i = 0; i < 6; ++i) {
+            glActiveTexture(GL_TEXTURE0 + i);
+            GLuint toBind = ids[i]
+                ? ids[i]
+                : (i == 4 ? TextureManager::flatNormal()
+                        : (i == 5 ? TextureManager::black()
+                                    : TextureManager::white()));
+            glBindTexture(GL_TEXTURE_2D, toBind);
+        }
+
+			glBindVertexArray(this->meshes[i].VAO);
+			glDrawElementsInstanced(GL_TRIANGLES,
+				static_cast<unsigned int>(this->meshes[i].indices.size()),
+				GL_UNSIGNED_INT,
+				0,
+				instanceOffsetMatrices.size());
+			glBindVertexArray(0);
+
+        glActiveTexture(GL_TEXTURE0);
+    }
+
+    // glActiveTexture(GL_TEXTURE0);
+
+
+}

@@ -17,6 +17,4 @@ SpellType Spell::getWeakness() { return weakness; }
 
 std::string Spell::getName() { return name; }
 
-void initSpells() {
-    
-}
+void initSpells() {}

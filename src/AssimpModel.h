@@ -52,6 +52,12 @@ class AssimpModel {
         int getMeshCount() const;
         int getMeshSize(int meshIndex) const;
 
+        void InitializeInstancing(const std::vector<glm::mat4>& instanceOffsetMatrices);
+        void updateInstancingOffsetVBO(const std::vector<glm::mat4>& instanceOffsetMatrices);
+        void DrawInstanced(const std::vector<glm::mat4>& instanceOffsetMatrices);
+        unsigned int instancingOffsetVBO = 0;
+
+
     private:
         void loadModel(std::string const &path);
         void processNode(aiNode *node, const aiScene *scene);

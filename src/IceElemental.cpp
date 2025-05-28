@@ -5,6 +5,7 @@ IceElemental::IceElemental(const glm::vec3& position, float hitpoints, float mov
         meleeTimer = Config::ICE_ELEMENTAL_MELEE_SPEED; // Timer for melee attack cooldown
         meleeRange = Config::ICE_ELEMENTAL_MELEE_RANGE; // Range for melee attack
         meleeDamage = Config::ICE_ELEMENTAL_MELEE_DAMAGE; // Damage dealt by melee attack
+        aggroRange = Config::ICE_ELEMENTAL_AGGRO_RANGE; // Range for aggro detection
     }
 
 void IceElemental::moveTowardsPlayer(const glm::vec3& playerPosition, float deltaTime) {

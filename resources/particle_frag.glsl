@@ -5,7 +5,7 @@ uniform sampler2D alphaTexture;
 in vec4 partCol;
 
 out vec4 outColor;
-
+// receives interpolated color from vert shader, sample alpha texture, base color  + transparency 
 
 void main()
 {

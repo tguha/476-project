@@ -12,6 +12,10 @@
 #include "../src/Config.h"
 
 using namespace std;
+//TODO: make the particle have like a trail effect
+//TODO: togglable particle effects
+//TODO: SIMD look up optimization
+//TODO: have the spells rotate around the character
 
 particleGen::particleGen(vec3 source, float r_l, float r_h, float g_l, float g_h, float b_l, float b_h, float scale_l, float scale_h)
 {

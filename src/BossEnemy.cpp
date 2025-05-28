@@ -1,10 +1,11 @@
 #include "BossEnemy.h"
 
 BossEnemy::BossEnemy(const glm::vec3& position, float hitpoints, AssimpModel* model, const glm::vec3& scale,
-const glm::vec3& rotation, float specialAttackCooldown)
+const glm::vec3& rotation, float specialAttackCooldown, SpellType spellType)
     : Enemy(position, BOSS_HP_MAX, 0.0f ,model, scale, rotation), specialAttackCooldown(specialAttackCooldown) {
         this->setRotY(0.0f); // Initialize rotation to face forward
         this->enraged = false; // Initialize enraged state
+        this->BossSpellType = spellType; // Set the spell type
     }
 
 void BossEnemy::changePhase() {

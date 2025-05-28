@@ -10,7 +10,7 @@ uniform mat4 V;
 
 //replace with an attribute
 // uniform vec3 pColor;
-
+// transforms vertpos by PVM, passes vertcolor to frag shader, uses vertScale to adjust gl point size , render as points, control size on screen
 out vec4 partCol;
 
 

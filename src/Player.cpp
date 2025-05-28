@@ -42,7 +42,6 @@ void Player::pickupSpell(Spell *spell, SpellSlot slotToPickupTo) { // Renamed ac
                 return;
             }
         }
-        // If inventory is full and no specific slot was targeted for replacement, you might log or handle this case
         std::cout << "Inventory full, could not pick up " << spell->getName() << std::endl;
     }
 }
@@ -60,9 +59,6 @@ Spell Player::getSpellFromSpellSlot(SpellSlot slot) {
     if (slot >= SLOT_LEFT && slot < (SLOT_LEFT + Config::INVENTORY_SIZE)) {
         return spellInventory[slot];
     }
-    // Return a default "Empty" spell if the slot is invalid to prevent crashes
-    // This requires Spell to have a constructor that can be called this way, 
-    // or you handle errors differently.
     return Spell("Empty", 0,0,0,0,0, SpellType::NONE); 
 }
 
@@ -73,9 +69,7 @@ void Player::setSprintFlag(bool flag) {
 void Player::move(const glm::vec3& direction, float deltaTime) {
     // Assuming 'rotation' in Entity stores the orientation needed for a forward vector
     // This part might need adjustment based on how Entity::rotation is stored/used
-    glm::vec3 forwardVector = glm::vec3(sin(getRotation().y), 0, cos(getRotation().y)); // Example if rotation.y is yaw
-    // Or, if Entity has a method to get the forward direction:
-    // glm::vec3 forwardVector = getForwardDirection(); 
+    glm::vec3 forwardVector = glm::vec3(sin(getRotation().y), 0, cos(getRotation().y)); 
 
     if (sprintFlag) {
         Entity::move(direction * 2.0f, deltaTime);     // arbitrary sprint speed
@@ -85,11 +79,7 @@ void Player::move(const glm::vec3& direction, float deltaTime) {
 }
 
 void Player::castSpell() {
-    if (currentSpell != nullptr && currentSpell->getName() != "Empty") { // Check by name and ensure pointer is valid
-        // Assuming Entity has getPosition() and a way to get forward direction
-        // For targetDirection, we need a forward vector. 
-        // If Entity's 'rotation' is yaw, pitch, roll, we derive it.
-        // Let's assume rotation.y is yaw for now, similar to Application::manMoveDir
+    if (currentSpell != nullptr && currentSpell->getName() != "Empty") {
         glm::vec3 forwardDir = glm::vec3(sin(this->getRotation().y), 0, cos(this->getRotation().y));
         currentSpell->cast(this->getPosition(), forwardDir);
         std::cout << "Casting " << currentSpell->getName() << std::endl;

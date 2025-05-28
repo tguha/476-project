@@ -8,20 +8,38 @@
 // It's often better to use static const or constexpr for typed constants
 // instead of #define for better type safety and namespacing
 
-namespace Config {
-    // --- Global Game Settings ---
+namespace Config {// --- Global Game Settings (Config::<thing you want>)---
+
+    // Debugging --- set all to false for release builds
+    constexpr bool DEBUG_ENEMY_MOVEMENT = true; // Debug enemy movement
+    constexpr bool DEBUG_ROOM_PLACEMENT = false; // Debugging room placement
+    constexpr bool DEBUG_TEX_LOADING = false;
+    constexpr bool DEBUG_PLAYER_AABB = false;
+    constexpr bool DEBUG_ORB_PICKUP = false;
+    constexpr bool DEBUG_PLAYER_HP = false;
 
     // Rendering & Shaders
-    constexpr int NUM_LIGHTS = 4;
     constexpr int MAX_BONES = 200;
+    constexpr float ORTHO_SIZE = 60.0f;
+    constexpr float PARTICLES = true;
+    constexpr bool DEBUG_SHADER = true; // Sets verbose flag for shaders
+    constexpr bool DEBUG_SHADER_PARAMS = false; // Debug lighting settings
+    inline static bool SHADOW = true;
+    inline static float EXPOSURE = 0.5f; // Default exposure
+    inline static float SATURATION = 2.7f; // Default saturation
+	inline static vec3 LIGHT_COLOR = vec3(1.0f, 1.0f, 1.0f); // Default light color
+    inline static bool DEBUG_LIGHTING = false;
+    inline static bool DEBUG_GEOM = false;
 
     // UI
     constexpr bool SHOW_HEALTHBAR = true;
+	constexpr bool SHOW_MINIMAP = true;
+
     const std::string RESOURCE_DIRECTORY_PREFIX = "../resources"; // Default, can be overridden
 
     // Default Window Dimensions
-    constexpr int DEFAULT_WINDOW_WIDTH = 640;
-    constexpr int DEFAULT_WINDOW_HEIGHT = 480;
+    constexpr int DEFAULT_WINDOW_WIDTH = 1920;
+    constexpr int DEFAULT_WINDOW_HEIGHT = 1080;
 
     // Player settings
     constexpr int INVENTORY_SIZE = 8;
@@ -47,9 +65,10 @@ namespace Config {
     constexpr float ICE_ELEMENTAL_MELEE_DAMAGE = 20.0f;
     constexpr float ICE_ELEMENTAL_MELEE_SPEED = 1.0f;
     constexpr float ICE_ELEMENTAL_MELEE_RANGE = 3.0f;
+    constexpr float ICE_ELEMENTAL_AGGRO_RANGE = 10.0f; // Cooldown before enemy can attack again
 
     // Projectile settings
-    constexpr float PROJECTILE_DAMAGE = 25.0f;
+    constexpr float PROJECTILE_DAMAGE = 100.0f;
 
     // Camera settings
     constexpr float CAMERA_DEFAULT_RADIUS = 5.0f;
@@ -61,12 +80,19 @@ namespace Config {
     constexpr float CAMERA_PHI_MAX_DEGREES = -10.0f;
 
     // Gameplay
-    constexpr float GROUND_Y_LEVEL = 0.0f;
     constexpr float INTERACTION_RADIUS = 5.0f;
     constexpr float SPELL_PROJECTILE_SPEED = 20.0f;
     constexpr float SPELL_PROJECTILE_LIFETIME = 2.0f;
     constexpr glm::vec3 SPELL_PROJECTILE_SCALE = glm::vec3(0.05f, 0.05f, 0.6f);
     constexpr float SPELL_DAMAGE_AMOUNT = 25.0f;
+
+    // Scene
+    constexpr float GROUND_SIZE = 20.0f;
+    constexpr float GROUND_HEIGHT = 0.0f;
+
+    // Rotation Constants
+    constexpr float HALF_PI = glm::half_pi<float>();
+    constexpr float PI = glm::pi<float>();
 
     // --- Utility Functions ---
 

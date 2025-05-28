@@ -67,6 +67,8 @@ class LibraryGen {
             BOTTOM_BORDER,
             LEFT_BORDER,
             RIGHT_BORDER,
+            LEFT_OF_BOSS_ENTRANCE,
+            RIGHT_OF_BOSS_ENTRANCE,
         };
 
         enum class CellObjType {
@@ -87,6 +89,12 @@ class LibraryGen {
             BOOKSTAND,
         };
 
+        struct transform {
+            glm::vec3 position;
+            float rotation; // Rotation in degrees
+            glm::vec3 scale;
+        };
+
         struct Cell {
             CellType type;
             // union {
@@ -96,6 +104,7 @@ class LibraryGen {
             ClusterType clusterType = ClusterType::NONE; // Default to NONE
             BorderType borderType = BorderType::NONE; // Default to NONE
             CellObjType objectType = CellObjType::NONE; // Default to NONE
+            transform transformData = {glm::vec3(0), glm::radians(0.0f), glm::vec3(1)}; // Default transform data
 
             Cell() : type(CellType::NONE) {} // Default constructor
             Cell(CellType t) : type(t) {} // Constructor with type
@@ -196,7 +205,7 @@ class LibraryGen {
         };
 
         std::map<ClusterType, int> objAmount = {
-            {ClusterType::SHELF1, 0},
+            // {ClusterType::SHELF1, 0},
             // {ClusterType::SHELF2, 0},
             // {ClusterType::SHELF3, 0},
             {ClusterType::LAYOUT1, 0},
