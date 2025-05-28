@@ -125,6 +125,8 @@ public:
 	//key collectibles
 	std::vector<Collectible> keyCollectibles;
 	int keysCollectedCount = 0;
+	 //bool keyAlreadyExists = false;
+	 //bool enemyLastPos = false;
 
 	vector<Book> books; // vector of books to be drawn
 
@@ -1037,6 +1039,10 @@ public:
 		* KEY COLLECTIBLE IS BROKEN. THIS IS THE COMMENTED OUT PROGRESS OF MADILINE SINCE PROJECT DOESN'T COMPILE WITH IT
 		//key
 		key = new AssimpModel(resourceDirectory + "/Key_and_Lock/key.obj");
+
+		// Collectible key1 = Collectible(key, vec3(0.0, 2.0, 0.0), 0.1f,  vec3(0.9, 0.9, 0.9), SpellType::NONE);
+		// keyCollectibles.push_back(key1);
+
 
 		Collectible key1 = Collectible(key, vec3(0.0, 2.0, 0.0), 0.1f,  vec3(0.9, 0.9, 0.9), SpellType::NONE);
 		keyCollectibles.push_back(key1);
@@ -2029,20 +2035,33 @@ public:
 		for (const auto* enemy : enemies) {
 			if (!enemy || !enemy->isAlive()) {
 				// Ensure a key is added only once per dead enemy if not already present
-				// This simple check assumes positions are unique enough for dead enemies.
-				// A more robust way would be to tag enemies that have already dropped a key.
-				bool keyAlreadyExists = false;
-				for (const auto& k : keyCollectibles) {
-					// Approximate check, ideally use a unique ID from the enemy
-					if (glm::distance(k.position, enemy->getPosition()) < 0.1f) {
-						keyAlreadyExists = true;
-						break;
-					}
-				}
-				if (!keyAlreadyExists) {
-					keyCollectibles.emplace_back(key, enemy->getPosition(), 0.1f, Material::gold, SpellType::NONE);
-				}
-				// drawKey(shader, Model);
+                // This simple check assumes positions are unique enough for dead enemies.
+                // A more robust way would be to tag enemies that have already dropped a key.
+
+
+				
+                bool keyAlreadyExists = false; //some local bools and need some global bools
+				bool enemyLastPos = false;
+                for (const auto& key : keyCollectibles) {
+                    // Approximate check, ideally use a unique ID from the enemy
+                    if (glm::distance(key.position, enemy->getPosition()) < 0.1f) { 
+                        keyAlreadyExists = true;
+                        break;
+                    }
+                }
+					glm:: vec3 keyPos = enemy->getPosition();
+
+                if (!keyAlreadyExists ) { //&& !enemyLastPos
+				
+					//get enemy pos once, then don't change it until change pick it up?
+					keyPos.y = keyPos.y - 1.5f;
+					//std::cout << "key position " << keyPos.x << " " << keyPos.y << " " << keyPos.z << " " << std::endl;
+
+                    keyCollectibles.emplace_back(key, keyPos, 0.1f, vec3(0.9, 0.9, 0.9), SpellType::NONE); 
+					drawKey(shader, Model );
+					//enemyLastPos = true;
+                }
+				
 				continue; // Skip null or dead enemies
 			}
 			shader->bind();
@@ -4015,7 +4034,11 @@ public:
 		for (auto& key : keyCollectibles) {
 			// Perform collision check ONLY if not collected AND in the IDLE state
 			if (!key.collected && key.state == OrbState::IDLE && // <<<--- ADD STATE CHECK
-				checkAABBCollision(manAABBmin, manAABBmax, key.AABBmin, key.AABBmax)) {
+				//checkAABBCollision(manAABBmin, manAABBmax, key.AABBmin, key.AABBmax)
+				checkSphereCollision(player->getPosition(), 4.0f, key.AABBmin, key.AABBmax)
+				//checkSphereCollision(player->getPosition(), 2.0f, orb.AABBmin, orb.AABBmax)
+				
+				) {
 				key.collected = true;
 				// key.state = OrbState::COLLECTED; // Optionally set state
 				keysCollectedCount++;
@@ -4047,29 +4070,24 @@ public:
 			else {
 				currentDrawPosition = key.position; // Use the orb's current position (potentially animated by updateOrbs)
 			}
+
+			//std::cout << "key position " << key.position.x << " " << key.position.y << " " << key.position.z << " " << std::endl;
+
 			// --- Set up transformations ---
 			Model->pushMatrix(); {
 				Model->loadIdentity();
-				Model->translate(vec3(0.0f, 0.5f, 0.5f)); //last enemy pos
+				Model->translate(currentDrawPosition); //last enemy pos
 				Model->scale(2.0f);
 				Model->rotate(glm::radians(90.0f), vec3(1.0f, 0.0f, 0.0f));
 				Model->rotate(glm::radians(-90.0f), vec3(0.0f, 1.0f, 0.0f));
+
+
+				// --- Set Material & Draw ---
 				SetMaterial(shader, Material::gold); //gold
 				setModel(shader, Model);
 				key.model->Draw(shader);
 			} Model->popMatrix();
 		} // End drawing loop
-		// --- Set up transformations ---
-		Model->pushMatrix(); {
-			Model->loadIdentity();
-			Model->translate(vec3(0.0f, 0.5f, 0.5f)); //last enemy pos
-			Model->scale(2.0f);
-			Model->rotate(glm::radians(90.0f), vec3(1.0f, 0.0f, 0.0f));
-			Model->rotate(glm::radians(-90.0f), vec3(0.0f, 1.0f, 0.0f));
-			SetMaterial(shader, Material::gold); //gold
-			setModel(shader, Model);
-			key->Draw(shader);
-		} Model->popMatrix();
 		shader->unbind();
 	}
 
@@ -4080,6 +4098,22 @@ public:
 				key.updateLevitation(currentTime);
 			}
 		}
+	}
+
+	void removeKeys(){
+		if(keysCollectedCount <= 0){
+			cout << "[DEBUG] Cannot remove: No keys." << endl;
+			return; 
+		}	
+
+		keysCollectedCount--;
+		for(auto it = keyCollectibles.begin(); it != keyCollectibles.end(); ++it){
+			if (it->collected){
+				keyCollectibles.erase(it);
+				break;
+			}
+		}
+		
 	}
 
 	void drawBossHealthBar(glm::mat4 viewMatrix, glm::mat4 projMatrix) {
@@ -4319,9 +4353,8 @@ public:
 		else {
 			drawLock(prog, Model);
 		}
+		//drawKey(prog2, Model);
 
-		// orbCollectibles.emplace_back(sphere, orbSpawnPos, book.orbScale, book.orbColor);
-		// drawKey(prog2, Model);
 
 		drawBossEnemy(prog, Model);
 	}

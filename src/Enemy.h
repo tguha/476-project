@@ -8,7 +8,7 @@
 #include "Player.h"
 #include <GLFW/glfw3.h>
 
-#define ENEMY_HP_MAX 200.0f
+#define ENEMY_HP_MAX 50.0f //change back to 200.0f
 
 class Enemy : public Entity {
     private:
