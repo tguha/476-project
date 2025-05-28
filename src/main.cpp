@@ -2039,12 +2039,12 @@ public:
                 // A more robust way would be to tag enemies that have already dropped a key.
 
 
-				
+
                 bool keyAlreadyExists = false; //some local bools and need some global bools
 				bool enemyLastPos = false;
                 for (const auto& key : keyCollectibles) {
                     // Approximate check, ideally use a unique ID from the enemy
-                    if (glm::distance(key.position, enemy->getPosition()) < 0.1f) { 
+                    if (glm::distance(key.position, enemy->getPosition()) < 0.1f) {
                         keyAlreadyExists = true;
                         break;
                     }
@@ -2052,16 +2052,16 @@ public:
 					glm:: vec3 keyPos = enemy->getPosition();
 
                 if (!keyAlreadyExists ) { //&& !enemyLastPos
-				
+
 					//get enemy pos once, then don't change it until change pick it up?
 					keyPos.y = keyPos.y - 1.5f;
 					//std::cout << "key position " << keyPos.x << " " << keyPos.y << " " << keyPos.z << " " << std::endl;
 
-                    keyCollectibles.emplace_back(key, keyPos, 0.1f, vec3(0.9, 0.9, 0.9), SpellType::NONE); 
+                    keyCollectibles.emplace_back(key, keyPos, 0.1f, Material::key_color, SpellType::NONE);
 					drawKey(shader, Model );
 					//enemyLastPos = true;
                 }
-				
+
 				continue; // Skip null or dead enemies
 			}
 			shader->bind();
@@ -4037,7 +4037,7 @@ public:
 				//checkAABBCollision(manAABBmin, manAABBmax, key.AABBmin, key.AABBmax)
 				checkSphereCollision(player->getPosition(), 4.0f, key.AABBmin, key.AABBmax)
 				//checkSphereCollision(player->getPosition(), 2.0f, orb.AABBmin, orb.AABBmax)
-				
+
 				) {
 				key.collected = true;
 				// key.state = OrbState::COLLECTED; // Optionally set state
@@ -4103,8 +4103,8 @@ public:
 	void removeKeys(){
 		if(keysCollectedCount <= 0){
 			cout << "[DEBUG] Cannot remove: No keys." << endl;
-			return; 
-		}	
+			return;
+		}
 
 		keysCollectedCount--;
 		for(auto it = keyCollectibles.begin(); it != keyCollectibles.end(); ++it){
@@ -4113,7 +4113,7 @@ public:
 				break;
 			}
 		}
-		
+
 	}
 
 	void drawBossHealthBar(glm::mat4 viewMatrix, glm::mat4 projMatrix) {
@@ -4721,7 +4721,7 @@ public:
 			canFightboss = true;
 		}
 		if (key == GLFW_KEY_K && action == GLFW_PRESS) {
-			//Debug Camera 
+			//Debug Camera
 			debugCamera = !debugCamera;
 		}
 		if (debugCamera && key == GLFW_KEY_N && action == GLFW_PRESS) {

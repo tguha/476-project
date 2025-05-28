@@ -66,6 +66,7 @@ enum class Material {
     defaultMaterial,
     blue_body,
     gold,
+    key_color
 };
 
 // Helper function to map each <Material> to a base color for particles (or fallback white)
@@ -87,6 +88,7 @@ inline glm::vec3 materialToColor(Material m) {
     case Material::defaultMaterial:   return glm::vec3(0.5f);
     case Material::blue_body:         return glm::vec3(0.35f, 0.4f, 0.914f);
     case Material::gold:              return glm::vec3(1.0f, 0.766f, 0.336f);
+    case Material::key_color:         return glm::vec3(0.9, 0.9, 0.9); // Example key color
     default:                          return glm::vec3(1.0f); // fallback white
     }
 };
