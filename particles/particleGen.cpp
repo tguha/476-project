@@ -12,13 +12,9 @@
 #include "../src/Config.h"
 
 using namespace std;
-//TODO: make the particle have like a trail effect
-//TODO: togglable particle effects
-//TODO: SIMD look up optimization
-//TODO: have the spells rotate around the character
 
 particleGen::particleGen(vec3 source, float r_l, float r_h, float g_l, float g_h, float b_l, float b_h, float scale_l, float scale_h)
-{
+{ // manages entire collection of particles, creates them, updates their state each frame, sends data to GPU, draws them
 	t = 0.0f;
 	h = 0.01f;
 	g = vec3(0.0f, -0.098, 0.0f);
@@ -35,9 +31,9 @@ particleGen::particleGen(vec3 source, float r_l, float r_h, float g_l, float g_h
 	scale_high = scale_h;
 }
 
-void particleGen::gpuSetup() {
+void particleGen::gpuSetup() { // INITIALIZATION creates particle objects stores in particles vector, each particle load()ed, does VAO and VBO stuff
 	glEnable(GL_PROGRAM_POINT_SIZE);
-	//cout << numP << endl;
+	//cout << numP << endl; basically just cpu side arrays that hold position, color, scale data for particles, copied to gpu buffers each frame
  	for (int i=0; i < numP; i++) {
 		points[i * 3 + 0] = start.x;
 		points[i * 3 + 1] = start.y;
@@ -93,7 +89,7 @@ void particleGen::reSet() {
 	}
 }
 
-void particleGen::drawMe(std::shared_ptr<Program> prog) {
+void particleGen::drawMe(std::shared_ptr<Program> prog) { // rendering with instancing and blending
     // Enable blending for transparent particles
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE); // Additive blending for more fiery type stuff
@@ -143,7 +139,7 @@ void particleGen::drawMe(std::shared_ptr<Program> prog) {
     glDisable(GL_BLEND);
 }
 
-void particleGen::update(float frameTime) {
+void particleGen::update(float frameTime) { // per frame logic, sorting, GPU sync
   vec3 pos;
   vec4 col;
 
@@ -213,7 +209,7 @@ void particleGen::deleteOldestParticleGroup(const int PARTICLES_PER_SPRAY, Entit
 	}
 }
 
-// Implementation for spawning a burst of particles
+// Implementation for spawning a burst of particles, recycles particles from main particles vector by checking tEnd
 void particleGen::spawnParticleBurst(const glm::vec3& position, 
                                      const glm::vec3& base_direction, 
                                      int count, 
@@ -228,7 +224,7 @@ void particleGen::spawnParticleBurst(const glm::vec3& position,
     int spawned_count = 0;
     for (int i = 0; i < particles.size() && spawned_count < count; ++i) {
         if (current_time > particles[i]->getTEnd()) { // Check if particle is available
-            // Calculate randomized direction
+            // Calculate randomized direction, make it fly out in a cone, basically everything randomized using randfloat and particle color interpolated
             glm::vec3 random_offset = glm::vec3(
                 Config::randFloat(-spread, spread),
                 Config::randFloat(-spread, spread),

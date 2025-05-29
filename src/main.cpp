@@ -39,6 +39,7 @@
 #include "GameObjectTypes.h"
 #include "../particles/particleGen.h"
 #include "TextureManager.h"
+#include "Quadtree.h"
 
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -565,7 +566,7 @@ public:
 
 		if (action == GLFW_PRESS)
 		{
-			shootSpell(); // Changed from shootSpell
+			this->shootSpell(); // Changed from shootSpell
 		}
 	}
 
@@ -1788,11 +1789,11 @@ public:
 			}
 			enemies.clear();
 
-		for (const auto& spawnPos : enemySpawnPositions) {
-			// enemies.push_back(new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.z), ENEMY_HP_MAX, 2.0f, iceElemental, vec3(1.0f), vec3(0.0f)));
-			keysneededToCollect++; // Increment the key count for each enemy spawned
+			for (const auto& spawnPos : enemySpawnPositions) {
+				// enemies.push_back(new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.z), ENEMY_HP_MAX, 2.0f, iceElemental, vec3(1.0f), vec3(0.0f)));
+				keysneededToCollect++; // Increment the key count for each enemy spawned
 
-			// cout << " Enemy placed at: (" << spawnPos.x << ", " << spawnPos.y << ", " << spawnPos.z << ")" << endl;
+				// cout << " Enemy placed at: (" << spawnPos.x << ", " << spawnPos.y << ", " << spawnPos.z << ")" << endl;
 
 				// randomize enemy type, but make sure there is at least one of each type
 				static bool guaranteed[3] = {false, false, false};
@@ -1822,6 +1823,7 @@ public:
 				else if (enemyType == 2) {
 					enemies.push_back(new LightningElemental(vec3(spawnPos.x, Config::LIGHTNING_ELEMENTAL_TRANS_Y, spawnPos.z), Config::LIGHTNING_ELEMENTAL_HP_MAX, Config::LIGHTNING_ELEMENTAL_MOVE_SPEED, lightningElemental, vec3(0.1f, 0.1f, 0.1f), vec3(0.0f)));
 				}
+			}
 		}
 	}
 
@@ -4458,7 +4460,7 @@ public:
 		for (auto& key : keyCollectibles) {
 			// Perform collision check ONLY if not collected AND in the IDLE state
 			if (!key.collected && key.state == OrbState::IDLE && // <<<--- ADD STATE CHECK
-				checkAABBCollision(manAABBmin, manAABBmax, key.AABBmin, key.AABBmax)) {
+				checkAABBCollision(playerBB->min, playerBB->max, key.AABBmin, key.AABBmax)) {
 				key.collected = true;
 				// key.state = OrbState::COLLECTED; // Optionally set state
 				keysCollectedCount++;
@@ -4633,7 +4635,7 @@ public:
 		glUniformMatrix4fv(shader->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
 		glUniformMatrix4fv(shader->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
 
-		// build model: translate to center, then scale to half‐size
+		// build model: translate to center, then scale to half-size
 		vec3 center = (min + max) * 0.5f;
 		vec3 half = (max - min) * 0.5f;
 		mat4 M = translate(mat4(1.0f), center) * scale(mat4(1.0f), half);
@@ -4715,6 +4717,8 @@ public:
 		drawLibrary(prog, Model, true);
 
 		drawBossRoom(prog, Model, true); // Draw the boss room
+
+		#endif // Closing the #else from #if USE_INSTANCING
 
 		// disable color writes
 		glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
@@ -5116,6 +5120,7 @@ public:
 			drawLibGrnd(ShadowProg, Model);
 			drawBossRoom(ShadowProg, Model, false); //boss room not drawing
 			drawEnemies(ShadowProg, Model);
+			#endif
 			ShadowProg->unbind();
 		}
 
@@ -5254,7 +5259,7 @@ public:
 		// Shoot fireball with SPACEBAR
 		if (key == GLFW_KEY_SPACE && action == GLFW_PRESS) {
 			if (player->isAlive()) { // Only shoot if alive
-				shootSpell();
+				this->shootSpell();
 			}
 		}
 
