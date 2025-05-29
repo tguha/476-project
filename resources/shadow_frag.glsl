@@ -25,6 +25,13 @@ uniform bool texOnly;
 uniform float exposure;
 uniform float saturation;
 
+const int PRINTS_MAX = 16;
+const float PRINTS_LIFETIME = 5.0f; // seconds
+uniform int pawCount;
+uniform vec4 pawData[PRINTS_MAX]; // .xy = world XZ, .z = angle, .w = spawnTime
+uniform float curTime;
+uniform sampler2D pawTex;
+
 in pass_struct {
    vec3 fPos;
    vec3 fragNor;
@@ -197,11 +204,35 @@ void main() {
         c = mix(c, vec3(0.7,0.1,0.1), enemyAlpha);
     }
 
-    FragColor = vec4(c, 1.0);
-}
+    if (pawCount != 0) {
+        float stamp = 0.0;
+	    vec2 worldXZ = info_struct.fPos.xz;
+        vec3 pawCol = vec3(0.0);
 
-/*
-void main() {
-    FragColor = texture(uMaps[0], info_struct.vTexCoord);
+	    for (int i = 0; i < pawCount; ++i) {
+		    float age = curTime - pawData[i].w;
+		    if (age < 0.0 || age > PRINTS_LIFETIME) continue;
+		    float fade = 1.0 - (age / PRINTS_LIFETIME);
+
+		    vec2 d = worldXZ - pawData[i].xy;
+            
+            float theta = pawData[i].z;
+		    float c = cos(theta), s = sin(theta);
+		    vec2 rot = vec2(d.x * c - d.y * s, d.x * s + d.y * c);
+		    vec2 uv = (rot / 0.2) + 0.5; // the division here adjusts the size of the paw prints
+
+		    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
+			    continue;
+		    }
+
+		    float mask = texture(pawTex, uv).r * fade;
+		    stamp = max(stamp, mask);
+	    }
+
+	    vec3 outRGB = mix(c, pawCol, stamp);
+
+	    FragColor = vec4(outRGB, 1.0);
+    } else {
+        FragColor = vec4(c, 1.0);
+    }
 }
-*/

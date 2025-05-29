@@ -56,7 +56,6 @@ public:
 	int window_height = Config::DEFAULT_WINDOW_HEIGHT;
 
 	// Our shader programs
-	// Our shader programs
 	shared_ptr<Program> particleProg;
 	shared_ptr<Program> DepthProg;
 	shared_ptr<Program> DepthProgDebug;
@@ -83,6 +82,7 @@ public:
 	shared_ptr<Texture> libraryGroundTex;
 	shared_ptr<Texture> carpetTex;
 	shared_ptr<Texture> particleAlphaTex;
+	shared_ptr<Texture> pawTex;
 
 	vector<WallObject> borderWalls;
 	std::set<WallObjKey> borderWallKeys; // Set to track unique keys
@@ -153,7 +153,6 @@ public:
 	glm::vec3 start_lightcycle1_pos = glm::vec3(-384, -11, 31);
 	glm::vec3 start_lightcycle2_pos = glm::vec3(-365, -11, 9.1);
 
-
 	float theta = glm::radians(Config::CAMERA_DEFAULT_THETA_DEGREES); // controls yaw
 	float phi = glm::radians(Config::CAMERA_DEFAULT_PHI_DEGREES); // controls pitch
 	float radius = Config::CAMERA_DEFAULT_RADIUS;
@@ -169,7 +168,6 @@ public:
 
 	bool mouseIntialized = false;
 	double lastX, lastY;
-
 
 	int debug = 0;
 	int debug_pos = 0;
@@ -263,7 +261,33 @@ public:
 	std::vector<glm::mat4> vchestMatrices;
 	std::vector<glm::mat4> vcandelabraMatrices;
 	std::vector<glm::mat4> vclockMatrices;
+  
+  // --- Paw Prints ---
+	// CPU: record and upload a list of paw prints
+	// maintain up to a maximum and replace the oldest when adding a new print
+	// GPU: handles everything else
+	deque<PawPrint> prints;
+	void onStep(vec3 worldPos, float facingAngle) {
+		vec2 cur{ worldPos.x, worldPos.z };
 
+		vec2 moveDelta = cur - Config::LAST_PAW_POS;
+		if (glm::length(moveDelta) < Config::MIN_PAW_DIST)
+			return;  // not far enough to step
+
+		glm::vec2 forward2D = glm::normalize(moveDelta);
+
+		glm::vec2 lateral = glm::vec2(-forward2D.y, forward2D.x);
+
+		float side = Config::LEFT_PAW ? +1.0f : -1.0f;
+		Config::LEFT_PAW = !Config::LEFT_PAW; // alternate left/right
+
+		glm::vec2 footPos = cur + lateral * (side * Config::PAW_SPACING);
+
+		prints.push_back({ footPos, facingAngle, float(glfwGetTime()) }); // record it
+		if (prints.size() > Config::PRINTS_MAX) prints.pop_front(); // remove oldest print
+		Config::LAST_PAW_POS = cur;
+	}
+  
 	// Set up the FBO for storing the light's depth map
 	void initShadow() {
 		glGenFramebuffers(1, &depthMapFBO); // Generate FBO for shadow depth
@@ -456,30 +480,27 @@ public:
 		ShadowProg->addAttribute("vertNor");
 		ShadowProg->addAttribute("vertTex");
 		ShadowProg->addAttribute("InstancedOffset");
-
 		ShadowProg->addUniform("uMaps");
 		ShadowProg->addUniform("shadowDepth");
-
 		ShadowProg->addUniform("hasMaterial");
 		ShadowProg->addUniform("hasBones");
 		ShadowProg->addUniform("hasInstancing");
-
 		ShadowProg->addUniform("MatAlbedo");
 		ShadowProg->addUniform("MatRough");
 		ShadowProg->addUniform("MatMetal");
 		ShadowProg->addUniform("MatEmit");
-
 		ShadowProg->addUniform("enemyAlpha");
-
 		ShadowProg->addUniform("texOnly");
-
 		ShadowProg->addUniform("exposure");
 		ShadowProg->addUniform("saturation");
-
-		for (int i = 0; i < Config::MAX_BONES; i++) {
-			ShadowProg->addUniform("finalBonesMatrices[" + to_string(i) + "]");
-		}
-
+		for (int i = 0; i < Config::MAX_BONES; i++) ShadowProg->addUniform("finalBonesMatrices[" + to_string(i) + "]");
+		ShadowProg->addUniform("pawCount");
+		ShadowProg->addUniform("pawData");
+		ShadowProg->addUniform("pawTex");
+		ShadowProg->addUniform("curTime");
+		ShadowProg->addAttribute("vertPos");
+		ShadowProg->addAttribute("vertNor");
+		ShadowProg->addAttribute("vertTex");
 		ShadowProg->bind();
 		GLint loc = ShadowProg->getUniform("uMaps");
 		GLint units[6] = { 0,1,2,3,4,5 };
@@ -521,6 +542,12 @@ public:
 		redFlashProg->addUniform("alpha");
 
 		updateCameraVectors();
+
+		pawTex = make_shared<Texture>();
+		pawTex->setFilename(resourceDirectory + "/paw_print.png");
+		pawTex->init();
+		pawTex->setUnit(11);
+		pawTex->setWrapModes(GL_REPEAT, GL_REPEAT);
 
 		borderWallTex = make_shared<Texture>();
 		//borderWallTex->setFilename(resourceDirectory + "/sky_sphere/sky_sphere.fbm/infinite_lib2.png");
@@ -1444,7 +1471,24 @@ public:
 
 		shader->bind(); // Bind the simple shader
 
-		// glUniform1i(shader->getUniform("hasTexture"), 1); // Set texture uniform
+		if (shader == ShadowProg && Config::DRAW_PAW_PRINTS) {
+			int num = (int)prints.size(); // only draw as many paw prints as we have left (removed on timer)
+			vec4 pawArr[Config::PRINTS_MAX];
+			for (int i = 0; i < num; ++i) {
+				pawArr[i].x = prints[i].pos.x;
+				pawArr[i].y = prints[i].pos.y;
+				pawArr[i].z = prints[i].angle;
+				pawArr[i].w = prints[i].spawnTime;
+			}
+
+			glUniform1i(shader->getUniform("pawCount"), num);
+			glUniform4fv(shader->getUniform("pawData"), num, value_ptr(pawArr[0]));
+			glUniform1f(shader->getUniform("curTime"), (float)glfwGetTime());
+
+			glActiveTexture(GL_TEXTURE0 + pawTex->getUnit());
+			glBindTexture(GL_TEXTURE_2D, pawTex->getID());
+			glUniform1i(shader->getUniform("pawTex"), pawTex->getUnit());
+		}
 
 		for (const auto& libGrnd : libraryGrounds) {
 			glBindVertexArray(libGrnd.VAO); // Bind each library ground VAO
@@ -1458,7 +1502,9 @@ public:
 			Model->loadIdentity();
 			setModel(shader, Model);
 
+			glUniformMatrix4fv(shader->getUniform("M"), 1, GL_FALSE, value_ptr(Model->topMatrix()));
 			SetMaterial(shader, Material::wood);
+
 			glDrawElements(GL_TRIANGLES, libGrnd.GiboLen, GL_UNSIGNED_SHORT, 0);
 			Model->popMatrix();
 
@@ -1469,11 +1515,11 @@ public:
 			}
 		}
 
+		if (shader->hasUniform("pawCount")) glUniform1i(shader->getUniform("pawCount"), 0);
 		glBindVertexArray(0); // Unbind VAO after drawing all library grounds
 
 		shader->unbind(); // Unbind the simple shader
 	}
-
 
 	void initWall(float length, vec3 pos, vec3 dir, float height,
 		GLuint& WallVertexArrayID, GLuint& WallBuffObj, GLuint& WallNormBuffObj, GLuint& WIndxBuffObj, GLuint& WallTexBuffObj, int& w_GiboLen) {
@@ -2068,10 +2114,10 @@ public:
 				if (!enemy->dropSpawned) {
 					glm::vec3 keyPos = enemy->getPosition();
 					keyPos.y -= 1.5f; // Adjust height for key position
-					keyCollectibles.emplace_back(key, keyPos, 0.1f, Material::key_color, SpellType::NONE);
+          keyCollectibles.emplace_back(key, keyPos, 0.1f, Material::gold, SpellType::NONE); 
 					enemy->setDropSpawned(true); // Mark that the key has been spawned
 				}
-
+        
 				continue; // Skip null or dead enemies
 			}
 			shader->bind();
@@ -4320,6 +4366,7 @@ public:
 		#if USE_INSTANCING
 		drawLibInstancing(prog, false); // Draw the library shelves without culling
 		#else
+
 		// 2. Draw the Static Library Shelves
 		drawLibrary(prog, Model, true);
 
@@ -4555,7 +4602,11 @@ public:
 			ShadowProg->unbind();
 		}
 
-		if (Config::PARTICLES && particleProg) {
+		//===================
+		// Second Pass Cont.
+		//===================
+
+		if (Config::DRAW_PARTICLES) {
 			particleProg->bind();
 			// glPointSize(10.0f); // Remove this line, size is now per-particle in shader
 			glUniformMatrix4fv(particleProg->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
@@ -4566,7 +4617,7 @@ public:
 			particleProg->unbind();
 		}
 
-		if (Config::SHOW_HEALTHBAR) { // Draw the health bar
+		if (Config::DRAW_HEALTHBAR) { // Draw the health bar
 			//cout << "Drawing healthbar" << endl;
 			drawHealthBar();
 			drawEnemyHealthBars(View->topMatrix(), Projection->topMatrix());
@@ -4576,7 +4627,7 @@ public:
 			}
 		}
 
-		if (player->getDamageTimer() > 0.0f) {
+		if (Config::DRAW_PLAYER_DAMAGE && player->getDamageTimer() > 0.0f) {
 			player->setDamageTimer(player->getDamageTimer() - frametime);
 
 			float alpha = player->getDamageTimer() / Config::PLAYER_HIT_DURATION;
@@ -4585,7 +4636,7 @@ public:
 
 			drawDamageIndicator(alpha);
 		}
-		else if (!player->isAlive() && !debugCamera) {
+		else if (Config::DRAW_PLAYER_DAMAGE && !player->isAlive() && !debugCamera) {
 			// If player is dead, show red flash
 			movingForward = false;
 			movingBackward = false;
@@ -4594,7 +4645,7 @@ public:
 			drawDamageIndicator(1.0f);
 		}
 
-		if (Config::SHOW_MINIMAP) { // Draw the mini map
+		if (Config::DRAW_MINIMAP) { // Draw the mini map
 			ShadowProg->bind();
 			//cout << "Drawing minimap" << endl;
 			glClear(GL_DEPTH_BUFFER_BIT);
@@ -4667,6 +4718,7 @@ public:
 					cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
 					cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
 				}
+				onStep(player->getPosition(), player->getRotY());
 			}
 			else if (key == GLFW_KEY_W && action == GLFW_RELEASE) {
 				//Movement Variable
@@ -4682,6 +4734,7 @@ public:
 					cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
 				}
 
+				onStep(player->getPosition(), player->getRotY());
 			}
 			else if (key == GLFW_KEY_S && action == GLFW_RELEASE) {
 				//Movement Variable
@@ -4697,6 +4750,7 @@ public:
 					cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
 				}
 
+				onStep(player->getPosition(), player->getRotY());
 			}
 			else if (key == GLFW_KEY_A && action == GLFW_RELEASE) {
 
@@ -4712,6 +4766,8 @@ public:
 					cout << "eye: " << eye.x << " " << eye.y << " " << eye.z << endl;
 					cout << "lookAt: " << lookAt.x << " " << lookAt.y << " " << lookAt.z << endl;
 				}
+
+				onStep(player->getPosition(), player->getRotY());
 			}
 			else if (key == GLFW_KEY_D && action == GLFW_RELEASE) {
 				//Movement Variable

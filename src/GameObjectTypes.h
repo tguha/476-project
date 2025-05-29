@@ -169,6 +169,12 @@ struct AABB {
     vec3 max;
 };
 
+struct PawPrint {
+    vec2 pos;
+    float angle;
+    float spawnTime;
+};
+
 // --- Classes ---
 class Book {
 public:
