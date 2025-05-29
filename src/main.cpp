@@ -63,6 +63,7 @@ public:
 	shared_ptr<Program> DebugProg;
 	shared_ptr<Program> hudProg;
 	shared_ptr<Program> redFlashProg;
+	shared_ptr<Program> SkyboxProg;
 
 	// ground data - Reused for all flat ground planes
 	GLuint GrndBuffObj = 0, GrndNorBuffObj = 0, GIndxBuffObj = 0; // Initialize to 0
@@ -83,6 +84,11 @@ public:
 	shared_ptr<Texture> carpetTex;
 	shared_ptr<Texture> particleAlphaTex;
 	shared_ptr<Texture> pawTex;
+	
+	// Skybox texture and VAO/VBO
+	GLuint skyboxCubemap;
+	GLuint skyboxCubeVAO = 0;
+	GLuint skyboxCubeVBO = 0;
 
 	vector<WallObject> borderWalls;
 	std::set<WallObjKey> borderWallKeys; // Set to track unique keys
@@ -118,7 +124,6 @@ public:
 	AssimpModel *candelabra, *chest, *library_bench, *low_poly_bookshelf, *table_chairs1, *table_chairs2, *grandfather_clock, *bookstand, *door;
 	AssimpModel *healthBar;
 	AssimpModel *cube, *sphere;
-	AssimpModel *sky_sphere;
 	AssimpModel *border, *lock, *lockHandle, *key;
 	AssimpModel *bookCover, *bookPaper;
 
@@ -307,6 +312,105 @@ public:
 		glBindFramebuffer(GL_FRAMEBUFFER, 0); // Unbind the framebuffer
 	}
 
+	void initSkyboxCube() {
+		static const float skyboxVertices[] = {
+		// back face
+		-1.0f,  1.0f, -1.0f,
+		-1.0f, -1.0f, -1.0f,
+		1.0f, -1.0f, -1.0f,
+		1.0f, -1.0f, -1.0f,
+		1.0f,  1.0f, -1.0f,
+		-1.0f,  1.0f, -1.0f,
+		// front face
+		-1.0f, -1.0f,  1.0f,
+		-1.0f,  1.0f,  1.0f,
+		1.0f,  1.0f,  1.0f,
+		1.0f,  1.0f,  1.0f,
+		1.0f, -1.0f,  1.0f,
+		-1.0f, -1.0f,  1.0f,
+		// left face
+		-1.0f,  1.0f,  1.0f,
+		-1.0f,  1.0f, -1.0f,
+		-1.0f, -1.0f, -1.0f,
+		-1.0f, -1.0f, -1.0f,
+		-1.0f, -1.0f,  1.0f,
+		-1.0f,  1.0f,  1.0f,
+		// right face
+		1.0f,  1.0f, -1.0f,
+		1.0f,  1.0f,  1.0f,
+		1.0f, -1.0f,  1.0f,
+		1.0f, -1.0f,  1.0f,
+		1.0f, -1.0f, -1.0f,
+		1.0f,  1.0f, -1.0f,
+		// bottom face
+		-1.0f, -1.0f, -1.0f,
+		1.0f, -1.0f, -1.0f,
+		1.0f, -1.0f,  1.0f,
+		1.0f, -1.0f,  1.0f,
+		-1.0f, -1.0f,  1.0f,
+		-1.0f, -1.0f, -1.0f,
+		// top face
+		-1.0f,  1.0f,  1.0f,
+		1.0f,  1.0f,  1.0f,
+		1.0f,  1.0f, -1.0f,
+		1.0f,  1.0f, -1.0f,
+		-1.0f,  1.0f, -1.0f,
+		-1.0f,  1.0f,  1.0f
+		};
+
+		glGenVertexArrays(1, &skyboxCubeVAO);
+		glGenBuffers(1, &skyboxCubeVBO);
+
+		glBindVertexArray(skyboxCubeVAO);
+		glBindBuffer(GL_ARRAY_BUFFER, skyboxCubeVBO);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(skyboxVertices), skyboxVertices, GL_STATIC_DRAW);
+
+		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+		glBindVertexArray(0);
+	}
+
+	void initSkyboxTex(string resourceDirectory) {
+		glGenTextures(1, &skyboxCubemap);
+		glBindTexture(GL_TEXTURE_CUBE_MAP, skyboxCubemap);
+
+		vector<string> faces = {
+			resourceDirectory + "/skyboxTex/px.png",
+			resourceDirectory + "/skyboxTex/nx.png",
+			resourceDirectory + "/skyboxTex/py.png",
+			resourceDirectory + "/skyboxTex/ny.png",
+			resourceDirectory + "/skyboxTex/pz.png",
+			resourceDirectory + "/skyboxTex/nz.png"
+		};
+
+		for (GLuint i = 0; i < faces.size(); i++) {
+			int w, h, n;
+			unsigned char* data = stbi_load(faces[i].c_str(), &w, &h, &n, 0);
+			if (data) {
+				GLenum format = (n == 4 ? GL_RGBA : GL_RGB);
+				glTexImage2D(
+					GL_TEXTURE_CUBE_MAP_POSITIVE_X + i,
+					0, format, w, h, 0,
+					format, GL_UNSIGNED_BYTE, data
+				);
+				stbi_image_free(data);
+			}
+			else {
+				std::cerr << "Failed to load skybox face " << faces[i] << std::endl;
+				stbi_image_free(data);
+			}
+		}
+
+		// Set filtering and wraping
+		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+
+		glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
+	}
+
 	void updateCameraVectors() {
 		if (!debugCamera) {
 			//Activate Player Camera
@@ -457,6 +561,11 @@ public:
 		DebugProg->setShaderNames(resourceDirectory + "/pass_vert.glsl", resourceDirectory + "/pass_texfrag.glsl");
 		DebugProg->init();
 
+		SkyboxProg = make_shared<Program>();
+		SkyboxProg->setVerbose(Config::DEBUG_SHADER);
+		SkyboxProg->setShaderNames(resourceDirectory + "/skybox_vert.glsl", resourceDirectory + "/skybox_frag.glsl");
+		SkyboxProg->init();
+
 		// Add unfigorm and attrubutes to each of the programs
 		DepthProg->addUniform("LP");
 		DepthProg->addUniform("LV");
@@ -538,8 +647,11 @@ public:
 		redFlashProg->init();
 		redFlashProg->addUniform("projection");
 		redFlashProg->addUniform("model");
-		//redFlashProg->addUniform("color");
 		redFlashProg->addUniform("alpha");
+
+		SkyboxProg->addUniform("P");
+		SkyboxProg->addUniform("V");
+		SkyboxProg->addUniform("skyTex");
 
 		updateCameraVectors();
 
@@ -550,7 +662,6 @@ public:
 		pawTex->setWrapModes(GL_REPEAT, GL_REPEAT);
 
 		borderWallTex = make_shared<Texture>();
-		//borderWallTex->setFilename(resourceDirectory + "/sky_sphere/sky_sphere.fbm/infinite_lib2.png");
 		borderWallTex->setFilename(resourceDirectory + "/Wall/textures/mossCastle.png");
 		borderWallTex->init();
 		borderWallTex->setUnit(0);
@@ -1051,9 +1162,6 @@ public:
 
 		door = new AssimpModel(resourceDirectory + "/cluster_assets/door/door.obj");
 		door->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/door/Door_diffuse.png");
-
-		sky_sphere = new AssimpModel(resourceDirectory + "/sky_sphere/skybox_sphere.obj");
-		sky_sphere->assignTexture("texture_diffuse", resourceDirectory + "/sky_sphere/sky_sphere.fbm/infinite_lib2.png");
 
 		sphere = new AssimpModel(resourceDirectory + "/SmoothSphere.obj");
 
@@ -1851,17 +1959,39 @@ public:
 		shader->unbind();
 	}
 
-	void drawSkybox(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
-		shader->bind(); // Use prog2 for simple colored shapes
-		Model->pushMatrix(); {
-			Model->loadIdentity();
-			Model->translate(vec3(bossAreaCenter.x, bossAreaCenter.y, bossAreaCenter.z - 20)); // Center the sky sphere at the player position
-			Model->scale(vec3(5.0f)); // Scale up the sky sphere to cover the scene
-			setModel(shader, Model);
-			sky_sphere->Draw(shader);
-		} Model->popMatrix();
+	void drawSkybox(shared_ptr<Program> shader, const shared_ptr<MatrixStack>& Projection, const shared_ptr<MatrixStack>& View) {
+		// disable depth writes and set test
+		glDepthMask(GL_FALSE);
+		glDepthFunc(GL_LEQUAL);
+
+		shader->bind();
+		glUniformMatrix4fv(shader->getUniform("P"),
+			1, GL_FALSE,
+			glm::value_ptr(Projection->topMatrix()));
+
+		glm::mat4 view = View->topMatrix();
+		view[3] = glm::vec4(0, 0, 0, 1);
+		glUniformMatrix4fv(shader->getUniform("V"),
+			1, GL_FALSE,
+			glm::value_ptr(view));
+
+		// bind cubemap
+		glActiveTexture(GL_TEXTURE0 + 12);
+		glBindTexture(GL_TEXTURE_CUBE_MAP, skyboxCubemap);
+		glUniform1i(shader->getUniform("skyTex"), 12);
+
+		// draw cube VAO
+		glBindVertexArray(skyboxCubeVAO);
+		glDrawArrays(GL_TRIANGLES, 0, 36);
+		glBindVertexArray(0);
+
 		shader->unbind();
+
+		// restore depth state
+		glDepthMask(GL_TRUE);
+		glDepthFunc(GL_LESS);
 	}
+
 
 	//TODO: Add particle effects to orbs
 	void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
@@ -4338,9 +4468,6 @@ public:
 		//Test drawing cat model
 		//drawCat(assimptexProg, Model);
 
-
-		// drawSkybox(assimptexProg, Model); // Draw the skybox last
-
 		//testing drawing lock and key
 		if (unlock) {
 			updateLock(prog, Model);
@@ -4414,8 +4541,6 @@ public:
 
 		//Test drawing cat model
 		//drawCat(assimptexProg, Model);
-
-		// drawSkybox(assimptexProg, Model); // Draw the skybox last
 
 		//testing drawing lock and key
 		if (unlock) {
@@ -4548,6 +4673,7 @@ public:
 		// ===================================================
 		glViewport(0, 0, width, height); // Return viewport to screen size
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // Clear framebuffer
+		drawSkybox(SkyboxProg, Projection, View);
 
 		// Setup Camera
 		Projection->pushMatrix();
@@ -4907,6 +5033,8 @@ int main(int argc, char* argv[]) {
 	application->initGeom(resourceDir);
 	application->initGround();
 	application->initQuadTree();
+	application->initSkyboxCube();
+	application->initSkyboxTex(resourceDir);
 	#if USE_INSTANCING
 	application->initInstancingMatrices();
 	#endif
