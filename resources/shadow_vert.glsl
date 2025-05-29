@@ -10,6 +10,7 @@ layout(location = 3) in ivec4 boneIds;
 layout(location = 4) in vec4 weights;
 layout(location = 5) in vec3 vertTan;
 layout(location = 6) in vec3 vertBitan;
+layout(location = 7) in mat4 InstancedOffset; // For instancing
 
 uniform mat4 P;
 uniform mat4 V;
@@ -21,6 +22,8 @@ uniform vec3 lightDir; // Light direction
 uniform mat4 finalBonesMatrices[MAX_BONES];
 
 uniform bool hasBones;
+
+uniform bool hasInstancing;
 
 out pass_struct {
 	vec3 fPos;		// World space position
@@ -76,5 +79,8 @@ void main() {
 	);
 	info_struct.TBN = TBN; // Pass to fragment shader
 
-	gl_Position = P * V * M * finalPosition; // Final vertex position
+	// gl_Position = P * V * M * finalPosition; // Final vertex position
+
+	mat4 model = hasInstancing ? InstancedOffset : M; // Use instancing offset if available
+	gl_Position = P * V * model * finalPosition; // Final vertex position with instancing support
 }

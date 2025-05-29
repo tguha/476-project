@@ -67,6 +67,8 @@ class LibraryGen {
             BOTTOM_BORDER,
             LEFT_BORDER,
             RIGHT_BORDER,
+            LEFT_OF_BOSS_ENTRANCE,
+            RIGHT_OF_BOSS_ENTRANCE,
         };
 
         enum class CellObjType {

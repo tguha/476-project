@@ -75,7 +75,7 @@ void AssimpMesh::Draw(const std::shared_ptr<Program> prog) const {
         if (t.type == "texture_emission")   ids[5] = t.id;
     }
 
-    // bind each either to the real map or your 1×1 fallback
+    // bind each either to the real map or your 1ï¿½1 fallback
     for (int i = 0; i < 6; ++i) {
         glActiveTexture(GL_TEXTURE0 + i);
         GLuint toBind = ids[i]

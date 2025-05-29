@@ -69,6 +69,7 @@ namespace Config {// --- Global Game Settings (Config::<thing you want>)---
     constexpr float ICE_ELEMENTAL_MELEE_DAMAGE = 20.0f;
     constexpr float ICE_ELEMENTAL_MELEE_SPEED = 1.0f;
     constexpr float ICE_ELEMENTAL_MELEE_RANGE = 3.0f;
+    constexpr float ICE_ELEMENTAL_AGGRO_RANGE = 10.0f; // Cooldown before enemy can attack again
 
     // Projectile settings
     constexpr float PROJECTILE_DAMAGE = 100.0f;
