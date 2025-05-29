@@ -35,7 +35,8 @@ enum class SpellType {
     NONE,
     FIRE,
     ICE,
-    LIGHTNING
+    LIGHTNING,
+    HEAL
 };
 
 typedef enum SpellSlot {
@@ -65,6 +66,8 @@ enum class Material {
     mini_map,
     defaultMaterial,
     blue_body,
+    red_body,
+    yellow_body,
     gold,
     key_color
 };
@@ -87,6 +90,8 @@ inline glm::vec3 materialToColor(Material m) {
     case Material::mini_map:          return glm::vec3(0.65f, 0.45f, 0.25f);
     case Material::defaultMaterial:   return glm::vec3(0.5f);
     case Material::blue_body:         return glm::vec3(0.35f, 0.4f, 0.914f);
+    case Material::red_body:          return glm::vec3(0.914f, 0.0f, 0.0f);
+    case Material::yellow_body:       return glm::vec3(0.0f, 0.914f, 0.0f);
     case Material::gold:              return glm::vec3(1.0f, 0.766f, 0.336f);
     case Material::key_color:         return glm::vec3(0.9, 0.9, 0.9); // Example key color
     default:                          return glm::vec3(1.0f); // fallback white
@@ -117,6 +122,10 @@ struct SpellProjectile {
         localAABBMin_logical = glm::vec3(-s, -s, -s);
         localAABBMax_logical = glm::vec3(s, s, s);
         active = true;
+    }
+
+    void setLifetime(float time) {
+        lifetime = time;
     }
 };
 
@@ -204,6 +213,9 @@ public:
             break;
         case SpellType::LIGHTNING:
             orbColor = Material::orb_glowing_yellow;
+            break;
+        case SpellType::HEAL:
+            orbColor = Material::red_body; // Example color for healing
             break;
         default:
             orbColor = Material::defaultMaterial;
