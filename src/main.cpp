@@ -1,3 +1,5 @@
+#define MINIAUDIO_IMPLEMENTATION
+#include "../ext/miniaudio.h"
 //========================================
 // Main (GOD FILE) for the Wizard Library
 //========================================
@@ -48,6 +50,9 @@
 using namespace std;
 using namespace glm;
 
+ma_engine engine;
+ma_sound sound;
+
 class Application : public EventCallbacks {
 public:
 	std::shared_ptr<Player> player;
@@ -87,7 +92,7 @@ public:
 	shared_ptr<Texture> carpetTex;
 	shared_ptr<Texture> particleAlphaTex;
 	shared_ptr<Texture> pawTex;
-	
+
 	// Skybox texture and VAO/VBO
 	GLuint skyboxCubemap;
 	GLuint skyboxCubeVAO = 0;
@@ -1848,7 +1853,7 @@ public:
 
 				if (enemyType == 0) {
 					enemies.push_back(new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.z), Config::ICE_ELEMENTAL_HP_MAX, Config::ICE_ELEMENTAL_MOVE_SPEED, iceElemental, vec3(1.0f, 1.0f, 1.0f), vec3(0.0f)));
-				} 
+				}
 				else if (enemyType == 1) {
 					enemies.push_back(new FireElemental(vec3(spawnPos.x, Config::FIRE_ELEMENTAL_TRANS_Y, spawnPos.z), Config::FIRE_ELEMENTAL_HP_MAX, Config::FIRE_ELEMENTAL_MOVE_SPEED, fireElemental, vec3(0.1f, 0.1f, 0.1f), vec3(0.0f)));
 				}
@@ -2318,7 +2323,7 @@ public:
 
 	void drawEnemies(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		for (auto* enemy : enemies) {
-			
+
 			if (!enemy || !enemy->isAlive()) {
 				// Ensure a key is added only once per dead enemy if not already present
                 // This simple check assumes positions are unique enough for dead enemies.
@@ -4039,7 +4044,10 @@ public:
 						bossEnemy->setAttack1Cooldown(glfwGetTime());
 
 						if (activeEnemiesCount <= 5) {
-							enemies.push_back(new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.y), ENEMY_HP_MAX, 2.0f, iceElemental, vec3(0.65f), vec3(0.0f)));
+							IceElemental* minion = new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.y), ENEMY_HP_MAX, 2.0f, iceElemental, vec3(0.65f), vec3(0.0f));
+							minion->setAggro(true);
+							minion->setSightRange(20.0f);
+							enemies.push_back(minion);
 						}
 					}
 					updateBossProjectiles(deltaTime);
@@ -5379,6 +5387,19 @@ int main(int argc, char* argv[]) {
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
+	// Initialize miniaudio
+	if (ma_engine_init(NULL, &engine) != MA_SUCCESS) {
+		printf("Failed to initialize audio engine.\\n");
+		return -1;
+	}
+
+	// Load and play sound
+	if (ma_sound_init_from_file(&engine, "../resources/chess.mp3", 0, NULL, NULL, &sound) != MA_SUCCESS) {
+		printf("Failed to load sound\n");
+		ma_engine_uninit(&engine);
+		return -1;
+	}
+
 	// This is the code that will likely change program to program as you
 	// may need to initialize or set up different data and state
 
@@ -5391,11 +5412,14 @@ int main(int argc, char* argv[]) {
 	application->initSkyboxTex(resourceDir);
 	application->initCircularBorder();
 	application->initAABBWireframe();
-  
+
 	#if USE_INSTANCING
 	application->initInstancingMatrices();
 	#endif
 	glGenQueries(1, &application->occlusionQueryID);
+
+	ma_sound_set_looping(&sound, MA_TRUE); // Set looping to true using the function
+	ma_sound_start(&sound); // MUSIC STARTS HERE
 
 	auto lastTime = chrono::high_resolution_clock::now();
 
@@ -5430,5 +5454,6 @@ int main(int argc, char* argv[]) {
 
 	// Quit program
 	windowManager->shutdown();
+	ma_engine_uninit(&engine); // Uninitialize miniaudio
 	return 0;
 }
