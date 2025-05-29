@@ -6,6 +6,8 @@ IceElemental::IceElemental(const glm::vec3& position, float hitpoints, float mov
         meleeRange = Config::ICE_ELEMENTAL_MELEE_RANGE; // Range for melee attack
         meleeDamage = Config::ICE_ELEMENTAL_MELEE_DAMAGE; // Damage dealt by melee attack
         aggroRange = Config::ICE_ELEMENTAL_AGGRO_RANGE; // Range for aggro detection
+        sightRange = Config::ICE_ELEMENTAL_SIGHT_RANGE; // Sight range for ice elemental
+        territoryRadius = Config::ICE_ELEMENTAL_TERRITORY_RADIUS; // Territory radius for ice elemental
     }
 
 void IceElemental::moveTowardsPlayer(const glm::vec3& playerPosition, float deltaTime) {
