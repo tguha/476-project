@@ -1,24 +1,27 @@
 #include "Enemy.h"
 #include "Spell.h"
 
-#define BOSS_HP_MAX 500.0f
+#define BOSS_HP_MAX 600.0f
 #define BOSS_ENRAGED_HP 250.0f
 #define BOSS_SPECIAL_ATTACK_COOLDOWN 5.0f
 
 class BossEnemy : public Enemy {
     private:
-        enum class BossPhase {
-            PHASE_1,
-            PHASE_2,
-            PHASE_3
-        } phase = BossPhase::PHASE_1;
+
         bool enraged;
         float specialAttackCooldown;
+        float attack1Cooldown = 0.0f; // Cooldown for the first attack
         glm::vec3 bossDirection = glm::vec3(0.0f, 0.0f, 0.0f);
         SpellType BossSpellType = SpellType::NONE;
 
     public:
         BossEnemy(const glm::vec3& position, float hitpoints, AssimpModel* model, const glm::vec3& scale, const glm::vec3& rotation, float specialAttackCooldown, SpellType spellType);
+
+        enum class BossPhase {
+            PHASE_1,
+            PHASE_2,
+            PHASE_3
+        } phase = BossPhase::PHASE_1;
 
         void changePhase();
         void specialAttack(float damage, float deltaTime);
@@ -29,5 +32,13 @@ class BossEnemy : public Enemy {
         glm::vec3 getBossDirection() const { return bossDirection; }
         float getSpecialAttackCooldown() const { return specialAttackCooldown; }
         void setSpecialAttackCooldown(float cooldown) { specialAttackCooldown = cooldown; }
+        float getAttack1Cooldown() const { return attack1Cooldown; }
+        void setAttack1Cooldown(float cooldown) { attack1Cooldown = cooldown; }
         SpellType getBossSpellType() const { return BossSpellType; }
+        void resetPhase() {
+            phase = BossPhase::PHASE_1;
+            enraged = false;
+            specialAttackCooldown = BOSS_SPECIAL_ATTACK_COOLDOWN;
+            attack1Cooldown = 0.0f;
+        }
 };
