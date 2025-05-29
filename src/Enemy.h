@@ -15,7 +15,7 @@ class Enemy : public Entity {
         bool hit;
         bool aggro;
         float damageTimer = 0.0f;
-        
+
     protected:
         float meleeSpeed = 1.0f;
         float meleeDamage = 10.0f;
@@ -36,11 +36,17 @@ class Enemy : public Entity {
         void setAggroRange(float range);
         float getDamageTimer() const;
         void setDamageTimer(float timer);
-        
+
+        bool dropSpawned = false;
+        void setDropSpawned(bool spawned) {
+            dropSpawned = spawned;
+        }
+
     // --- Override virtual functions if needed ---
     // virtual void move(const glm::vec3& direction) override; // Example override
     void takeDamage(float damage) override; // Example override
 
     virtual void moveTowardsPlayer(const glm::vec3& playerPosition, float deltaTime);
     virtual void update(Player* player, float deltaTime);
+
 };

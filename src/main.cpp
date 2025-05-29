@@ -1076,6 +1076,8 @@ public:
 		*/
 		//lock
 
+		key = new AssimpModel(resourceDirectory + "/Key_and_Lock/key.obj");
+
 		lock = new AssimpModel(resourceDirectory + "/Key_and_Lock/lockCopy.obj");
 		lockHandle = new AssimpModel(resourceDirectory + "/Key_and_Lock/lockHandle.obj");
 
@@ -2071,6 +2073,7 @@ public:
 			// enemies.push_back(new Enemy(libraryCenter + vec3(-5.0f, 0.8f, 8.0f), 50.0f, 2.0f, sphere, glm::vec3(0.5f, 1.28f, 0.5f), vec3(0.0f))); // <<-- Pass sphere and scale
 			activeSpells.clear(); // Clear active spells
 			unlock = false;
+			keyCollectibles.clear(); // Clear key collectibles
 			#if USE_INSTANCING
 			initInstancingMatrices();
 			#endif
@@ -2078,36 +2081,43 @@ public:
 	}
 
 	void drawEnemies(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
-		for (const auto* enemy : enemies) {
+		for (auto* enemy : enemies) {
 			if (!enemy || !enemy->isAlive()) {
 				// Ensure a key is added only once per dead enemy if not already present
                 // This simple check assumes positions are unique enough for dead enemies.
                 // A more robust way would be to tag enemies that have already dropped a key.
 
 
-				
-                bool keyAlreadyExists = false; //some local bools and need some global bools
-				bool enemyLastPos = false;
-                for (const auto& key : keyCollectibles) {
-                    // Approximate check, ideally use a unique ID from the enemy
-                    if (glm::distance(key.position, enemy->getPosition()) < 0.1f) { 
-                        keyAlreadyExists = true;
-                        break;
-                    }
-                }
-					glm:: vec3 keyPos = enemy->getPosition();
 
-                if (!keyAlreadyExists ) { //&& !enemyLastPos
-				
-					//get enemy pos once, then don't change it until change pick it up?
-					keyPos.y = keyPos.y - 1.5f;
-					//std::cout << "key position " << keyPos.x << " " << keyPos.y << " " << keyPos.z << " " << std::endl;
+                // bool keyAlreadyExists = false; //some local bools and need some global bools
+				// bool enemyLastPos = false;
+                // for (const auto& key : keyCollectibles) {
+                //     // Approximate check, ideally use a unique ID from the enemy
+                //     if (glm::distance(key.position, enemy->getPosition()) < 0.1f) {
+                //         keyAlreadyExists = true;
+                //         break;
+                //     }
+                // }
+				// 	glm:: vec3 keyPos = enemy->getPosition();
 
-                    keyCollectibles.emplace_back(key, keyPos, 0.1f, Material::gold, SpellType::NONE); 
-					drawKey(shader, Model );
-					//enemyLastPos = true;
-                }
-				
+                // if (!keyAlreadyExists ) { //&& !enemyLastPos
+
+				// 	//get enemy pos once, then don't change it until change pick it up?
+				// 	keyPos.y = keyPos.y - 1.5f;
+				// 	//std::cout << "key position " << keyPos.x << " " << keyPos.y << " " << keyPos.z << " " << std::endl;
+
+                //     keyCollectibles.emplace_back(key, keyPos, 0.1f, Material::key_color, SpellType::NONE);
+				// 	drawKey(shader, Model );
+				// 	//enemyLastPos = true;
+                // }
+
+				if (!enemy->dropSpawned) {
+					glm::vec3 keyPos = enemy->getPosition();
+					keyPos.y -= 1.5f; // Adjust height for key position
+          keyCollectibles.emplace_back(key, keyPos, 0.1f, Material::gold, SpellType::NONE); 
+					enemy->setDropSpawned(true); // Mark that the key has been spawned
+				}
+        
 				continue; // Skip null or dead enemies
 			}
 			shader->bind();
@@ -4083,7 +4093,7 @@ public:
 				//checkAABBCollision(manAABBmin, manAABBmax, key.AABBmin, key.AABBmax)
 				checkSphereCollision(player->getPosition(), 4.0f, key.AABBmin, key.AABBmax)
 				//checkSphereCollision(player->getPosition(), 2.0f, orb.AABBmin, orb.AABBmax)
-				
+
 				) {
 				key.collected = true;
 				// key.state = OrbState::COLLECTED; // Optionally set state
@@ -4094,50 +4104,60 @@ public:
 
 		int collectedKeyDrawIndex = 0;
 		shader->bind();
-		for (auto& key : keyCollectibles) {
-			glm::vec3 currentDrawPosition;
-			//float currentDrawScale = key.scale; // Use base scale
-			if (key.collected) {
-				// Calculate position behind the player (same logic as before)
-				float backOffset = 0.4f;
-				float upOffsetBase = 0.6f;
-				float stackOffset = key.scale * 2.5f;
-				float sideOffset = 0.15f;
-				glm::vec3 playerForward = normalize(manMoveDir);
-				glm::vec3 playerUp = glm::vec3(0.0f, 1.0f, 0.0f);
-				glm::vec3 playerRight = normalize(cross(playerForward, playerUp));
-				float currentUpOffset = upOffsetBase + (collectedKeyDrawIndex * stackOffset);
-				float currentSideOffset = (collectedKeyDrawIndex % 2 == 0 ? -sideOffset : sideOffset);
-				currentDrawPosition = charMove() - playerForward * backOffset
-					+ playerUp * currentUpOffset
-					+ playerRight * currentSideOffset;
-				collectedKeyDrawIndex++;
-			}
-			else {
-				currentDrawPosition = key.position; // Use the orb's current position (potentially animated by updateOrbs)
-			}
+		if (!unlock) {
+			for (auto& key : keyCollectibles) {
+				glm::vec3 currentDrawPosition;
+				//float currentDrawScale = key.scale; // Use base scale
+				if (key.collected) {
+					// Calculate position behind the player (same logic as before)
+					float backOffset = 0.4f;
+					float upOffsetBase = 0.6f;
+					float stackOffset = key.scale * 2.5f;
+					float sideOffset = 0.15f;
+					glm::vec3 playerForward = normalize(manMoveDir);
+					glm::vec3 playerUp = glm::vec3(0.0f, 1.0f, 0.0f);
+					glm::vec3 playerRight = normalize(cross(playerForward, playerUp));
+					float currentUpOffset = upOffsetBase + (collectedKeyDrawIndex * stackOffset);
+					float currentSideOffset = (collectedKeyDrawIndex % 2 == 0 ? -sideOffset : sideOffset);
+					currentDrawPosition = charMove() - playerForward * backOffset
+						+ playerUp * currentUpOffset
+						+ playerRight * currentSideOffset;
+					collectedKeyDrawIndex++;
+				}
+				else {
+					currentDrawPosition = key.position; // Use the orb's current position (potentially animated by updateOrbs)
+				}
 
-			//std::cout << "key position " << key.position.x << " " << key.position.y << " " << key.position.z << " " << std::endl;
+				// std::cout << "key position " << key.position.x << " " << key.position.y << " " << key.position.z << " " << std::endl;
 
-			// --- Set up transformations ---
-			Model->pushMatrix(); {
-				Model->loadIdentity();
-				Model->translate(currentDrawPosition); //last enemy pos
-				Model->scale(2.0f);
-				Model->rotate(glm::radians(90.0f), vec3(1.0f, 0.0f, 0.0f));
-				Model->rotate(glm::radians(-90.0f), vec3(0.0f, 1.0f, 0.0f));
+				// --- Set up transformations ---
+				Model->pushMatrix(); {
+					Model->loadIdentity();
+					Model->translate(currentDrawPosition); //last enemy pos
+					Model->rotate(glm::radians(90.0f), vec3(1.0f, 0.0f, 0.0f));
+					Model->rotate(glm::radians(-90.0f), vec3(0.0f, 1.0f, 0.0f));
+					Model->scale(2.0f);
 
 
-				// --- Set Material & Draw ---
-				SetMaterial(shader, Material::gold); //gold
-				setModel(shader, Model);
-				key.model->Draw(shader);
-			} Model->popMatrix();
-		} // End drawing loop
+					// --- Set Material & Draw ---
+					SetMaterial(shader, Material::gold); //gold
+					setModel(shader, Model);
+					key.model->Draw(shader);
+				} Model->popMatrix();
+			} // End drawing loop
+		}
 		shader->unbind();
 	}
 
 	void updateKeys(float currentTime) {
+		// for (auto* enemy : enemies) {
+		// 	if (!enemy->isAlive() && !enemy->dropSpawned) {
+		// 		glm::vec3 keyPos = enemy->getPosition();
+		// 		// keyPos.y -= 1.5f; // Adjust height for key position
+		// 		keyCollectibles.emplace_back(key, keyPos, 0.1f, Material::key_color, SpellType::NONE);
+		// 		enemy->setDropSpawned(true); // Mark that the key has been spawned
+		// 	}
+		// }
 		for (auto& key : keyCollectibles) {
 			// Update levitation only if not already collected
 			if (!key.collected) {
@@ -4149,8 +4169,8 @@ public:
 	void removeKeys(){
 		if(keysCollectedCount <= 0){
 			cout << "[DEBUG] Cannot remove: No keys." << endl;
-			return; 
-		}	
+			return;
+		}
 
 		keysCollectedCount--;
 		for(auto it = keyCollectibles.begin(); it != keyCollectibles.end(); ++it){
@@ -4159,7 +4179,7 @@ public:
 				break;
 			}
 		}
-		
+
 	}
 
 	void drawBossHealthBar(glm::mat4 viewMatrix, glm::mat4 projMatrix) {
@@ -4309,6 +4329,8 @@ public:
 		// 6. Draw Collectible Orbs
 		drawOrbs(prog, Model);
 
+		drawKey(prog, Model);
+
 		drawProjectiles(prog, Model);
 
 		drawBossProjectiles(prog, Model);
@@ -4383,6 +4405,8 @@ public:
 
 		// 6. Draw Collectible Orbs
 		drawOrbs(prog, Model);
+
+		drawKey(prog, Model);
 
 		drawProjectiles(prog, Model);
 
@@ -4467,12 +4491,12 @@ public:
 		updateCameraVectors();
 		updateBooks(frametime);
 		updateOrbs((float)glfwGetTime());
-		//updateKeys((float)glfwGetTime());
+		updateKeys((float)glfwGetTime());
 		if (enemyActive) { updateEnemies(frametime); }
 		updateProjectiles(frametime);
 		updateFTimeout(frametime);
 		particleSystem->update(frametime); // Update particles
-		checkAllEnemies();
+		// checkAllEnemies();
 		checkBossfight();
 		BossEnemyShoot(frametime);
 		restartGeneration();
@@ -4777,7 +4801,7 @@ public:
 			canFightboss = true;
 		}
 		if (key == GLFW_KEY_K && action == GLFW_PRESS) {
-			//Debug Camera 
+			//Debug Camera
 			debugCamera = !debugCamera;
 		}
 		if (debugCamera && key == GLFW_KEY_N && action == GLFW_PRESS) {
