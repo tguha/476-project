@@ -66,6 +66,7 @@ public:
 	shared_ptr<Program> hudProg;
 	shared_ptr<Program> redFlashProg;
 	shared_ptr<Program> SkyboxProg;
+	shared_ptr<Program> debugLineProg;
 
 	// ground data - Reused for all flat ground planes
 	GLuint GrndBuffObj = 0, GrndNorBuffObj = 0, GIndxBuffObj = 0; // Initialize to 0
@@ -92,6 +93,9 @@ public:
 	GLuint skyboxCubeVAO = 0;
 	GLuint skyboxCubeVBO = 0;
 
+	// AABB VAO/VBO/EBO
+	GLuint aabbVAO = 0, aabbVBO = 0, aabbEBO = 0;
+
 	vector<WallObject> borderWalls;
 	std::set<WallObjKey> borderWallKeys; // Set to track unique keys
 	vector<LibGrndObject> libraryGrounds;
@@ -112,15 +116,13 @@ public:
 	// --- Spell Projectiles ---
 	std::vector<SpellProjectile> activeSpells;
 	std::shared_ptr<particleGen> particleSystem;
-	glm::vec3 baseSphereLocalAABBMin;
-	glm::vec3 baseSphereLocalAABBMax;
-	bool sphereAABBCalculated = false;
+	shared_ptr<AABB> sphereBB;
 
 	// -- Boss Enemy Spell Projectiles --
 	std::vector<SpellProjectile> bossActiveSpells;
 
 	// character bounding box
-	glm::vec3 manAABBmin, manAABBmax;
+	shared_ptr<AABB> playerBB;
 
 	AssimpModel *book_shelf1, *book_shelf2;
 	AssimpModel *candelabra, *chest, *library_bench, *low_poly_bookshelf, *table_chairs1, *table_chairs2, *grandfather_clock, *bookstand, *door;
@@ -279,7 +281,7 @@ public:
 	int activeEnemiesCount = 0; // Count of active enemies in the scene
 	int keysneededToCollect = 0; // Total number of keys to collect in the scene
 
-  // --- Paw Prints ---
+	// --- Paw Prints ---
 	// CPU: record and upload a list of paw prints
 	// maintain up to a maximum and replace the oldest when adding a new print
 	// GPU: handles everything else
@@ -303,6 +305,36 @@ public:
 		prints.push_back({ footPos, facingAngle, float(glfwGetTime()) }); // record it
 		if (prints.size() > Config::PRINTS_MAX) prints.pop_front(); // remove oldest print
 		Config::LAST_PAW_POS = cur;
+	}
+
+	void initAABBWireframe() {
+		// corner positions
+		static const glm::vec3 corners[8] = {
+		  {-1,-1,-1},{+1,-1,-1},{+1,+1,-1},{-1,+1,-1},
+		  {-1,-1,+1},{+1,-1,+1},{+1,+1,+1},{-1,+1,+1}
+		};
+		// edges: 12 segments -> 24 indices
+		static const GLuint edges[24] = {
+		  0,1, 1,2, 2,3, 3,0,
+		  4,5, 5,6, 6,7, 7,4,
+		  0,4, 1,5, 2,6, 3,7
+		};
+
+		glGenVertexArrays(1, &aabbVAO);
+		glGenBuffers(1, &aabbVBO);
+		glGenBuffers(1, &aabbEBO);
+
+		glBindVertexArray(aabbVAO);
+		// positions
+		glBindBuffer(GL_ARRAY_BUFFER, aabbVBO);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(corners), corners, GL_STATIC_DRAW);
+		// edges
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, aabbEBO);
+		glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(edges), edges, GL_STATIC_DRAW);
+		// attrib 0 = position
+		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
+		glBindVertexArray(0);
 	}
 
 	// Set up the FBO for storing the light's depth map
@@ -578,6 +610,11 @@ public:
 		SkyboxProg->setShaderNames(resourceDirectory + "/skybox_vert.glsl", resourceDirectory + "/skybox_frag.glsl");
 		SkyboxProg->init();
 
+		debugLineProg = make_shared<Program>();
+		debugLineProg->setVerbose(Config::DEBUG_SHADER);
+		debugLineProg->setShaderNames(resourceDirectory + "/line_vert.glsl", resourceDirectory + "/line_frag.glsl");
+		debugLineProg->init();
+
 		// Add unfigorm and attrubutes to each of the programs
 		DepthProg->addUniform("LP");
 		DepthProg->addUniform("LV");
@@ -664,6 +701,11 @@ public:
 		SkyboxProg->addUniform("P");
 		SkyboxProg->addUniform("V");
 		SkyboxProg->addUniform("skyTex");
+
+		debugLineProg->addUniform("P");
+		debugLineProg->addUniform("V");
+		debugLineProg->addUniform("M");
+		debugLineProg->addUniform("color");
 
 		updateCameraVectors();
 
@@ -1120,7 +1162,10 @@ public:
 
 		//TEST Load the cat
 		//CatWizard = new AssimpModel(resourceDirectory + "/CatWizard/BlendWalkFix.fbx");
-		calculatePlayerLocalAABB();
+		playerBB = make_shared<AABB>();
+		playerBB->min = player_rig->getBoundingBoxMin() * manScale.x;
+		playerBB->max = player_rig->getBoundingBoxMax() * manScale.x;
+		playerBB->max.y += 2.0f;
 
 		catwizard_animator = new Animator(player_walk);
 
@@ -1177,6 +1222,9 @@ public:
 		door->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/door/Door_diffuse.png");
 
 		sphere = new AssimpModel(resourceDirectory + "/SmoothSphere.obj");
+		sphereBB = make_shared<AABB>();
+		sphereBB->min = sphere->getBoundingBoxMin();
+		sphereBB->max = sphere->getBoundingBoxMax();
 
 		iceElemental = new AssimpModel(resourceDirectory + "/IceElemental/IceElem.fbx");
 		fireElemental = new AssimpModel(resourceDirectory + "/FireElemental/FireElem.fbx");
@@ -1204,9 +1252,6 @@ public:
 		lock = new AssimpModel(resourceDirectory + "/Key_and_Lock/lockCopy.obj");
 		lockHandle = new AssimpModel(resourceDirectory + "/Key_and_Lock/lockHandle.obj");
 
-		baseSphereLocalAABBMin = sphere->getBoundingBoxMin();
-		baseSphereLocalAABBMax = sphere->getBoundingBoxMax();
-		sphereAABBCalculated = true;
 		cout << "[DEBUG] Stored Base Sphere Local AABB." << endl;
 
 		vec3 bossSpawnPos = bossRoom->getWorldOrigin();
@@ -1905,8 +1950,8 @@ public:
 		updateBoundingBox(player_rig->getBoundingBoxMin(),
 			player_rig->getBoundingBoxMax(),
 			manTransform,
-			manAABBmin, // This is the visual/interaction AABB
-			manAABBmax);
+			playerBB->min,
+			playerBB->max);
 
 		// Set uniforms and draw
 		if (curS->hasUniform("texOnly")) glUniform1i(curS->getUniform("texOnly"), GL_TRUE);
@@ -2055,9 +2100,8 @@ public:
 		// --- Collision Check Logic ---
 		for (auto& orb : orbCollectibles) {
 			// Perform collision check ONLY if not collected AND in the IDLE state
-			vec3 tempManAABBmax = vec3(manAABBmax.x, manAABBmax.y + 2.0f, manAABBmax.z);
 			if (!orb.collected && orb.state == OrbState::IDLE && // <<<--- ADD STATE CHECK
-				checkAABBCollision(manAABBmin, tempManAABBmax, orb.AABBmin, orb.AABBmax)) {
+				checkAABBCollision(playerBB->min, playerBB->max, orb.AABBmin, orb.AABBmax)) {
 				orb.collected = true;
 				// orb.state = OrbState::COLLECTED; // Optionally set state
 
@@ -2932,11 +2976,6 @@ public:
 		return glm::length(distanceVec) <= sphereRadius;
 	}
 
-	// bool checkSphereCollisionGrid(const glm::vec3& spherePos, float sphereRadius,
-	// 	const LibraryGen::Cell& cell) {
-
-	// 	}
-
 	void updateBooks(float deltaTime) { // deltaTime might not be needed if using glfwGetTime()
 		for (auto& book : books) {
 			book.update(deltaTime, 0.0f);
@@ -3236,44 +3275,15 @@ public:
 		}
 	}
 
-	// --- Player Collision ---
-	// Store player's local AABB (scaled) for easier access
-	glm::vec3 playerLocalAABBMin;
-	glm::vec3 playerLocalAABBMax;
-	bool playerAABBCalculated = false; // Flag to calculate once
-
-	// Helper to calculate player's local AABB
-	void calculatePlayerLocalAABB() {
-		if (!player_rig || playerAABBCalculated) return;
-
-		// Get base AABB from the *IDLE* or *running* model (choose one representative)
-		// Using player_rig as it's loaded first
-		glm::vec3 baseMin = player_rig->getBoundingBoxMin();
-		glm::vec3 baseMax = player_rig->getBoundingBoxMax();
-
-		// Apply the player's base scale
-		playerLocalAABBMin = baseMin * manScale.x; // Assuming uniform scale for collision box
-		playerLocalAABBMax = baseMax * manScale.x;
-
-		// Optional: Add padding or adjust Y if needed
-		// Example: Make collision box slightly taller or ensure base is at y=0 locally
-		// playerLocalAABBMin.y = 0.0f; // If player origin is at feet
-
-		playerAABBCalculated = true;
-		// cout << "[DEBUG] Calculated Player Local AABB Min: (" << playerLocalAABBMin.x << "," << playerLocalAABBMin.y << "," << playerLocalAABBMin.z << ")" << endl;
-		// cout << "[DEBUG] Calculated Player Local AABB Max: (" << playerLocalAABBMax.x << "," << playerLocalAABBMax.y << "," << playerLocalAABBMax.z << ")" << endl;
-	}
-
-
 	// --- Collision Checking Helper ---
 	bool checkCollisionAt(const glm::vec3& checkPos, const glm::quat& playerOrientation) {
-		if (!playerAABBCalculated || !book_shelf1 || grid.getSize().x == 0) return false; // Need data
+		if (!book_shelf1 || grid.getSize().x == 0) return false; // Need data
 
 		// 1. Calculate Player's World AABB at checkPos
 		glm::mat4 playerTransform = glm::translate(glm::mat4(1.0f), checkPos) * glm::mat4_cast(playerOrientation);
 		// Note: We use the PRE-SCALED local AABB calculated earlier
 		glm::vec3 playerWorldMin, playerWorldMax;
-		updateBoundingBox(playerLocalAABBMin, playerLocalAABBMax, playerTransform, playerWorldMin, playerWorldMax);
+		updateBoundingBox(playerBB->min, playerBB->max, playerTransform, playerWorldMin, playerWorldMax);
 
 		// spatial detection for library grid
 
@@ -3443,11 +3453,6 @@ public:
 
 	// --- Modified charMove ---
 	vec3 charMove() {
-		// Calculate player's local AABB once if not done yet
-		if (!playerAABBCalculated) {
-			calculatePlayerLocalAABB();
-		}
-
 		float moveSpeed = 4.5f * AnimDeltaTime; // Use frame-rate independent speed
 		vec3 desiredMoveDelta = vec3(0.0f);
 
@@ -4100,8 +4105,8 @@ public:
 		updateBoundingBox(player_rig->getBoundingBoxMin(),
 			player_rig->getBoundingBoxMax(),
 			manTransform,
-			manAABBmin, // This is the visual/interaction AABB
-			manAABBmax);
+			playerBB->min, // This is the visual/interaction AABB
+			playerBB->max);
 
 		// Set uniforms and draw
 		//glUniform1i(curS->getUniform("hasTexture"), 1); //0.6f, 0.2f, 0.8f
@@ -4649,6 +4654,32 @@ public:
 		glUniformMatrix4fv(curShade->getUniform("V"), 1, GL_FALSE, value_ptr(viewStack->topMatrix()));
 	}
 
+	void drawAABB(const vec3& min, const vec3& max,
+		const shared_ptr<Program>& shader,
+		const shared_ptr<MatrixStack>& Projection,
+		const shared_ptr<MatrixStack>& View,
+		const vec3& color = { 1,0,0 }) {
+		shader->bind();
+
+		glUniformMatrix4fv(shader->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
+		glUniformMatrix4fv(shader->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
+
+		// build model: translate to center, then scale to half‐size
+		vec3 center = (min + max) * 0.5f;
+		vec3 half = (max - min) * 0.5f;
+		mat4 M = translate(mat4(1.0f), center) * scale(mat4(1.0f), half);
+		glUniformMatrix4fv(shader->getUniform("M"), 1, GL_FALSE, value_ptr(M));
+
+		glUniform3fv(shader->getUniform("color"), 1, value_ptr(color)); // color
+
+		// draw lines
+		glBindVertexArray(aabbVAO);
+		glDrawElements(GL_LINES, 24, GL_UNSIGNED_INT, 0);
+		glBindVertexArray(0);
+
+		shader->unbind();
+	}
+
 	// Draw the scene for shadow map generation (Draw only shadow-casting objects) (First Pass)
 	void drawSceneForShadowMap(shared_ptr<Program>& prog) {
 		auto Model = make_shared<MatrixStack>();
@@ -4665,28 +4696,6 @@ public:
 
 		drawBossRoom(prog, Model, CULL); // Draw the boss room
 		#endif
-
-		//// disable color writes
-		//glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
-		//// disable depth writes
-		//glDepthMask(GL_FALSE);
-
-		//// begin occlusion query
-		//glBeginQuery(GL_ANY_SAMPLES_PASSED, occlusionQueryID);
-
-		//// Draw a small sphere at the player's position
-		//drawOcclusionBoxAtPlayer(prog, Model);
-
-		//glEndQuery(GL_ANY_SAMPLES_PASSED);
-
-		//GLuint resultofQuery = 0;
-		//glGetQueryObjectuiv(occlusionQueryID, GL_QUERY_RESULT, &resultofQuery);
-		//visible = resultofQuery;
-
-		//// re-enable color writes and depth writes
-		//glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-		//glDepthMask(GL_TRUE);
-
 
 		drawPlayer(prog, Model, 0.0);
 
@@ -5052,6 +5061,29 @@ public:
 		// Second Pass Cont.
 		//===================
 
+		if (Config::DEBUG_AABBS) {
+			drawAABB(playerBB->min, playerBB->max, debugLineProg, Projection, View, { 1,0,0 });
+			//drawAABB(sphereBB->min, sphereBB->max, debugLineProg, Projection, View, { 0,1,0 });
+			for (int i = 0; i < bossActiveSpells.size(); i++) {
+				if (!bossActiveSpells[i].active) {
+					continue;
+				}
+				else {
+					drawAABB(bossActiveSpells[i].aabbMin, bossActiveSpells[i].aabbMax, debugLineProg, Projection, View, { 0,1,0 });
+				}
+			}
+			for (int i = 0; i < activeSpells.size(); i++) {
+				if (activeSpells[i].active) {
+					drawAABB(activeSpells[i].aabbMin, activeSpells[i].aabbMax, debugLineProg, Projection, View, { 0,1,0 });
+				}
+			}
+			for (const auto* enemy : enemies) {
+				if (enemy && enemy->isAlive()) {
+					drawAABB(enemy->getAABBMin(), enemy->getAABBMax(), debugLineProg, Projection, View, {0,0,1});
+				}
+			}
+		}
+
 		if (Config::DRAW_PARTICLES) {
 			particleProg->bind();
 			// glPointSize(10.0f); // Remove this line, size is now per-particle in shader
@@ -5143,6 +5175,7 @@ public:
 		if (key == GLFW_KEY_4 && action == GLFW_PRESS) Config::EXPOSURE -= 0.1f;
 		if (key == GLFW_KEY_9 && action == GLFW_PRESS) Config::DEBUG_LIGHTING = !Config::DEBUG_LIGHTING;
 		if (key == GLFW_KEY_0 && action == GLFW_PRESS) Config::DEBUG_GEOM = !Config::DEBUG_GEOM;
+		if (key == GLFW_KEY_B && action == GLFW_PRESS) Config::DEBUG_AABBS = !Config::DEBUG_AABBS;
 
 		if (key == GLFW_KEY_GRAVE_ACCENT && action == GLFW_PRESS)
 		{
@@ -5357,6 +5390,7 @@ int main(int argc, char* argv[]) {
 	application->initSkyboxCube();
 	application->initSkyboxTex(resourceDir);
 	application->initCircularBorder();
+	application->initAABBWireframe();
   
 	#if USE_INSTANCING
 	application->initInstancingMatrices();

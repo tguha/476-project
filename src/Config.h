@@ -25,6 +25,7 @@ namespace Config {// --- Global Game Settings (Config::<thing you want>)---
     // In-Game Debugging (can be toggled real time)
     inline static bool DEBUG_LIGHTING = false;
     inline static bool DEBUG_GEOM = false;
+    inline static bool DEBUG_AABBS = false;
 
     // Rendering & Shaders
     constexpr int MAX_BONES = 200;
