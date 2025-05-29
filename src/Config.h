@@ -97,9 +97,13 @@ namespace Config {// --- Global Game Settings (Config::<thing you want>)---
     constexpr float HALF_PI = glm::half_pi<float>();
     constexpr float PI = glm::pi<float>();
 
-    // Paw Print settings
+    // Paw Print Settings
     constexpr int PRINTS_MAX = 16;
     constexpr float PRINTS_LIFETIME = 5.0f; // seconds
+    inline static bool LEFT_PAW = false;
+    constexpr float PAW_SPACING = 0.1f;
+    inline static vec2 LAST_PAW_POS;
+    constexpr float MIN_PAW_DIST = 0.2f;
 
     // --- Utility Functions ---
 

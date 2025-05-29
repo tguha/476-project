@@ -60,7 +60,6 @@ public:
 	shared_ptr<Program> DebugProg;
 	shared_ptr<Program> hudProg;
 	shared_ptr<Program> redFlashProg;
-	shared_ptr<Program> pawsProg;
 
 	// ground data - Reused for all flat ground planes
 	GLuint GrndBuffObj = 0, GrndNorBuffObj = 0, GIndxBuffObj = 0; // Initialize to 0
@@ -234,11 +233,27 @@ public:
 	// --- Paw Prints ---
 	// CPU: record and upload a list of paw prints
 	// maintain up to a maximum and replace the oldest when adding a new print
-	// GPU: handles everything else 
+	// GPU: handles everything else
 	deque<PawPrint> prints;
 	void onStep(vec3 worldPos, float facingAngle) {
-		prints.push_back({ {worldPos.x, worldPos.z}, facingAngle, float(glfwGetTime()) });
-		if (prints.size() > Config::PRINTS_MAX) prints.pop_front();
+		vec2 cur{ worldPos.x, worldPos.z };
+
+		vec2 moveDelta = cur - Config::LAST_PAW_POS;
+		if (glm::length(moveDelta) < Config::MIN_PAW_DIST)
+			return;  // not far enough to step
+
+		glm::vec2 forward2D = glm::normalize(moveDelta);
+
+		glm::vec2 lateral = glm::vec2(-forward2D.y, forward2D.x);
+
+		float side = Config::LEFT_PAW ? +1.0f : -1.0f;
+		Config::LEFT_PAW = !Config::LEFT_PAW; // alternate left/right
+
+		glm::vec2 footPos = cur + lateral * (side * Config::PAW_SPACING);
+
+		prints.push_back({ footPos, facingAngle, float(glfwGetTime()) }); // record it
+		if (prints.size() > Config::PRINTS_MAX) prints.pop_front(); // remove oldest print
+		Config::LAST_PAW_POS = cur;
 	}
 
 	// Set up the FBO for storing the light's depth map
@@ -407,12 +422,6 @@ public:
 		DebugProg->setShaderNames(resourceDirectory + "/pass_vert.glsl", resourceDirectory + "/pass_texfrag.glsl");
 		DebugProg->init();
 
-		// Init GLSL pawsProg for paw prints behind character
-		pawsProg = make_shared<Program>();
-		pawsProg->setVerbose(Config::DEBUG_SHADER);
-		pawsProg->setShaderNames(resourceDirectory + "/paws_vert.glsl", resourceDirectory + "/paws_frag.glsl");
-		pawsProg->init();
-
 		// Add unfigorm and attrubutes to each of the programs
 		DepthProg->addUniform("LP");
 		DepthProg->addUniform("LV");
@@ -445,6 +454,10 @@ public:
 		ShadowProg->addUniform("exposure");
 		ShadowProg->addUniform("saturation");
 		for (int i = 0; i < Config::MAX_BONES; i++) ShadowProg->addUniform("finalBonesMatrices[" + to_string(i) + "]");
+		ShadowProg->addUniform("pawCount");
+		ShadowProg->addUniform("pawData");
+		ShadowProg->addUniform("pawTex");
+		ShadowProg->addUniform("curTime");
 		ShadowProg->addAttribute("vertPos");
 		ShadowProg->addAttribute("vertNor");
 		ShadowProg->addAttribute("vertTex");
@@ -455,17 +468,6 @@ public:
 		ShadowProg->unbind();
 
 		initShadow();
-
-		pawsProg->addUniform("P");
-		pawsProg->addUniform("V");
-		pawsProg->addUniform("M");
-		pawsProg->addUniform("num");
-		pawsProg->addUniform("pos");
-		pawsProg->addUniform("angle");
-		pawsProg->addUniform("time");
-		pawsProg->addUniform("curTime");
-		pawsProg->addUniform("pawTex");
-		pawsProg->addUniform("grndTex");
 
 		hudProg = make_shared<Program>();
 		hudProg->setVerbose(true);
@@ -504,7 +506,7 @@ public:
 		pawTex = make_shared<Texture>();
 		pawTex->setFilename(resourceDirectory + "/paw_print.png");
 		pawTex->init();
-		pawTex->setUnit(1);
+		pawTex->setUnit(11);
 		pawTex->setWrapModes(GL_REPEAT, GL_REPEAT);
 
 		borderWallTex = make_shared<Texture>();
@@ -1080,7 +1082,24 @@ public:
 
 		shader->bind(); // Bind the simple shader
 
-		// glUniform1i(shader->getUniform("hasTexture"), 1); // Set texture uniform
+		if (shader == ShadowProg && Config::DRAW_PAW_PRINTS) {
+			int num = (int)prints.size(); // only draw as many paw prints as we have left (removed on timer)
+			vec4 pawArr[Config::PRINTS_MAX];
+			for (int i = 0; i < num; ++i) {
+				pawArr[i].x = prints[i].pos.x;
+				pawArr[i].y = prints[i].pos.y;
+				pawArr[i].z = prints[i].angle;
+				pawArr[i].w = prints[i].spawnTime;
+			}
+
+			glUniform1i(shader->getUniform("pawCount"), num);
+			glUniform4fv(shader->getUniform("pawData"), num, value_ptr(pawArr[0]));
+			glUniform1f(shader->getUniform("curTime"), (float)glfwGetTime());
+
+			glActiveTexture(GL_TEXTURE0 + pawTex->getUnit());
+			glBindTexture(GL_TEXTURE_2D, pawTex->getID());
+			glUniform1i(shader->getUniform("pawTex"), pawTex->getUnit());
+		}
 
 		for (const auto& libGrnd : libraryGrounds) {
 			glBindVertexArray(libGrnd.VAO); // Bind each library ground VAO
@@ -1094,7 +1113,9 @@ public:
 			Model->loadIdentity();
 			setModel(shader, Model);
 
+			glUniformMatrix4fv(shader->getUniform("M"), 1, GL_FALSE, value_ptr(Model->topMatrix()));
 			SetMaterial(shader, Material::wood);
+
 			glDrawElements(GL_TRIANGLES, libGrnd.GiboLen, GL_UNSIGNED_SHORT, 0);
 			Model->popMatrix();
 
@@ -1105,11 +1126,11 @@ public:
 			}
 		}
 
+		if (shader->hasUniform("pawCount")) glUniform1i(shader->getUniform("pawCount"), 0);
 		glBindVertexArray(0); // Unbind VAO after drawing all library grounds
 
 		shader->unbind(); // Unbind the simple shader
 	}
-
 
 	void initWall(float length, vec3 pos, vec3 dir, float height,
 		GLuint& WallVertexArrayID, GLuint& WallBuffObj, GLuint& WallNormBuffObj, GLuint& WIndxBuffObj, GLuint& WallTexBuffObj, int& w_GiboLen) {
@@ -3867,7 +3888,6 @@ public:
 
 		drawLibGrnd(prog, Model); // Draw the library ground
 
-
 		// 2. Draw the Static Library Shelves
 		drawLibrary(prog, Model, true);
 
@@ -4079,41 +4099,6 @@ public:
 		//===================
 		// Second Pass Cont.
 		//===================
-
-		if (Config::DRAW_PAW_PRINTS) {
-			pawsProg->bind();
-			int num = (int)prints.size(); // only draw as many paw prints as we have left (removed on timer)
-			vec2 posArr[Config::PRINTS_MAX];
-			float angArr[Config::PRINTS_MAX], timeArr[Config::PRINTS_MAX];
-			for (int i = 0; i < num; ++i) { // reformat data for gpu
-				posArr[i] = prints[i].pos;
-				angArr[i] = prints[i].angle;
-				timeArr[i] = prints[i].spawnTime;
-			}
-
-			glUniformMatrix4fv(pawsProg->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
-			glUniformMatrix4fv(pawsProg->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
-			glUniformMatrix4fv(pawsProg->getUniform("M"), 1, GL_FALSE, value_ptr(Model->topMatrix()));
-
-			glUniform1i(pawsProg->getUniform("num"), num);
-			glUniform2fv(pawsProg->getUniform("pos"), num, &posArr[0].x);
-			glUniform1fv(pawsProg->getUniform("angle"), num, angArr);
-			glUniform1fv(pawsProg->getUniform("time"), num, timeArr);
-			glUniform1f(pawsProg->getUniform("curTime"), (float)glfwGetTime());
-
-			glActiveTexture(GL_TEXTURE0 + pawTex->getUnit());
-			glBindTexture(GL_TEXTURE_2D, pawTex->getID());
-			glUniform1i(pawsProg->getUniform("pawTex"), pawTex->getUnit());
-
-			glActiveTexture(GL_TEXTURE0);
-			glBindTexture(GL_TEXTURE_2D, libraryGroundTex->getID());
-			glUniform1i(pawsProg->getUniform("grndTex"), 0);
-
-			glBindVertexArray(GroundVertexArrayID);
-			glDrawElements(GL_TRIANGLES, g_GiboLen, GL_UNSIGNED_SHORT, 0);
-
-			pawsProg->unbind();
-		}
 
 		if (Config::DRAW_PARTICLES) {
 			particleProg->bind();
