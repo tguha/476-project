@@ -2027,6 +2027,7 @@ public:
 			// enemies.push_back(new Enemy(libraryCenter + vec3(-5.0f, 0.8f, 8.0f), 50.0f, 2.0f, sphere, glm::vec3(0.5f, 1.28f, 0.5f), vec3(0.0f))); // <<-- Pass sphere and scale
 			activeSpells.clear(); // Clear active spells
 			unlock = false;
+			keyCollectibles.clear(); // Clear key collectibles
 			#if USE_INSTANCING
 			initInstancingMatrices();
 			#endif
@@ -4057,46 +4058,48 @@ public:
 
 		int collectedKeyDrawIndex = 0;
 		shader->bind();
-		for (auto& key : keyCollectibles) {
-			glm::vec3 currentDrawPosition;
-			//float currentDrawScale = key.scale; // Use base scale
-			if (key.collected) {
-				// Calculate position behind the player (same logic as before)
-				float backOffset = 0.4f;
-				float upOffsetBase = 0.6f;
-				float stackOffset = key.scale * 2.5f;
-				float sideOffset = 0.15f;
-				glm::vec3 playerForward = normalize(manMoveDir);
-				glm::vec3 playerUp = glm::vec3(0.0f, 1.0f, 0.0f);
-				glm::vec3 playerRight = normalize(cross(playerForward, playerUp));
-				float currentUpOffset = upOffsetBase + (collectedKeyDrawIndex * stackOffset);
-				float currentSideOffset = (collectedKeyDrawIndex % 2 == 0 ? -sideOffset : sideOffset);
-				currentDrawPosition = charMove() - playerForward * backOffset
-					+ playerUp * currentUpOffset
-					+ playerRight * currentSideOffset;
-				collectedKeyDrawIndex++;
-			}
-			else {
-				currentDrawPosition = key.position; // Use the orb's current position (potentially animated by updateOrbs)
-			}
+		if (!unlock) {
+			for (auto& key : keyCollectibles) {
+				glm::vec3 currentDrawPosition;
+				//float currentDrawScale = key.scale; // Use base scale
+				if (key.collected) {
+					// Calculate position behind the player (same logic as before)
+					float backOffset = 0.4f;
+					float upOffsetBase = 0.6f;
+					float stackOffset = key.scale * 2.5f;
+					float sideOffset = 0.15f;
+					glm::vec3 playerForward = normalize(manMoveDir);
+					glm::vec3 playerUp = glm::vec3(0.0f, 1.0f, 0.0f);
+					glm::vec3 playerRight = normalize(cross(playerForward, playerUp));
+					float currentUpOffset = upOffsetBase + (collectedKeyDrawIndex * stackOffset);
+					float currentSideOffset = (collectedKeyDrawIndex % 2 == 0 ? -sideOffset : sideOffset);
+					currentDrawPosition = charMove() - playerForward * backOffset
+						+ playerUp * currentUpOffset
+						+ playerRight * currentSideOffset;
+					collectedKeyDrawIndex++;
+				}
+				else {
+					currentDrawPosition = key.position; // Use the orb's current position (potentially animated by updateOrbs)
+				}
 
-			// std::cout << "key position " << key.position.x << " " << key.position.y << " " << key.position.z << " " << std::endl;
+				// std::cout << "key position " << key.position.x << " " << key.position.y << " " << key.position.z << " " << std::endl;
 
-			// --- Set up transformations ---
-			Model->pushMatrix(); {
-				Model->loadIdentity();
-				Model->translate(currentDrawPosition); //last enemy pos
-				Model->rotate(glm::radians(90.0f), vec3(1.0f, 0.0f, 0.0f));
-				Model->rotate(glm::radians(-90.0f), vec3(0.0f, 1.0f, 0.0f));
-				Model->scale(2.0f);
+				// --- Set up transformations ---
+				Model->pushMatrix(); {
+					Model->loadIdentity();
+					Model->translate(currentDrawPosition); //last enemy pos
+					Model->rotate(glm::radians(90.0f), vec3(1.0f, 0.0f, 0.0f));
+					Model->rotate(glm::radians(-90.0f), vec3(0.0f, 1.0f, 0.0f));
+					Model->scale(2.0f);
 
 
-				// --- Set Material & Draw ---
-				SetMaterial(shader, Material::gold); //gold
-				setModel(shader, Model);
-				key.model->Draw(shader);
-			} Model->popMatrix();
-		} // End drawing loop
+					// --- Set Material & Draw ---
+					SetMaterial(shader, Material::gold); //gold
+					setModel(shader, Model);
+					key.model->Draw(shader);
+				} Model->popMatrix();
+			} // End drawing loop
+		}
 		shader->unbind();
 	}
 
@@ -4446,7 +4449,7 @@ public:
 		updateProjectiles(frametime);
 		updateFTimeout(frametime);
 		particleSystem->update(frametime); // Update particles
-		checkAllEnemies();
+		// checkAllEnemies();
 		checkBossfight();
 		BossEnemyShoot(frametime);
 		restartGeneration();
