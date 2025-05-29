@@ -10,32 +10,36 @@
 
 namespace Config {// --- Global Game Settings (Config::<thing you want>)---
 
+    const std::string RESOURCE_DIRECTORY_PREFIX = "../resources"; // Default, can be overridden
+
     // Debugging --- set all to false for release builds
-    constexpr bool DEBUG_ENEMY_MOVEMENT = true; // Debug enemy movement
-    constexpr bool DEBUG_ROOM_PLACEMENT = false; // Debugging room placement
+    constexpr bool DEBUG_ENEMY_MOVEMENT = true;
+    constexpr bool DEBUG_ROOM_PLACEMENT = false;
     constexpr bool DEBUG_TEX_LOADING = false;
     constexpr bool DEBUG_PLAYER_AABB = false;
     constexpr bool DEBUG_ORB_PICKUP = false;
     constexpr bool DEBUG_PLAYER_HP = false;
+    constexpr bool DEBUG_SHADER = true; // Sets verbose flag for shaders
+    constexpr bool DEBUG_SHADER_PARAMS = false; // Debug lighting settings
+
+    // In-Game Debugging (can be toggled real time)
+    inline static bool DEBUG_LIGHTING = false;
+    inline static bool DEBUG_GEOM = false;
 
     // Rendering & Shaders
     constexpr int MAX_BONES = 200;
     constexpr float ORTHO_SIZE = 60.0f;
-    constexpr float PARTICLES = true;
-    constexpr bool DEBUG_SHADER = true; // Sets verbose flag for shaders
-    constexpr bool DEBUG_SHADER_PARAMS = false; // Debug lighting settings
     inline static bool SHADOW = true;
     inline static float EXPOSURE = 0.5f; // Default exposure
     inline static float SATURATION = 2.7f; // Default saturation
 	inline static vec3 LIGHT_COLOR = vec3(1.0f, 1.0f, 1.0f); // Default light color
-    inline static bool DEBUG_LIGHTING = false;
-    inline static bool DEBUG_GEOM = false;
 
-    // UI
-    constexpr bool SHOW_HEALTHBAR = true;
-	constexpr bool SHOW_MINIMAP = true;
-
-    const std::string RESOURCE_DIRECTORY_PREFIX = "../resources"; // Default, can be overridden
+    // Game Elements --- should be set to true to enable drawing of the system
+    constexpr bool DRAW_PARTICLES = true;
+    constexpr bool DRAW_HEALTHBAR = true;
+	constexpr bool DRAW_MINIMAP = true;
+    constexpr bool DRAW_PLAYER_DAMAGE = true;
+    constexpr bool DRAW_PAW_PRINTS = true;
 
     // Default Window Dimensions
     constexpr int DEFAULT_WINDOW_WIDTH = 1920;
@@ -94,6 +98,14 @@ namespace Config {// --- Global Game Settings (Config::<thing you want>)---
     constexpr float HALF_PI = glm::half_pi<float>();
     constexpr float PI = glm::pi<float>();
 
+    // Paw Print Settings
+    constexpr int PRINTS_MAX = 16;
+    constexpr float PRINTS_LIFETIME = 5.0f; // seconds
+    inline static bool LEFT_PAW = false;
+    constexpr float PAW_SPACING = 0.1f;
+    inline static vec2 LAST_PAW_POS;
+    constexpr float MIN_PAW_DIST = 0.2f;
+
     // --- Utility Functions ---
 
     // A random float generator
@@ -103,4 +115,3 @@ namespace Config {// --- Global Game Settings (Config::<thing you want>)---
         return distribution(generator);
     }
 }
-
