@@ -29,6 +29,8 @@
 // #include "Grid.h"
 #include "Enemy.h"
 #include "IceElemental.h"
+#include "FireElemental.h"
+#include "LightningElemental.h"
 #include "Player.h"
 #include "BossRoomGen.h"
 #include "FrustumCulling.h"
@@ -67,6 +69,8 @@ public:
 	shared_ptr<Program> DebugProg;
 	shared_ptr<Program> hudProg;
 	shared_ptr<Program> redFlashProg;
+	shared_ptr<Program> SkyboxProg;
+	shared_ptr<Program> debugLineProg;
 
 	// ground data - Reused for all flat ground planes
 	GLuint GrndBuffObj = 0, GrndNorBuffObj = 0, GIndxBuffObj = 0; // Initialize to 0
@@ -86,6 +90,15 @@ public:
 	shared_ptr<Texture> libraryGroundTex;
 	shared_ptr<Texture> carpetTex;
 	shared_ptr<Texture> particleAlphaTex;
+	shared_ptr<Texture> pawTex;
+	
+	// Skybox texture and VAO/VBO
+	GLuint skyboxCubemap;
+	GLuint skyboxCubeVAO = 0;
+	GLuint skyboxCubeVBO = 0;
+
+	// AABB VAO/VBO/EBO
+	GLuint aabbVAO = 0, aabbVBO = 0, aabbEBO = 0;
 
 	vector<WallObject> borderWalls;
 	std::set<WallObjKey> borderWallKeys; // Set to track unique keys
@@ -107,21 +120,18 @@ public:
 	// --- Spell Projectiles ---
 	std::vector<SpellProjectile> activeSpells;
 	std::shared_ptr<particleGen> particleSystem;
-	glm::vec3 baseSphereLocalAABBMin;
-	glm::vec3 baseSphereLocalAABBMax;
-	bool sphereAABBCalculated = false;
+	shared_ptr<AABB> sphereBB;
 
 	// -- Boss Enemy Spell Projectiles --
 	std::vector<SpellProjectile> bossActiveSpells;
 
 	// character bounding box
-	glm::vec3 manAABBmin, manAABBmax;
+	shared_ptr<AABB> playerBB;
 
 	AssimpModel *book_shelf1, *book_shelf2;
 	AssimpModel *candelabra, *chest, *library_bench, *low_poly_bookshelf, *table_chairs1, *table_chairs2, *grandfather_clock, *bookstand, *door;
 	AssimpModel *healthBar;
 	AssimpModel *cube, *sphere;
-	AssimpModel *sky_sphere;
 	AssimpModel *border, *lock, *lockHandle, *key;
 	AssimpModel *bookCover, *bookPaper;
 
@@ -138,6 +148,8 @@ public:
 	AssimpModel *CatWizard;
 
 	AssimpModel *iceElemental;
+	AssimpModel *fireElemental;
+	AssimpModel *lightningElemental;
 
 	BossEnemy *bossEnemy;
 
@@ -207,7 +219,7 @@ public:
 
 	BossRoomGen *bossRoom = new BossRoomGen();
 	Grid<BossRoomGen::Cell> bossGrid;
-	ivec2 bossGridSize = glm::ivec2(30, 30); // Size of the grid (number of cells in each dimension)
+	ivec2 bossGridSize = glm::ivec2(40, 40); // Size of the grid (number of cells in each dimension)
 
 	ivec2 bossEntranceDir = glm::ivec2(0, 1); // Direction of the boss entrance (relative to the library grid)
 
@@ -241,6 +253,92 @@ public:
 	GLuint quad_VertexArrayID;
 	GLuint quad_vertexbuffer;
 
+	Quadtree *libraryQuadTree;
+	Quadtree *bossRoomQuadTree;
+
+	std::vector<glm::mat4> book_shelf1Matrices;
+	std::vector<glm::mat4> book_shelf2Matrices;
+	std::vector<glm::mat4> bookstandMatrices;
+	std::vector<glm::mat4> table_chairs1Matrices;
+	std::vector<glm::mat4> table_chairs2Matrices;
+	std::vector<glm::mat4> chestMatrices;
+	std::vector<glm::mat4> candelabraMatrices;
+	std::vector<glm::mat4> clockMatrices;
+	std::vector<glm::mat4> doorMatrices;
+
+	std::vector<glm::mat4> vbook_shelf1Matrices;
+	std::vector<glm::mat4> vbook_shelf2Matrices;
+	std::vector<glm::mat4> vbookstandMatrices;
+	std::vector<glm::mat4> vtable_chairs1Matrices;
+	std::vector<glm::mat4> vtable_chairs2Matrices;
+	std::vector<glm::mat4> vchestMatrices;
+	std::vector<glm::mat4> vcandelabraMatrices;
+	std::vector<glm::mat4> vclockMatrices;
+
+	std::vector<glm::mat4> circularBookShelfMatrices;
+	glm::vec3 bossEntrancePos;
+	float bossEntranceRot;
+
+	std::vector<glm::mat4> vCircularBookShelfMatrices;
+	int activeEnemiesCount = 0; // Count of active enemies in the scene
+	int keysneededToCollect = 0; // Total number of keys to collect in the scene
+
+	// --- Paw Prints ---
+	// CPU: record and upload a list of paw prints
+	// maintain up to a maximum and replace the oldest when adding a new print
+	// GPU: handles everything else
+	deque<PawPrint> prints;
+	void onStep(vec3 worldPos, float facingAngle) {
+		vec2 cur{ worldPos.x, worldPos.z };
+
+		vec2 moveDelta = cur - Config::LAST_PAW_POS;
+		if (glm::length(moveDelta) < Config::MIN_PAW_DIST)
+			return;  // not far enough to step
+
+		glm::vec2 forward2D = glm::normalize(moveDelta);
+
+		glm::vec2 lateral = glm::vec2(-forward2D.y, forward2D.x);
+
+		float side = Config::LEFT_PAW ? +1.0f : -1.0f;
+		Config::LEFT_PAW = !Config::LEFT_PAW; // alternate left/right
+
+		glm::vec2 footPos = cur + lateral * (side * Config::PAW_SPACING);
+
+		prints.push_back({ footPos, facingAngle, float(glfwGetTime()) }); // record it
+		if (prints.size() > Config::PRINTS_MAX) prints.pop_front(); // remove oldest print
+		Config::LAST_PAW_POS = cur;
+	}
+
+	void initAABBWireframe() {
+		// corner positions
+		static const glm::vec3 corners[8] = {
+		  {-1,-1,-1},{+1,-1,-1},{+1,+1,-1},{-1,+1,-1},
+		  {-1,-1,+1},{+1,-1,+1},{+1,+1,+1},{-1,+1,+1}
+		};
+		// edges: 12 segments -> 24 indices
+		static const GLuint edges[24] = {
+		  0,1, 1,2, 2,3, 3,0,
+		  4,5, 5,6, 6,7, 7,4,
+		  0,4, 1,5, 2,6, 3,7
+		};
+
+		glGenVertexArrays(1, &aabbVAO);
+		glGenBuffers(1, &aabbVBO);
+		glGenBuffers(1, &aabbEBO);
+
+		glBindVertexArray(aabbVAO);
+		// positions
+		glBindBuffer(GL_ARRAY_BUFFER, aabbVBO);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(corners), corners, GL_STATIC_DRAW);
+		// edges
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, aabbEBO);
+		glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(edges), edges, GL_STATIC_DRAW);
+		// attrib 0 = position
+		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
+		glBindVertexArray(0);
+	}
+
 	// Set up the FBO for storing the light's depth map
 	void initShadow() {
 		glGenFramebuffers(1, &depthMapFBO); // Generate FBO for shadow depth
@@ -258,6 +356,105 @@ public:
 		glDrawBuffer(GL_NONE);
 		glReadBuffer(GL_NONE);
 		glBindFramebuffer(GL_FRAMEBUFFER, 0); // Unbind the framebuffer
+	}
+
+	void initSkyboxCube() {
+		static const float skyboxVertices[] = {
+		// back face
+		-1.0f,  1.0f, -1.0f,
+		-1.0f, -1.0f, -1.0f,
+		1.0f, -1.0f, -1.0f,
+		1.0f, -1.0f, -1.0f,
+		1.0f,  1.0f, -1.0f,
+		-1.0f,  1.0f, -1.0f,
+		// front face
+		-1.0f, -1.0f,  1.0f,
+		-1.0f,  1.0f,  1.0f,
+		1.0f,  1.0f,  1.0f,
+		1.0f,  1.0f,  1.0f,
+		1.0f, -1.0f,  1.0f,
+		-1.0f, -1.0f,  1.0f,
+		// left face
+		-1.0f,  1.0f,  1.0f,
+		-1.0f,  1.0f, -1.0f,
+		-1.0f, -1.0f, -1.0f,
+		-1.0f, -1.0f, -1.0f,
+		-1.0f, -1.0f,  1.0f,
+		-1.0f,  1.0f,  1.0f,
+		// right face
+		1.0f,  1.0f, -1.0f,
+		1.0f,  1.0f,  1.0f,
+		1.0f, -1.0f,  1.0f,
+		1.0f, -1.0f,  1.0f,
+		1.0f, -1.0f, -1.0f,
+		1.0f,  1.0f, -1.0f,
+		// bottom face
+		-1.0f, -1.0f, -1.0f,
+		1.0f, -1.0f, -1.0f,
+		1.0f, -1.0f,  1.0f,
+		1.0f, -1.0f,  1.0f,
+		-1.0f, -1.0f,  1.0f,
+		-1.0f, -1.0f, -1.0f,
+		// top face
+		-1.0f,  1.0f,  1.0f,
+		1.0f,  1.0f,  1.0f,
+		1.0f,  1.0f, -1.0f,
+		1.0f,  1.0f, -1.0f,
+		-1.0f,  1.0f, -1.0f,
+		-1.0f,  1.0f,  1.0f
+		};
+
+		glGenVertexArrays(1, &skyboxCubeVAO);
+		glGenBuffers(1, &skyboxCubeVBO);
+
+		glBindVertexArray(skyboxCubeVAO);
+		glBindBuffer(GL_ARRAY_BUFFER, skyboxCubeVBO);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(skyboxVertices), skyboxVertices, GL_STATIC_DRAW);
+
+		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+		glBindVertexArray(0);
+	}
+
+	void initSkyboxTex(string resourceDirectory) {
+		glGenTextures(1, &skyboxCubemap);
+		glBindTexture(GL_TEXTURE_CUBE_MAP, skyboxCubemap);
+
+		vector<string> faces = {
+			resourceDirectory + "/skyboxTex/px.png",
+			resourceDirectory + "/skyboxTex/nx.png",
+			resourceDirectory + "/skyboxTex/py.png",
+			resourceDirectory + "/skyboxTex/ny.png",
+			resourceDirectory + "/skyboxTex/pz.png",
+			resourceDirectory + "/skyboxTex/nz.png"
+		};
+
+		for (GLuint i = 0; i < faces.size(); i++) {
+			int w, h, n;
+			unsigned char* data = stbi_load(faces[i].c_str(), &w, &h, &n, 0);
+			if (data) {
+				GLenum format = (n == 4 ? GL_RGBA : GL_RGB);
+				glTexImage2D(
+					GL_TEXTURE_CUBE_MAP_POSITIVE_X + i,
+					0, format, w, h, 0,
+					format, GL_UNSIGNED_BYTE, data
+				);
+				stbi_image_free(data);
+			}
+			else {
+				std::cerr << "Failed to load skybox face " << faces[i] << std::endl;
+				stbi_image_free(data);
+			}
+		}
+
+		// Set filtering and wraping
+		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+
+		glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
 	}
 
 	void updateCameraVectors() {
@@ -407,6 +604,16 @@ public:
 		DebugProg->setShaderNames(resourceDirectory + "/pass_vert.glsl", resourceDirectory + "/pass_texfrag.glsl");
 		DebugProg->init();
 
+		SkyboxProg = make_shared<Program>();
+		SkyboxProg->setVerbose(Config::DEBUG_SHADER);
+		SkyboxProg->setShaderNames(resourceDirectory + "/skybox_vert.glsl", resourceDirectory + "/skybox_frag.glsl");
+		SkyboxProg->init();
+
+		debugLineProg = make_shared<Program>();
+		debugLineProg->setVerbose(Config::DEBUG_SHADER);
+		debugLineProg->setShaderNames(resourceDirectory + "/line_vert.glsl", resourceDirectory + "/line_frag.glsl");
+		debugLineProg->init();
+
 		// Add unfigorm and attrubutes to each of the programs
 		DepthProg->addUniform("LP");
 		DepthProg->addUniform("LV");
@@ -489,13 +696,29 @@ public:
 		redFlashProg->init();
 		redFlashProg->addUniform("projection");
 		redFlashProg->addUniform("model");
-		//redFlashProg->addUniform("color");
 		redFlashProg->addUniform("alpha");
+
+		SkyboxProg->addUniform("P");
+		SkyboxProg->addUniform("V");
+		SkyboxProg->addUniform("skyTex");
+
+		debugLineProg->addUniform("P");
+		debugLineProg->addUniform("V");
+		debugLineProg->addUniform("M");
+		debugLineProg->addUniform("color");
+
+		SkyboxProg->addUniform("P");
+		SkyboxProg->addUniform("V");
+		SkyboxProg->addUniform("skyTex");
+
+		debugLineProg->addUniform("P");
+		debugLineProg->addUniform("V");
+		debugLineProg->addUniform("M");
+		debugLineProg->addUniform("color");
 
 		updateCameraVectors();
 
 		borderWallTex = make_shared<Texture>();
-		//borderWallTex->setFilename(resourceDirectory + "/sky_sphere/sky_sphere.fbm/infinite_lib2.png");
 		borderWallTex->setFilename(resourceDirectory + "/Wall/textures/mossCastle.png");
 		borderWallTex->init();
 		borderWallTex->setUnit(0);
@@ -585,20 +808,367 @@ public:
 		addLibGrnd(bossGridSize.x * 2, bossGridSize.y * 2, 0.0f, bossRoom->getWorldOrigin(), libraryGroundTex);
 	}
 
+	void initInstancingMatrices() {
+		// Clear previous frame data
+		book_shelf1Matrices.clear();
+		book_shelf2Matrices.clear();
+		bookstandMatrices.clear();
+		table_chairs1Matrices.clear();
+		table_chairs2Matrices.clear();
+		chestMatrices.clear();
+		candelabraMatrices.clear();
+		clockMatrices.clear();
+		doorMatrices.clear();
+
+
+		for (int z = 0; z < grid.getSize().y; ++z) {
+			for (int x = 0; x < grid.getSize().x; ++x) {
+				glm::ivec2 gridPos(x, z);
+				if (grid[gridPos].type != LibraryGen::CellType::CLUSTER)
+					continue;
+
+				float i = library->mapGridXtoWorldX(x);
+				float j = library->mapGridYtoWorldZ(z);
+				glm::vec3 pos(i, libraryCenter.y, j);
+				float rotation = grid[gridPos].transformData.rotation;
+				glm::vec3 scale = grid[gridPos].transformData.scale;
+				glm::mat4 model = glm::mat4(1.0f);
+				model = glm::translate(model, pos);
+
+
+				auto addInstance = [&](std::vector<glm::mat4>& container) {
+					glm::mat4 instModel = model;
+					instModel = glm::rotate(instModel, rotation, glm::vec3(0, 1, 0));
+					instModel = glm::scale(instModel, scale);
+					container.push_back(instModel);
+				};
+
+				using CT = LibraryGen::ClusterType;
+				using OT = LibraryGen::CellObjType;
+
+				switch (grid[gridPos].clusterType) {
+					case CT::SHELF1: addInstance(book_shelf1Matrices); break;
+					case CT::SHELF2: addInstance(book_shelf1Matrices); break;
+					case CT::SHELF3: addInstance(book_shelf1Matrices); break;
+					case CT::ONLY_CANDELABRA: addInstance(candelabraMatrices); break;
+					case CT::ONLY_CHEST: addInstance(chestMatrices); break;
+					case CT::ONLY_TABLE:
+						addInstance(table_chairs1Matrices);
+						addLibGrnd(5.0f, 5.0f, 1.0f, vec3(i, libraryCenter.y + 0.1f, j), carpetTex);
+						break;
+					case CT::ONLY_CLOCK: addInstance(clockMatrices); break;
+					case CT::ONLY_BOOKSTAND: addInstance(bookstandMatrices); break;
+
+					case CT::LAYOUT1:
+						switch (grid[gridPos].objectType) {
+							case OT::BOOKSHELF: addInstance(book_shelf1Matrices); break;
+							case OT::ROTATED_BOOKSHELF: addInstance(book_shelf1Matrices); break;
+							case OT::TABLE_AND_CHAIR1:
+							case OT::TABLE_AND_CHAIR2:
+								addInstance(table_chairs1Matrices);
+								addLibGrnd(5.0f, 5.0f, 1.0f, vec3(i, libraryCenter.y + 0.1f, j), carpetTex);
+								break;
+							case OT::CHEST: addInstance(chestMatrices); break;
+							case OT::CANDELABRA: addInstance(candelabraMatrices); break;
+							case OT::GRANDFATHER_CLOCK: addInstance(clockMatrices); break;
+							default: break;
+						}
+						break;
+
+					case CT::GLOWING_SHELF1:
+						switch (grid[gridPos].objectType) {
+							case OT::SHELF_WITH_ABILITY: addInstance(book_shelf2Matrices); break;
+							case OT::BOOKSHELF: addInstance(book_shelf1Matrices); break;
+							default: break;
+						}
+						break;
+
+					case CT::GLOWING_SHELF2:
+						switch (grid[gridPos].objectType) {
+							case OT::SHELF_WITH_ABILITY_ROTATED:
+								addInstance(book_shelf2Matrices); break;
+							case OT::ROTATED_BOOKSHELF:
+								addInstance(book_shelf1Matrices); break;
+							default: break;
+						}
+						break;
+
+					default:
+						break;
+				}
+			}
+		}
+
+		// -- Append boss room objects to instancing arrays --
+		for (int z = 0; z < bossGrid.getSize().y; ++z) {
+			for (int x = 0; x < bossGrid.getSize().x; ++x) {
+				glm::ivec2 gridPos(x, z);
+
+				float i = bossRoom->mapGridXtoWorldX(x);
+				float j = bossRoom->mapGridYtoWorldZ(z);
+				if (bossGrid[gridPos].type == BossRoomGen::CellType::BORDER) continue; // Skip borders for instancing already initialized in another function
+				glm::vec3 pos(i, libraryCenter.y, j);
+				float rotation = bossGrid[gridPos].transformData.rotation;
+				glm::vec3 scale = bossGrid[gridPos].transformData.scale;
+				glm::mat4 model = glm::translate(glm::mat4(1.0f), pos);
+				model = glm::rotate(model, glm::radians(rotation), glm::vec3(0, 1, 0));
+				model = glm::scale(model, scale);
+
+				auto addInstance = [&](std::vector<glm::mat4>& container) {
+					container.push_back(model);
+				};
+
+				using CT = BossRoomGen::CellType;
+				using BT = BossRoomGen::BorderType;
+				using OT = BossRoomGen::CellObjType;
+
+				const auto& cell = bossGrid[gridPos];
+
+				switch (cell.type) {
+					case CT::BORDER:
+						addInstance(book_shelf1Matrices);
+						break;
+
+					case CT::ENTRANCE:
+						if (cell.borderType == BT::ENTRANCE_SIDE) {
+							addInstance(book_shelf1Matrices);
+						} else if (cell.borderType == BT::ENTRANCE_MIDDLE) {
+							addInstance(doorMatrices);
+						}
+						break;
+
+					case CT::EXIT:
+						if (cell.borderType == BT::EXIT_SIDE) {
+							addInstance(book_shelf1Matrices);
+						} else if (cell.borderType == BT::EXIT_MIDDLE) {
+							addInstance(doorMatrices);
+						}
+						break;
+
+					case CT::CLUSTER:
+						if (cell.clusterType == BossRoomGen::ClusterType::SHELF1) {
+							if (cell.objectType == OT::GLOWING_SHELF) {
+								addInstance(book_shelf2Matrices);
+							}
+						}
+						break;
+
+					default:
+						break;
+				}
+			}
+		}
+
+		book_shelf1->InitializeInstancing(book_shelf1Matrices);
+		book_shelf2->InitializeInstancing(book_shelf2Matrices);
+		bookstand->InitializeInstancing(bookstandMatrices);
+		table_chairs1->InitializeInstancing(table_chairs1Matrices);
+		table_chairs2->InitializeInstancing(table_chairs2Matrices);
+		chest->InitializeInstancing(chestMatrices);
+		candelabra->InitializeInstancing(candelabraMatrices);
+		grandfather_clock->InitializeInstancing(clockMatrices);
+
+	}
+
+
+	void initQuadTree() {
+		int count = 0;
+		float cellSize = 2.0f; // Assuming square cells
+		libraryQuadTree = new Quadtree(glm::vec2(0, 0), glm::vec2(grid.getSize().x * cellSize * 0.5f, grid.getSize().y * cellSize * 0.5f));
+		for (int z = 0; z < grid.getSize().y; ++z) {
+			for (int x = 0; x < grid.getSize().x; ++x) {
+				glm::ivec2 cellPos(x, z);
+				if (!grid.inBounds(cellPos)) continue; // Skip out-of-bounds cells
+				LibraryGen::Cell cell = grid[cellPos];
+				if ((cell.type != LibraryGen::CellType::CLUSTER) && (cell.type != LibraryGen::CellType::BORDER)) {
+					continue; // Skip non-cluster and non-border cells
+				}
+				// if (cell.type != LibraryGen::CellType::CLUSTER) continue; // Skip non-cluster cells
+
+				float i = library->mapGridXtoWorldX(x);
+				float j = library->mapGridYtoWorldZ(z);
+				glm::vec3 clusterCenter = glm::vec3(i, libraryCenter.y, j);
+				glm::vec3 clusterBboxMin, clusterBboxMax;
+
+				if (grid[cellPos].type == LibraryGen::CellType::CLUSTER) {
+						switch (cell.objectType) {
+							case LibraryGen::CellObjType::CANDELABRA:
+								clusterBboxMin = candelabra->getBoundingBoxMin();
+								clusterBboxMax = candelabra->getBoundingBoxMax();
+								break;
+							case LibraryGen::CellObjType::CHEST:
+								clusterBboxMin = chest->getBoundingBoxMin();
+								clusterBboxMax = chest->getBoundingBoxMax();
+								break;
+							case LibraryGen::CellObjType::GRANDFATHER_CLOCK:
+								clusterBboxMin = grandfather_clock->getBoundingBoxMin();
+								clusterBboxMax = grandfather_clock->getBoundingBoxMax();
+								break;
+							case LibraryGen::CellObjType::ROTATED_BOOKSHELF:
+							case LibraryGen::CellObjType::BOOKSHELF:
+								clusterBboxMin = book_shelf1->getBoundingBoxMin();
+								clusterBboxMax = book_shelf1->getBoundingBoxMax();
+								break;
+							case LibraryGen::CellObjType::TABLE_AND_CHAIR1:
+								clusterBboxMin = table_chairs1->getBoundingBoxMin();
+								clusterBboxMax = table_chairs1->getBoundingBoxMax();
+								break;
+							case LibraryGen::CellObjType::TABLE_AND_CHAIR2:
+								clusterBboxMin = table_chairs2->getBoundingBoxMin();
+								clusterBboxMax = table_chairs2->getBoundingBoxMax();
+								break;
+							case LibraryGen::CellObjType::SHELF_WITH_ABILITY:
+							case LibraryGen::CellObjType::SHELF_WITH_ABILITY_ROTATED:
+								clusterBboxMin = book_shelf2->getBoundingBoxMin();
+								clusterBboxMax = book_shelf2->getBoundingBoxMax();
+								count++;
+								break;
+							case LibraryGen::CellObjType::BOOKSTAND:
+								clusterBboxMin = bookstand->getBoundingBoxMin();
+								clusterBboxMax = bookstand->getBoundingBoxMax();
+								break;
+							default:
+								continue; // Skip unknown object types
+						}
+					} else if (cell.type == LibraryGen::CellType::BORDER) {
+						switch (cell.borderType) {
+							case LibraryGen::BorderType::TOP_BORDER:
+							case LibraryGen::BorderType::BOTTOM_BORDER:
+								clusterBboxMin = glm::vec3(-2.0f, 0.0f, -0.25f);
+								clusterBboxMax = glm::vec3(2.0f, 2.0f, 0.25f);
+								break;
+							case LibraryGen::BorderType::LEFT_BORDER:
+							case LibraryGen::BorderType::RIGHT_BORDER:
+								clusterBboxMin = glm::vec3(-0.25f, 0.0f, -2.0f);
+								clusterBboxMax = glm::vec3(0.25f, 2.0f, 2.0f);
+								break;
+							case LibraryGen::BorderType::LEFT_OF_BOSS_ENTRANCE:
+								if (bossEntranceDir.y > 0) {
+									clusterBboxMin = glm::vec3(-1.0f, 0.0f, -0.25f);
+									clusterBboxMax = glm::vec3(1.0f, 2.0f, 0.25f);
+								} else if (bossEntranceDir.y < 0) {
+									clusterBboxMin = glm::vec3(-1.0f, 0.0f, -0.25f);
+									clusterBboxMax = glm::vec3(1.0f, 2.0f, 0.25f);
+								} else if (bossEntranceDir.x > 0) {
+									clusterBboxMin = glm::vec3(-0.25f, 0.0f, -1.5f);
+									clusterBboxMax = glm::vec3(0.25f, 2.0f, 1.5f);
+								} else if (bossEntranceDir.x < 0) {
+									clusterBboxMin = glm::vec3(-0.25f, 0.0f, -1.5f);
+									clusterBboxMax = glm::vec3(0.25f, 2.0f, 1.5f);
+								} else {
+									continue; // Skip if boss entrance is not at the top
+								}
+								break;
+							case LibraryGen::BorderType::RIGHT_OF_BOSS_ENTRANCE:
+								if (bossEntranceDir.x > 0) {
+									clusterBboxMin = glm::vec3(-0.25f, 0.0f, -0.40f);
+									clusterBboxMax = glm::vec3(0.25f, 2.0f, 0.75f);
+								} else if (bossEntranceDir.x < 0) {
+									clusterBboxMin = glm::vec3(-0.25f, 0.0f, -0.40f);
+									clusterBboxMax = glm::vec3(0.25f, 2.0f, 0.75f);
+								}
+								else {
+									continue; // Skip if boss entrance is not at the top
+								}
+								break;
+							default:
+								// // For borders, we can use a simple bounding box
+								// clusterBboxMin = glm::vec3(-1.0f, 0.0f, -1.0f);
+								// clusterBboxMax = glm::vec3(1.0f, 2.0f, 1.0f);
+								// break;
+								continue; // Skip unknown border types
+						}
+
+					} else {
+						continue; // Skip non-cluster cells
+					}
+
+				// Calculate the world bounding box for the object
+				glm::mat4 objectTransform = glm::translate(glm::mat4(1.0f), clusterCenter);
+				objectTransform = glm::rotate(objectTransform, cell.transformData.rotation, glm::vec3(0, 1, 0));
+				objectTransform = glm::scale(objectTransform, cell.transformData.scale);
+
+				glm::vec3 clusterWorldMin, clusterWorldMax;
+				updateBoundingBox(clusterBboxMin, clusterBboxMax, objectTransform, clusterWorldMin, clusterWorldMax);
+
+				// Add the bounding box to the quadtree
+				int id = z * gridSize.x + x; // Unique ID for the cell
+				glm::vec2 quadaabb_center = glm::vec2(clusterCenter.x, clusterCenter.z);
+				QuadElement element(id, quadaabb_center, cellPos, clusterWorldMin, clusterWorldMax);
+				libraryQuadTree->insert(element, 5);
+				// std::cout << "Inserted element with ID: " << id << " at position: (" << clusterCenter.x << ", " << clusterCenter.z << ")" << std::endl;
+			}
+		}
+		std::cout << "GLOWING SHELF COUNT: " << count << std::endl;
+		std::cout << "Library Quadtree initialized with " << libraryQuadTree->getElementCount() << " elements." << std::endl;
+		std::cout << "Subdivisions: " << libraryQuadTree->getMaxSubdivisions() << std::endl;
+
+		bossRoomQuadTree = new Quadtree(glm::vec2(bossRoom->getWorldOrigin().x, bossRoom->getWorldOrigin().z), glm::vec2(bossGrid.getSize().x * cellSize * 0.5f, bossGrid.getSize().y * cellSize * 0.5f));
+		for (int z = 0; z < bossGridSize.y; ++z) {
+			for (int x = 0; x < bossGridSize.x; ++x) {
+				glm::ivec2 cellPos = glm::ivec2(x, z);
+				if (!bossGrid.inBounds(cellPos)) continue; // Skip out-of-bounds cells
+
+				const auto& cell = bossGrid[cellPos];
+				if (cell.type == BossRoomGen::CellType::NONE) continue;
+				// if (bossfightstarted && !bossRoom->isInsideBossArea(cellPos)) return true;
+
+				glm::vec3 clusterBboxMin;
+				glm::vec3 clusterBboxMax;
+				glm::vec3 clusterCenter = glm::vec3(bossRoom->mapGridXtoWorldX(cellPos.x), libraryCenter.y, bossRoom->mapGridYtoWorldZ(cellPos.y));
+
+				switch (cell.objectType) {
+					case BossRoomGen::CellObjType::BOOKSHELF:
+						clusterBboxMin = book_shelf1->getBoundingBoxMin();
+						clusterBboxMax = book_shelf1->getBoundingBoxMax();
+						break;
+					case BossRoomGen::CellObjType::GLOWING_SHELF:
+						clusterBboxMin = book_shelf2->getBoundingBoxMin();
+						clusterBboxMax = book_shelf2->getBoundingBoxMax();
+						break;
+					case BossRoomGen::CellObjType::DOOR:
+						clusterBboxMin = door->getBoundingBoxMin();
+						clusterBboxMax = door->getBoundingBoxMax();
+						break;
+					default:
+						continue; // Skip unknown object types
+				}
+
+				glm::mat4 objectTransform = glm::translate(glm::mat4(1.0f), clusterCenter);
+				objectTransform = glm::rotate(objectTransform, cell.transformData.rotation, glm::vec3(0, 1, 0));
+				objectTransform = glm::scale(objectTransform, cell.transformData.scale);
+				glm::vec3 clusterWorldMin, clusterWorldMax;
+				updateBoundingBox(clusterBboxMin, clusterBboxMax, objectTransform, clusterWorldMin, clusterWorldMax);
+
+				int id = z * bossGridSize.x + x; // Unique ID for the cell
+				glm::vec2 quadaabb_center = glm::vec2(clusterCenter.x, clusterCenter.z);
+				QuadElement element(id, quadaabb_center, cellPos, clusterWorldMin, clusterWorldMax);
+				bossRoomQuadTree->insert(element, 10);
+				// std::cout << "Inserted boss room element with ID: " << id << " at position: (" << clusterCenter.x << ", " << clusterCenter.z << ")" << std::endl;
+			}
+		}
+
+		std::cout << "Boss Room Quadtree initialized with " << bossRoomQuadTree->getElementCount() << " elements." << std::endl;
+
+	}
+
 	void initGeom(const std::string& resourceDirectory) { // NOTE: PROBLEMS GETTING ANIMATION FROM "Fixed" FBX
 		string errStr;
 
 		// load the walking character moded
-		player_rig = new AssimpModel(resourceDirectory + "/CatWizard/CatWizardAnimation2.fbx");
+		player_rig = new AssimpModel(resourceDirectory + "/CatWizard/CatWizardAnimationRig2.fbx");
 		player_rig->assignTexture("texture_diffuse", resourceDirectory + "/CatWizard/textures/ImphenziaPalette02-Albedo.png");
 		//PROBLEM GETTING ANIMATION FROM "Fixed" FBX
-		player_walk = new Animation(resourceDirectory + "/CatWizard/CatWizardAnimation2.fbx", player_rig, 2);
-		player_idle = new Animation(resourceDirectory + "/CatWizard/CatWizardAnimation2.fbx", player_rig, 1);
+		player_walk = new Animation(resourceDirectory + "/CatWizard/CatWizardAnimationRig2.fbx", player_rig, 1);
+		player_idle = new Animation(resourceDirectory + "/CatWizard/CatWizardAnimationRig2.fbx", player_rig, 2);
 		//player_idle = new Animation(resourceDirectory + "/Vanguard/Vanguard.fbx", player_rig, 1);
 
 		//TEST Load the cat
 		//CatWizard = new AssimpModel(resourceDirectory + "/CatWizard/BlendWalkFix.fbx");
-		calculatePlayerLocalAABB();
+		playerBB = make_shared<AABB>();
+		playerBB->min = player_rig->getBoundingBoxMin() * manScale.x;
+		playerBB->max = player_rig->getBoundingBoxMax() * manScale.x;
+		playerBB->max.y += 2.0f;
 
 		catwizard_animator = new Animator(player_walk);
 
@@ -654,12 +1224,14 @@ public:
 		door = new AssimpModel(resourceDirectory + "/cluster_assets/door/door.obj");
 		door->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/door/Door_diffuse.png");
 
-		sky_sphere = new AssimpModel(resourceDirectory + "/sky_sphere/skybox_sphere.obj");
-		sky_sphere->assignTexture("texture_diffuse", resourceDirectory + "/sky_sphere/sky_sphere.fbm/infinite_lib2.png");
-
 		sphere = new AssimpModel(resourceDirectory + "/SmoothSphere.obj");
+		sphereBB = make_shared<AABB>();
+		sphereBB->min = sphere->getBoundingBoxMin();
+		sphereBB->max = sphere->getBoundingBoxMax();
 
 		iceElemental = new AssimpModel(resourceDirectory + "/IceElemental/IceElem.fbx");
+		fireElemental = new AssimpModel(resourceDirectory + "/FireElemental/FireElem.fbx");
+		lightningElemental = new AssimpModel(resourceDirectory + "/LightningElemental/LightningElem.fbx");
 
 		healthBar = new AssimpModel(resourceDirectory + "/Quad/hud_quad.obj");
 		healthBar->assignTexture("texture_diffuse", resourceDirectory + "/healthbar.bmp");
@@ -677,15 +1249,12 @@ public:
 		lock = new AssimpModel(resourceDirectory + "/Key_and_Lock/lockCopy.obj");
 		lockHandle = new AssimpModel(resourceDirectory + "/Key_and_Lock/lockHandle.obj");
 
-		baseSphereLocalAABBMin = sphere->getBoundingBoxMin();
-		baseSphereLocalAABBMax = sphere->getBoundingBoxMax();
-		sphereAABBCalculated = true;
 		cout << "[DEBUG] Stored Base Sphere Local AABB." << endl;
 
 		vec3 bossSpawnPos = bossRoom->getWorldOrigin();
 		
 		initEnemies();
-		bossEnemy = new BossEnemy(bossSpawnPos, BOSS_HP_MAX, sphere, vec3(1.0f), vec3(0, 1, 0), BOSS_SPECIAL_ATTACK_COOLDOWN, SpellType::FIRE);
+		bossEnemy = new BossEnemy(bossSpawnPos, BOSS_HP_MAX, sphere, vec3(4.0f), vec3(0, 1, 0), BOSS_SPECIAL_ATTACK_COOLDOWN, SpellType::ICE);
 	}
 
 	void SetMaterial(shared_ptr<Program> shader, Material color) {
@@ -804,6 +1373,18 @@ public:
 				break;
 			case Material::blue_body:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.35f, 0.4f, 0.914f);
+				glUniform1f(shader->getUniform("MatRough"), 0.8f);
+				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
+				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				break;
+			case Material::red_body:
+				glUniform3f(shader->getUniform("MatAlbedo"), 0.914f, 0.35f, 0.4f);
+				glUniform1f(shader->getUniform("MatRough"), 0.8f);
+				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
+				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				break;
+			case Material::yellow_body:
+				glUniform3f(shader->getUniform("MatAlbedo"), 0.914f, 0.914f, 0.35f);
 				glUniform1f(shader->getUniform("MatRough"), 0.8f);
 				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
@@ -1202,14 +1783,45 @@ public:
 		if (enemies.size() == 0) {
 			std::vector<vec3> enemySpawnPositions = library->getEnemySpawnPositions();
 
-			for (auto e = enemies.begin(); e != enemies.end(); ++e) {
-				enemies.erase(e);
+			for (Enemy* enemy : enemies) {
+				delete enemy; // Free heap memory
 			}
+			enemies.clear();
 
-			for (const auto& spawnPos : enemySpawnPositions) {
-				enemies.push_back(new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.z), ENEMY_HP_MAX, 2.0f, iceElemental, vec3(1.0f), vec3(0.0f)));
-				// cout << " Enemy placed at: (" << spawnPos.x << ", " << spawnPos.y << ", " << spawnPos.z << ")" << endl;
-			}
+		for (const auto& spawnPos : enemySpawnPositions) {
+			// enemies.push_back(new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.z), ENEMY_HP_MAX, 2.0f, iceElemental, vec3(1.0f), vec3(0.0f)));
+			keysneededToCollect++; // Increment the key count for each enemy spawned
+
+			// cout << " Enemy placed at: (" << spawnPos.x << ", " << spawnPos.y << ", " << spawnPos.z << ")" << endl;
+
+				// randomize enemy type, but make sure there is at least one of each type
+				static bool guaranteed[3] = {false, false, false};
+				static int guaranteedCount = 0;
+
+				int enemyType;
+				if (guaranteedCount < 3) {
+					// Assign each type once
+					for (int t = 0; t < 3; ++t) {
+						if (!guaranteed[t]) {
+							enemyType = t;
+							guaranteed[t] = true;
+							guaranteedCount++;
+							break;
+						}
+					}
+				} else {
+					enemyType = rand() % 3;
+				}
+
+				if (enemyType == 0) {
+					enemies.push_back(new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.z), Config::ICE_ELEMENTAL_HP_MAX, Config::ICE_ELEMENTAL_MOVE_SPEED, iceElemental, vec3(1.0f, 1.0f, 1.0f), vec3(0.0f)));
+				} 
+				else if (enemyType == 1) {
+					enemies.push_back(new FireElemental(vec3(spawnPos.x, Config::FIRE_ELEMENTAL_TRANS_Y, spawnPos.z), Config::FIRE_ELEMENTAL_HP_MAX, Config::FIRE_ELEMENTAL_MOVE_SPEED, fireElemental, vec3(0.1f, 0.1f, 0.1f), vec3(0.0f)));
+				}
+				else if (enemyType == 2) {
+					enemies.push_back(new LightningElemental(vec3(spawnPos.x, Config::LIGHTNING_ELEMENTAL_TRANS_Y, spawnPos.z), Config::LIGHTNING_ELEMENTAL_HP_MAX, Config::LIGHTNING_ELEMENTAL_MOVE_SPEED, lightningElemental, vec3(0.1f, 0.1f, 0.1f), vec3(0.0f)));
+				}
 		}
 	}
 
@@ -1305,8 +1917,8 @@ public:
 		updateBoundingBox(player_rig->getBoundingBoxMin(),
 			player_rig->getBoundingBoxMax(),
 			manTransform,
-			manAABBmin, // This is the visual/interaction AABB
-			manAABBmax);
+			playerBB->min,
+			playerBB->max);
 
 		// Set uniforms and draw
 		if (curS->hasUniform("texOnly")) glUniform1i(curS->getUniform("texOnly"), GL_TRUE);
@@ -1416,25 +2028,47 @@ public:
 		shader->unbind();
 	}
 
-	void drawSkybox(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
-		shader->bind(); // Use prog2 for simple colored shapes
-		Model->pushMatrix(); {
-			Model->loadIdentity();
-			Model->translate(vec3(bossAreaCenter.x, bossAreaCenter.y, bossAreaCenter.z - 20)); // Center the sky sphere at the player position
-			Model->scale(vec3(5.0f)); // Scale up the sky sphere to cover the scene
-			setModel(shader, Model);
-			sky_sphere->Draw(shader);
-		} Model->popMatrix();
+	void drawSkybox(shared_ptr<Program> shader, const shared_ptr<MatrixStack>& Projection, const shared_ptr<MatrixStack>& View) {
+		// disable depth writes and set test
+		glDepthMask(GL_FALSE);
+		glDepthFunc(GL_LEQUAL);
+
+		shader->bind();
+		glUniformMatrix4fv(shader->getUniform("P"),
+			1, GL_FALSE,
+			glm::value_ptr(Projection->topMatrix()));
+
+		glm::mat4 view = View->topMatrix();
+		view[3] = glm::vec4(0, 0, 0, 1);
+		glUniformMatrix4fv(shader->getUniform("V"),
+			1, GL_FALSE,
+			glm::value_ptr(view));
+
+		// bind cubemap
+		glActiveTexture(GL_TEXTURE0 + 12);
+		glBindTexture(GL_TEXTURE_CUBE_MAP, skyboxCubemap);
+		glUniform1i(shader->getUniform("skyTex"), 12);
+
+		// draw cube VAO
+		glBindVertexArray(skyboxCubeVAO);
+		glDrawArrays(GL_TRIANGLES, 0, 36);
+		glBindVertexArray(0);
+
 		shader->unbind();
+
+		// restore depth state
+		glDepthMask(GL_TRUE);
+		glDepthFunc(GL_LESS);
 	}
 
+
+	//TODO: Add particle effects to orbs
 	void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		// --- Collision Check Logic ---
 		for (auto& orb : orbCollectibles) {
 			// Perform collision check ONLY if not collected AND in the IDLE state
-			vec3 tempManAABBmax = vec3(manAABBmax.x, manAABBmax.y + 2.0f, manAABBmax.z);
 			if (!orb.collected && orb.state == OrbState::IDLE && // <<<--- ADD STATE CHECK
-				checkAABBCollision(manAABBmin, tempManAABBmax, orb.AABBmin, orb.AABBmax)) {
+				checkAABBCollision(playerBB->min, playerBB->max, orb.AABBmin, orb.AABBmax)) {
 				orb.collected = true;
 				// orb.state = OrbState::COLLECTED; // Optionally set state
 
@@ -1446,6 +2080,7 @@ public:
 				if (currentPlayerSpellType == SpellType::FIRE) spellTypeName = "FIRE";
 				else if (currentPlayerSpellType == SpellType::ICE) spellTypeName = "ICE";
 				else if (currentPlayerSpellType == SpellType::LIGHTNING) spellTypeName = "LIGHTNING";
+				else if (currentPlayerSpellType == SpellType::HEAL) spellTypeName = "HEAL";
 
 				std::cout << "Collected a Spell Orb! Equipped: " << spellTypeName << " Spell. Orbs available: " << orbsCollectedCount << std::endl;
 			}
@@ -1573,17 +2208,19 @@ public:
 	}
 
 	void checkAllEnemies() {
-		if (canFightboss) return; // Already set to true
-		allEnemiesDead = true; // Assume all are dead unless we find one alive
+		// if (canFightboss) return; // Already set to true
+		// allEnemiesDead = true; // Assume all are dead unless we find one alive
+		activeEnemiesCount = 0; // Reset active enemies count
 		for (const auto* enemy : enemies) {
 			if (enemy && enemy->isAlive()) {
-				allEnemiesDead = false; // Found at least one alive enemy
-				break;
+				// allEnemiesDead = false; // Found at least one alive enemy
+				// break;
+				activeEnemiesCount++;
 			}
 		}
-		if (allEnemiesDead) {
-			canFightboss = true; // All enemies are dead, boss can be fought
-		}
+		// if (allEnemiesDead) {
+		// 	canFightboss = true; // All enemies are dead, boss can be fought
+		// }
 	}
 
 	void checkBossfight() {
@@ -1631,42 +2268,87 @@ public:
 			initMapGen();
 			initEnemies(); // Reinitialize enemies
 			bossActiveSpells.clear();
+			bossEnemy->resetPhase();
 			// enemies.push_back(new Enemy(libraryCenter + vec3(-5.0f, 0.8f, 8.0f), 50.0f, 2.0f, sphere, glm::vec3(0.5f, 1.28f, 0.5f), vec3(0.0f))); // <<-- Pass sphere and scale
 			activeSpells.clear(); // Clear active spells
 			unlock = false;
+			keyCollectibles.clear(); // Clear key collectibles
+			#if USE_INSTANCING
+			initInstancingMatrices();
+			#endif
+			initCircularBorder();
 		}
 	}
 
 	void drawEnemies(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
-		for (const auto* enemy : enemies) {
+		for (auto* enemy : enemies) {
+			
 			if (!enemy || !enemy->isAlive()) {
 				// Ensure a key is added only once per dead enemy if not already present
-				// This simple check assumes positions are unique enough for dead enemies.
-				// A more robust way would be to tag enemies that have already dropped a key.
-				bool keyAlreadyExists = false;
-				for (const auto& k : keyCollectibles) {
-					// Approximate check, ideally use a unique ID from the enemy
-					if (glm::distance(k.position, enemy->getPosition()) < 0.1f) {
-						keyAlreadyExists = true;
-						break;
-					}
+                // This simple check assumes positions are unique enough for dead enemies.
+                // A more robust way would be to tag enemies that have already dropped a key.
+
+
+
+                // bool keyAlreadyExists = false; //some local bools and need some global bools
+				// bool enemyLastPos = false;
+                // for (const auto& key : keyCollectibles) {
+                //     // Approximate check, ideally use a unique ID from the enemy
+                //     if (glm::distance(key.position, enemy->getPosition()) < 0.1f) {
+                //         keyAlreadyExists = true;
+                //         break;
+                //     }
+                // }
+				// 	glm:: vec3 keyPos = enemy->getPosition();
+
+                // if (!keyAlreadyExists ) { //&& !enemyLastPos
+
+				// 	//get enemy pos once, then don't change it until change pick it up?
+				// 	keyPos.y = keyPos.y - 1.5f;
+				// 	//std::cout << "key position " << keyPos.x << " " << keyPos.y << " " << keyPos.z << " " << std::endl;
+
+                //     keyCollectibles.emplace_back(key, keyPos, 0.1f, Material::key_color, SpellType::NONE);
+				// 	drawKey(shader, Model );
+				// 	//enemyLastPos = true;
+                // }
+
+				if (!enemy->isDropSpawned()) {
+					glm::vec3 keyPos = enemy->getPosition();
+					keyPos.y -= 1.5f; // Adjust height for key position
+					keyCollectibles.emplace_back(key, keyPos, 0.1f, Material::gold, SpellType::NONE);
+					enemy->setDropSpawned(true); // Mark that the key has been spawned
 				}
-				if (!keyAlreadyExists) {
-					keyCollectibles.emplace_back(key, enemy->getPosition(), 0.1f, Material::gold, SpellType::NONE);
-				}
-				// drawKey(shader, Model);
+
 				continue; // Skip null or dead enemies
 			}
+
+			// Get enemy material based on type
+			Material enemyMaterial = Material::black;
+			glm::vec3 enemyScale = vec3(1.0f, 1.0f, 1.0f); // Default scale
+			if (dynamic_cast<const IceElemental*>(enemy)) {
+				// cout << "Ice Elemental" << endl;
+				enemyMaterial = Material::blue_body; // Ice Elemental
+				enemyScale = vec3(1.0f, 1.0f, 1.0f);
+			} else if (dynamic_cast<const FireElemental*>(enemy)) {
+				// cout << "Fire Elemental" << endl;
+				enemyMaterial = Material::red_body; // Fire Elemental
+				enemyScale = vec3(0.01f);
+			} else if (dynamic_cast<const LightningElemental*>(enemy)) {
+				// cout << "Lightning Elemental" << endl;
+				enemyMaterial = Material::yellow_body; // Lightning Elemental
+				enemyScale = vec3(0.005f);
+			}
+
 			shader->bind();
 			Model->pushMatrix(); {
 				Model->translate(enemy->getPosition());
-				Model->scale(glm::vec3(1.0f, 1.0f, 1.0f));
+				Model->scale(enemyScale); // Scale the enemy model
 				Model->rotate(enemy->getRotY(), glm::vec3(0, 1, 0));
 				Model->rotate(glm::radians(-90.0f), glm::vec3(1, 0, 0)); // rotate -90 degrees around x axis
-				SetMaterial(shader, Material::blue_body); // Set body material
+				SetMaterial(shader, enemyMaterial); // Set body material
 				if (shader->hasUniform("enemyAlpha")) glUniform1f(shader->getUniform("enemyAlpha"), enemy->getDamageTimer() / Config::ENEMY_HIT_DURATION);
 				setModel(shader, Model);
-				iceElemental->Draw(shader); // Draw the scaled sphere as the body
+				(enemy->getModel())->Draw(shader); // Draw the scaled sphere as the body
 			} Model->popMatrix();
 			shader->unbind();
 		} // End loop through enemies
@@ -1908,16 +2590,16 @@ public:
 				float j = bossRoom->mapGridYtoWorldZ(z); // Center the shelf in the cell
 				if (!cullFlag || !ViewFrustCull(glm::vec3(i, 0, j), 2.0f, planes)) {
 					if (bossGrid[gridPos].type == BossRoomGen::CellType::BORDER) {
-						int test = bossRoom->mapXtoGridX(i);
-						int test2 = bossRoom->mapZtoGridY(j);
-						Model->pushMatrix();
-						Model->loadIdentity();
-						Model->translate(vec3(i, libraryCenter.y, j)); // Position set in class members
-						Model->rotate(glm::radians(bossGrid[gridPos].transformData.rotation), vec3(0, 1, 0)); // Rotate for left/right walls
-						Model->scale(bossGrid[gridPos].transformData.scale); // Scale set in class members
-						setModel(shader, Model);
-						book_shelf1->Draw(shader); // Use the bookshelf model for the border
-						Model->popMatrix();
+						// int test = bossRoom->mapXtoGridX(i);
+						// int test2 = bossRoom->mapZtoGridY(j);
+						// Model->pushMatrix();
+						// Model->loadIdentity();
+						// Model->translate(vec3(i, libraryCenter.y, j)); // Position set in class members
+						// Model->rotate(glm::radians(bossGrid[gridPos].transformData.rotation), vec3(0, 1, 0)); // Rotate for left/right walls
+						// Model->scale(bossGrid[gridPos].transformData.scale); // Scale set in class members
+						// setModel(shader, Model);
+						// book_shelf1->Draw(shader); // Use the bookshelf model for the border
+						// Model->popMatrix();
 					}
 					else if (bossGrid[gridPos].type == BossRoomGen::CellType::ENTRANCE) {
 						if (bossGrid[gridPos].borderType == BossRoomGen::BorderType::ENTRANCE_MIDDLE) {
@@ -2003,9 +2685,9 @@ public:
 		float pupilScale = 0.1f;
 		float pupilOffsetForward = 0.02f; // Push pupil slightly in front of white
 
-		if (bossEnemy->isAlive()) {
+		if (bossEnemy->isAlive() && unlock) {
 			bossEnemy->lookAtPlayer(player->getPosition()); // Make the boss look at the player
-			glm::vec3 bossPos = bossEnemy->getPosition() + glm::vec3(0, 0.8f, 0); // Position the boss slightly above the ground
+			glm::vec3 bossPos = bossEnemy->getPosition() + glm::vec3(0, 2.0f, 0); // Position the boss slightly above the ground
 			glm::vec3 bossRotation = bossEnemy->getRotation(); // Get rotation from the enemy object
 			float bossRotY = bossEnemy->getRotY();
 
@@ -2014,6 +2696,7 @@ public:
 				Model->loadIdentity(); // Reset the model matrix
 				Model->translate(bossPos);
 				Model->rotate(bossRotY, bossRotation); // Rotate the body to match the boss's rotation
+				Model->scale(bossEnemy->getScale());
 				// --- Draw Main Body (Pill Shape) ---
 				Model->pushMatrix();
 				{
@@ -2141,11 +2824,6 @@ public:
 		return glm::length(distanceVec) <= sphereRadius;
 	}
 
-	// bool checkSphereCollisionGrid(const glm::vec3& spherePos, float sphereRadius,
-	// 	const LibraryGen::Cell& cell) {
-
-	// 	}
-
 	void updateBooks(float deltaTime) { // deltaTime might not be needed if using glfwGetTime()
 		for (auto& book : books) {
 			book.update(deltaTime, 0.0f);
@@ -2218,13 +2896,13 @@ public:
 							glm::quat bookOrientation = glm::angleAxis(glm::radians(Config::randFloat(-10.f, 10.f)), glm::vec3(0, 1, 0));
 							// glm::vec3 orbColor = glm::vec3(Config::randFloat(0.2f, 1.0f), Config::randFloat(0.2f, 1.0f), Config::randFloat(0.2f, 1.0f)); // Color now set by book
 
-							// Cycle through spell types for newly spawned books/orbs
-							// static int nextSpellTypeIndex = 1; // Start with FIRE (index 1 in SpellType enum)
-							SpellType newSpellType = static_cast<SpellType>(nextSpellTypeIndex);
-							nextSpellTypeIndex++;
-							if (nextSpellTypeIndex > 3) { // Assuming 3 spell types: FIRE, ICE, LIGHTNING
-								nextSpellTypeIndex = 1; // Cycle back to FIRE
-							}
+						// Cycle through spell types for newly spawned books/orbs
+						// static int nextSpellTypeIndex = 1; // Start with FIRE (index 1 in SpellType enum)
+						SpellType newSpellType = static_cast<SpellType>(nextSpellTypeIndex);
+						nextSpellTypeIndex++;
+						if (nextSpellTypeIndex > 4) { // Assuming 4 spell types: FIRE, ICE, LIGHTNING, HEAL
+							nextSpellTypeIndex = 1; // Cycle back to FIRE
+						}
 
 							books.emplace_back(spawnPos, bookScale, bookOrientation, newSpellType);
               //books.emplace_back(spawnPos, bookScale, bookOrientation, newSpellType);
@@ -2380,44 +3058,15 @@ public:
 		}
 	}
 
-	// --- Player Collision ---
-	// Store player's local AABB (scaled) for easier access
-	glm::vec3 playerLocalAABBMin;
-	glm::vec3 playerLocalAABBMax;
-	bool playerAABBCalculated = false; // Flag to calculate once
-
-	// Helper to calculate player's local AABB
-	void calculatePlayerLocalAABB() {
-		if (!player_rig || playerAABBCalculated) return;
-
-		// Get base AABB from the *IDLE* or *running* model (choose one representative)
-		// Using player_rig as it's loaded first
-		glm::vec3 baseMin = player_rig->getBoundingBoxMin();
-		glm::vec3 baseMax = player_rig->getBoundingBoxMax();
-
-		// Apply the player's base scale
-		playerLocalAABBMin = baseMin * manScale.x; // Assuming uniform scale for collision box
-		playerLocalAABBMax = baseMax * manScale.x;
-
-		// Optional: Add padding or adjust Y if needed
-		// Example: Make collision box slightly taller or ensure base is at y=0 locally
-		// playerLocalAABBMin.y = 0.0f; // If player origin is at feet
-
-		playerAABBCalculated = true;
-		// cout << "[DEBUG] Calculated Player Local AABB Min: (" << playerLocalAABBMin.x << "," << playerLocalAABBMin.y << "," << playerLocalAABBMin.z << ")" << endl;
-		// cout << "[DEBUG] Calculated Player Local AABB Max: (" << playerLocalAABBMax.x << "," << playerLocalAABBMax.y << "," << playerLocalAABBMax.z << ")" << endl;
-	}
-
-
 	// --- Collision Checking Helper ---
 	bool checkCollisionAt(const glm::vec3& checkPos, const glm::quat& playerOrientation) {
-		if (!playerAABBCalculated || !book_shelf1 || grid.getSize().x == 0) return false; // Need data
+		if (!book_shelf1 || grid.getSize().x == 0) return false; // Need data
 
 		// 1. Calculate Player's World AABB at checkPos
 		glm::mat4 playerTransform = glm::translate(glm::mat4(1.0f), checkPos) * glm::mat4_cast(playerOrientation);
 		// Note: We use the PRE-SCALED local AABB calculated earlier
 		glm::vec3 playerWorldMin, playerWorldMax;
-		updateBoundingBox(playerLocalAABBMin, playerLocalAABBMax, playerTransform, playerWorldMin, playerWorldMax);
+		updateBoundingBox(playerBB->min, playerBB->max, playerTransform, playerWorldMin, playerWorldMax);
 
 		// spatial detection for library grid
 
@@ -2728,11 +3377,6 @@ public:
 
 	// --- Modified charMove ---
 	vec3 charMove() {
-		// Calculate player's local AABB once if not done yet
-		if (!playerAABBCalculated) {
-			calculatePlayerLocalAABB();
-		}
-
 		float moveSpeed = 4.5f * AnimDeltaTime; // Use frame-rate independent speed
 		vec3 desiredMoveDelta = vec3(0.0f);
 
@@ -2888,6 +3532,16 @@ public:
 				p_scale_max = 0.6f;
 				newProj.speed = 20.0f; // Faster lightning projectile
 				break;
+			case SpellType::HEAL:
+				spellTypeName = "HEAL";
+				particles_to_spawn = 30; // Fewer particles for healing
+				p_color_start = glm::vec4(0.2f, 1.0f, 0.2f, 1.0f);
+				p_color_end = glm::vec4(0.2, 1.0f, 0.2f, 1.0f);
+				p_scale_min = 0.35f; // Slightly smaller but more numerous for lightning
+				p_scale_max = 0.6f;
+				newProj.speed = 0.0f; // No speed for healing, just a visual effect
+				player->setHitpoints(player->getHitpoints() + Config::ORB_HEAL_AMOUNT); // Heal the player
+				break;
 			case SpellType::NONE:
 			default:
 				cout << "[DEBUG] Cannot shoot: No valid spell type selected." << endl;
@@ -3018,6 +3672,90 @@ public:
 
 	void drawProjectiles(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		// This function is now empty as particles handle visuals.
+		// This function is now empty as particles handle visuals for boss fireballs too.
+		if (!shader || !Model || !sphere) return; // Need shader, stack, model
+
+		shader->bind();
+		// Set material for projectiles (e.g., bright yellow/white, maybe emissive if shader supports)
+		SetMaterial(shader, Material::gold);
+		// Optional: Emissive properties if shader supports them
+		// if(shader->hasUniform("hasEmittance")) glUniform1i(shader->getUniform("hasEmittance"), 1);
+		// if(shader->hasUniform("MatEmitt")) glUniform3f(shader->getUniform("MatEmitt"), 1.0f, 1.0f, 0.8f);
+
+		for (const auto& proj : activeSpells) {
+			if (!proj.active) continue;
+			float current_particle_system_time = particleSystem->getCurrentTime();
+
+			float p_speed_min = 0.05f;
+			float p_speed_max = 0.1f;
+			float p_spread = 1.5f;
+			// lifespans  short so they die quickly and are recycled for other effects
+			float p_lifespan_min = 0.2f;
+			float p_lifespan_max = 0.6f;
+
+			// Base particle color (TODO: can be tweaked, maybe slightly transparent)
+			glm::vec4 p_color_start;
+			glm::vec4 p_color_end;
+			float p_scale_min = 0.1f;
+			float p_scale_max = 0.25f;
+
+			int current_particles_to_spawn = 2; // Set a fixed number of particles for all orbs
+			// Customize particle aura based on spell type
+			switch (currentPlayerSpellType) {
+				case SpellType::FIRE:
+					// current_particles_to_spawn = 15; // Increased for density with short life
+					p_color_start = glm::vec4(1.0f, 0.5f, 0.1f, 0.8f);
+					p_color_end = glm::vec4(0.9f, 0.2f, 0.0f, 0.3f);
+					p_scale_min = 0.25f;
+					p_scale_max = 0.45f;
+					break;
+				case SpellType::ICE:
+					// current_particles_to_spawn = 15; // Increased for density
+					p_color_start = glm::vec4(0.5f, 0.8f, 1.0f, 0.8f);
+					p_color_end = glm::vec4(0.2f, 0.5f, 0.8f, 0.3f);
+					p_scale_min = 0.25f;
+					p_scale_max = 0.45f;
+					break;
+				case SpellType::LIGHTNING:
+					// current_particles_to_spawn = 15; // Increased for density
+					p_color_start = glm::vec4(1.0f, 1.0f, 0.5f, 0.8f);
+					p_color_end = glm::vec4(0.8f, 0.8f, 0.2f, 0.3f);
+					p_scale_min = 0.25f;
+					p_scale_max = 0.45f;
+					break;
+				default:
+					// current_particles_to_spawn is 15 (standardized)
+					// p_color_start and p_color_end use orb.color
+					// p_lifespan_min/max are standardized
+					// Make scales consistent with other types:
+					p_scale_min = 0.25f;
+					p_scale_max = 0.45f;
+					break;
+			}
+			particleSystem->spawnParticleBurst(proj.position, // Emit from orb center
+												glm::vec3(0,1,0), // Emit upwards slowly or randomly
+												current_particles_to_spawn,
+												current_particle_system_time,
+												p_speed_min, p_speed_max,
+												p_spread,
+												p_lifespan_min, p_lifespan_max,
+												p_color_start, p_color_end,
+												p_scale_min, p_scale_max);
+
+			Model->pushMatrix();
+			Model->loadIdentity(); // Start from identity for projectile
+
+			// Use the pre-calculated transform from updateAABB
+			Model->multMatrix(proj.transform);
+			Model->scale(0.15f);
+
+			setModel(shader, Model);
+			sphere->Draw(shader); // Draw the sphere model
+
+			Model->popMatrix();
+		}
+
+		shader->unbind();
 	}
 
 	/* boss projectiles */
@@ -3040,8 +3778,8 @@ public:
 			float p_speed_max = 0.1f;
 			float p_spread = 1.5f;
 			// lifespans  short so they die quickly and are recycled for other effects
-			float p_lifespan_min = 0.6f;
-			float p_lifespan_max = 0.8f;
+			float p_lifespan_min = 0.3f;
+			float p_lifespan_max = 0.6f;
 
 			// Base particle color (TODO: can be tweaked, maybe slightly transparent)
 			glm::vec4 p_color_start;
@@ -3049,7 +3787,7 @@ public:
 			float p_scale_min = 0.1f;
 			float p_scale_max = 0.25f;
 
-			int current_particles_to_spawn = 5; // Set a fixed number of particles for all orbs
+			int current_particles_to_spawn = 3; // Set a fixed number of particles for all orbs
 			// Customize particle aura based on spell type
 			switch (bossEnemy->getBossSpellType()) {
 				case SpellType::FIRE:
@@ -3121,6 +3859,7 @@ public:
 			}
 
 			SpellProjectile& proj = bossActiveSpells[i];
+			proj.setLifetime(8.0f);
 
 			if (glfwGetTime() - proj.spawnTime > proj.lifetime) {
 				proj.active = false;
@@ -3209,7 +3948,7 @@ public:
 
 		if (particleSystem) {
             float current_particle_system_time = particleSystem->getCurrentTime();
-            int particles_to_spawn = 10;
+            int particles_to_spawn = 5;
 
             float p_speed_min = newProj.speed * 0.2f;
             float p_speed_max = newProj.speed * 0.5f;
@@ -3275,14 +4014,56 @@ public:
 			<< "). Active spells: " << bossActiveSpells.size() << endl;
 	}
 
-	void BossEnemyShoot(float deltaTime) {
+	void BossEnemyAttacks(float deltaTime) {
 		if (bossEnemy && bossfightstarted && !bossfightended && bossEnemy->isAlive()) {
-			// increment every 2 seconds
-			if (glfwGetTime() - bossEnemy->getSpecialAttackCooldown() > 2.0f) {
-				bossEnemy->setSpecialAttackCooldown(glfwGetTime());
-				shootBossSpell();
+			bossEnemy->changePhase(); // Update boss phase logic
+			switch (bossEnemy->getPhase()) {
+				case BossEnemy::BossPhase::PHASE_1:
+					// shooting spell at player
+					if (glfwGetTime() - bossEnemy->getSpecialAttackCooldown() > 2.0f) {
+						bossEnemy->setSpecialAttackCooldown(glfwGetTime());
+						shootBossSpell();
+					}
+					updateBossProjectiles(deltaTime);
+					break;
+				case BossEnemy::BossPhase::PHASE_2:
+					// Phase 2 logic, e.g., spawning minions
+					if (glfwGetTime() - bossEnemy->getAttack1Cooldown() > 4.0f) {
+						glm::vec2 spawnPos = bossRoom->getOpenPosinBossRoom();
+						bossEnemy->setAttack1Cooldown(glfwGetTime());
+
+						if (activeEnemiesCount <= 5) {
+							enemies.push_back(new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.y), ENEMY_HP_MAX, 2.0f, iceElemental, vec3(0.65f), vec3(0.0f)));
+						}
+					}
+					updateBossProjectiles(deltaTime);
+					break;
+				case BossEnemy::BossPhase::PHASE_3:
+					// Phase 3 logic, phase 1 and 2 combined but more aggressive
+					if (glfwGetTime() - bossEnemy->getSpecialAttackCooldown() > 1.0f) {
+						bossEnemy->setSpecialAttackCooldown(glfwGetTime());
+						shootBossSpell();
+					}
+					if (glfwGetTime() - bossEnemy->getAttack1Cooldown() > 3.0f) {
+						glm::vec2 spawnPos = bossRoom->getOpenPosinBossRoom();
+						bossEnemy->setAttack1Cooldown(glfwGetTime());
+
+						if (activeEnemiesCount <= 5) {
+							enemies.push_back(new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.y), ENEMY_HP_MAX, 2.0f, iceElemental, vec3(0.65f), vec3(0.0f)));
+						}
+					}
+					updateBossProjectiles(deltaTime);
+					break;
+				default:
+					cout << "[DEBUG] Boss phase not recognized or unsupported." << endl;
+					break;
 			}
-			updateBossProjectiles(deltaTime);
+
+
+		}
+
+		if (bossfightended) {
+			enemies.clear(); // Clear all enemies when boss fight ends
 		}
 	}
 
@@ -3318,8 +4099,8 @@ public:
 		updateBoundingBox(player_rig->getBoundingBoxMin(),
 			player_rig->getBoundingBoxMax(),
 			manTransform,
-			manAABBmin, // This is the visual/interaction AABB
-			manAABBmax);
+			playerBB->min, // This is the visual/interaction AABB
+			playerBB->max);
 
 		// Set uniforms and draw
 		//glUniform1i(curS->getUniform("hasTexture"), 1); //0.6f, 0.2f, 0.8f
@@ -3447,8 +4228,10 @@ public:
 
 		Model->pushMatrix();
 			Model->loadIdentity();
-			Model->translate(vec3(0.0f, 2.5f, 38.5f));
-			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			// Model->translate(vec3(0.0f, 2.5f, 38.5f));
+			Model->translate(vec3(bossEntrancePos.x, bossEntrancePos.y + 2.5f, bossEntrancePos.z));  //doorPosition
+			Model->rotate(glm::radians(bossEntranceRot), vec3(0.0f, 1.0f, 0.0f));
+			// Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
 			Model->scale(0.1f);
 			SetMaterial(shader, Material::gold); //gold
 			setModel(shader, Model);
@@ -3459,8 +4242,10 @@ public:
 		//middle lock
 		Model->pushMatrix();
 			Model->loadIdentity();
-			Model->translate(vec3(0.0f, 1.5f, 38.5f));  //doorPosition
-			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			// Model->translate(vec3(0.0f, 1.5f, 38.5f));  //doorPosition
+			Model->translate(vec3(bossEntrancePos.x, bossEntrancePos.y + 1.5f, bossEntrancePos.z));
+			Model->rotate(glm::radians(bossEntranceRot), vec3(0.0f, 1.0f, 0.0f));
+			// Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
 			Model->scale(0.1f);
 			SetMaterial(shader, Material::gold); //gold
 			setModel(shader, Model);
@@ -3471,8 +4256,10 @@ public:
 		//lower lock
 		Model->pushMatrix();
 			Model->loadIdentity();
-			Model->translate(vec3(0.0f, 0.5f, 38.5f));
-			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			// Model->translate(vec3(0.0f, 0.5f, 38.5f));
+			Model->translate(vec3(bossEntrancePos.x, bossEntrancePos.y + 0.5f, bossEntrancePos.z));
+			Model->rotate(glm::radians(bossEntranceRot), vec3(0.0f, 1.0f, 0.0f));
+			// Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
 			Model->scale(0.1f);
 			SetMaterial(shader, Material::gold); //gold
 			setModel(shader, Model);
@@ -3559,8 +4346,10 @@ public:
 		//top lock
 		Model->pushMatrix();
 			Model->loadIdentity();
-			Model->translate(vec3(0.0f, 2.5f, 38.5f));  //doorPosition
-			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			// Model->translate(vec3(0.0f, 2.5f, 38.5f));  //doorPosition
+			Model->translate(vec3(bossEntrancePos.x, bossEntrancePos.y + 2.5f, bossEntrancePos.z));
+			Model->rotate(glm::radians(bossEntranceRot), vec3(0.0f, 1.0f, 0.0f));
+			// Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
 			Model->scale(0.1f);
 			SetMaterial(shader, Material::gold); //gold
 			setModel(shader, Model);
@@ -3570,8 +4359,10 @@ public:
 		//top handle
 		Model->pushMatrix();
 			Model->loadIdentity();
-			Model->translate(vec3(0.0f, 2.5f, 38.5f));
-			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			// Model->translate(vec3(0.0f, 2.5f, 38.5f));
+			Model->translate(vec3(bossEntrancePos.x, bossEntrancePos.y + 2.5f, bossEntrancePos.z));
+			Model->rotate(glm::radians(bossEntranceRot), vec3(0.0f, 1.0f, 0.0f));
+			// Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
 			Model->rotate(1 * glm::radians(15.0) + lTheta, vec3(0.0f, 0.0f, 1.0f)); //max -30?
 			Model->scale(0.1f);
 			// Model->rotate(  glm::radians(90.0) , vec3(0.0f, 1.0f, 0.0f)); //max -30
@@ -3583,8 +4374,10 @@ public:
 		//middle lock
 		Model->pushMatrix();
 			Model->loadIdentity();
-			Model->translate(vec3(0.0f, 1.5f, 38.5f));
-			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			// Model->translate(vec3(0.0f, 1.5f, 38.5f));
+			Model->translate(vec3(bossEntrancePos.x, bossEntrancePos.y + 1.5f, bossEntrancePos.z));
+			Model->rotate(glm::radians(bossEntranceRot), vec3(0.0f, 1.0f, 0.0f));
+			// Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
 			Model->scale(0.1f);
 			SetMaterial(shader, Material::gold); //gold
 			setModel(shader, Model);
@@ -3594,8 +4387,10 @@ public:
 		//midle handle
 		Model->pushMatrix();
 			Model->loadIdentity();
-			Model->translate(vec3(0.0f, 1.5f, 38.5f));
-			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			// Model->translate(vec3(0.0f, 1.5f, 38.5f));
+			Model->translate(vec3(bossEntrancePos.x, bossEntrancePos.y + 1.5f, bossEntrancePos.z));
+			Model->rotate(glm::radians(bossEntranceRot), vec3(0.0f, 1.0f, 0.0f));
+			// Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
 			Model->rotate(1 * glm::radians(15.0) + lTheta, vec3(0.0f, 0.0f, 1.0f)); //max -30?
 			Model->scale(0.1f);
 			// Model->rotate(  glm::radians(90.0) , vec3(0.0f, 1.0f, 0.0f)); //max -30
@@ -3607,8 +4402,10 @@ public:
 		// lower lock
 		Model->pushMatrix();
 			Model->loadIdentity();
-			Model->translate(vec3(0.0f, 0.5f, 38.5f));
-			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			// Model->translate(vec3(0.0f, 0.5f, 38.5f));
+			Model->translate(vec3(bossEntrancePos.x, bossEntrancePos.y + 0.5f, bossEntrancePos.z));
+			Model->rotate(glm::radians(bossEntranceRot), vec3(0.0f, 1.0f, 0.0f));
+			// Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
 			Model->scale(0.1f);
 			SetMaterial(shader, Material::gold); //gold
 			setModel(shader, Model);
@@ -3618,8 +4415,10 @@ public:
 		//lower handle
 		Model->pushMatrix();
 			Model->loadIdentity();
-			Model->translate(vec3(0.0f, 0.5f, 38.5f));
-			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			// Model->translate(vec3(0.0f, 0.5f, 38.5f));
+			Model->translate(vec3(bossEntrancePos.x, bossEntrancePos.y + 0.5f, bossEntrancePos.z));
+			Model->rotate(glm::radians(bossEntranceRot), vec3(0.0f, 1.0f, 0.0f));
+			// Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
 			Model->rotate(1 * glm::radians(15.0) + lTheta, vec3(0.0f, 0.0f, 1.0f)); //max -30?
 			Model->scale(0.1f);
 			// Model->rotate(  glm::radians(90.0) , vec3(0.0f, 1.0f, 0.0f)); //max -30
@@ -3824,6 +4623,32 @@ public:
 		glUniformMatrix4fv(curShade->getUniform("V"), 1, GL_FALSE, value_ptr(viewStack->topMatrix()));
 	}
 
+	void drawAABB(const vec3& min, const vec3& max,
+		const shared_ptr<Program>& shader,
+		const shared_ptr<MatrixStack>& Projection,
+		const shared_ptr<MatrixStack>& View,
+		const vec3& color = { 1,0,0 }) {
+		shader->bind();
+
+		glUniformMatrix4fv(shader->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
+		glUniformMatrix4fv(shader->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
+
+		// build model: translate to center, then scale to half‐size
+		vec3 center = (min + max) * 0.5f;
+		vec3 half = (max - min) * 0.5f;
+		mat4 M = translate(mat4(1.0f), center) * scale(mat4(1.0f), half);
+		glUniformMatrix4fv(shader->getUniform("M"), 1, GL_FALSE, value_ptr(M));
+
+		glUniform3fv(shader->getUniform("color"), 1, value_ptr(color)); // color
+
+		// draw lines
+		glBindVertexArray(aabbVAO);
+		glDrawElements(GL_LINES, 24, GL_UNSIGNED_INT, 0);
+		glBindVertexArray(0);
+
+		shader->unbind();
+	}
+
 	// Draw the scene for shadow map generation (Draw only shadow-casting objects) (First Pass)
 	void drawSceneForShadowMap(shared_ptr<Program>& prog) {
 		auto Model = make_shared<MatrixStack>();
@@ -3831,33 +4656,15 @@ public:
 
 		drawLibGrnd(prog, Model); // Draw the library ground
 
-
+		#if USE_INSTANCING
+		drawLibInstancing(prog, CULL);
+		#else
+		drawCircularBorder(prog, CULL); // Draw the circular library shelves
 		// 2. Draw the Static Library Shelves
 		drawLibrary(prog, Model, CULL);
 
 		drawBossRoom(prog, Model, CULL); // Draw the boss room
-
-		//// disable color writes
-		//glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
-		//// disable depth writes
-		//glDepthMask(GL_FALSE);
-
-		//// begin occlusion query
-		//glBeginQuery(GL_ANY_SAMPLES_PASSED, occlusionQueryID);
-
-		//// Draw a small sphere at the player's position
-		//drawOcclusionBoxAtPlayer(prog, Model);
-
-		//glEndQuery(GL_ANY_SAMPLES_PASSED);
-
-		//GLuint resultofQuery = 0;
-		//glGetQueryObjectuiv(occlusionQueryID, GL_QUERY_RESULT, &resultofQuery);
-		//visible = resultofQuery;
-
-		//// re-enable color writes and depth writes
-		//glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-		//glDepthMask(GL_TRUE);
-
+		#endif
 
 		drawPlayer(prog, Model, 0.0);
 
@@ -3876,9 +4683,6 @@ public:
 
 		//Test drawing cat model
 		//drawCat(assimptexProg, Model);
-
-
-		// drawSkybox(assimptexProg, Model); // Draw the skybox last
 
 		//testing drawing lock and key
 		if (unlock) {
@@ -3902,6 +4706,10 @@ public:
 
 		drawLibGrnd(prog, Model); // Draw the library ground
 
+		#if USE_INSTANCING
+		drawLibInstancing(prog, false); // Draw the library shelves without culling
+		#else
+		drawCircularBorder(prog, false); // Draw the circular library shelves
 
 		// 2. Draw the Static Library Shelves
 		drawLibrary(prog, Model, true);
@@ -3948,8 +4756,6 @@ public:
 		//Test drawing cat model
 		//drawCat(assimptexProg, Model);
 
-		// drawSkybox(assimptexProg, Model); // Draw the skybox last
-
 		//testing drawing lock and key
 		if (unlock) {
 			updateLock(prog, Model);
@@ -3989,6 +4795,110 @@ public:
 		if (Config::DEBUG_PLAYER_HP) cout << "Player HP (%): " << player->getHitpoints() / Config::PLAYER_HP_MAX << endl;
 	}
 
+	void checkCameraCollision() {
+		if (!libraryQuadTree || !bossRoomQuadTree) return; // Ensure trees are initialized
+		float cameraBoundingRadius = 1.0f;
+		if (!bossfightstarted) {
+			std::vector<const QuadElement*> objectElements;
+			libraryQuadTree->query(glm::vec2(eye.x, eye.z), glm::vec2(cameraBoundingRadius), objectElements);
+			for (const auto* element : objectElements) {
+				if (checkSphereCollision(eye, 0.25f, element->aabb_min, element->aabb_max)) {
+					visible = 0;
+				}
+			}
+		} else if (bossfightstarted) {
+			std::vector<const QuadElement*> objectElements;
+			bossRoomQuadTree->query(glm::vec2(eye.x, eye.z), glm::vec2(cameraBoundingRadius), objectElements);
+			for (const auto* element : objectElements) {
+				if (checkSphereCollision(eye, 0.25f, element->aabb_min, element->aabb_max)) {
+					visible = 0;
+				}
+			}
+		} else {
+			visible = 1; // Default to visible if no collision detected
+		}
+
+	}
+
+	void initCircularBorder() {
+		circularBookShelfMatrices.clear();
+
+		for (int z = 0; z < bossGrid.getSize().y; ++z) {
+			for (int x = 0; x < bossGrid.getSize().x; ++x) {
+				glm::ivec2 gridPos(x, z);
+
+				float i = bossRoom->mapGridXtoWorldX(x);
+				float j = bossRoom->mapGridYtoWorldZ(z);
+				if ((bossGrid[gridPos].type != BossRoomGen::CellType::BORDER) &&
+					(bossGrid[gridPos].type != BossRoomGen::CellType::ENTRANCE)) {
+					continue; // Skip non-border cells
+				}
+				glm::vec3 pos(i, libraryCenter.y, j);
+				float rotation = bossGrid[gridPos].transformData.rotation;
+				glm::vec3 scale = bossGrid[gridPos].transformData.scale;
+				glm::mat4 model = glm::translate(glm::mat4(1.0f), pos);
+				model = glm::rotate(model, glm::radians(rotation), glm::vec3(0, 1, 0));
+				model = glm::scale(model, scale);
+
+				auto addInstance = [&](std::vector<glm::mat4>& container) {
+					container.push_back(model);
+				};
+
+				using CT = BossRoomGen::CellType;
+				using BT = BossRoomGen::BorderType;
+				using OT = BossRoomGen::CellObjType;
+
+				const auto& cell = bossGrid[gridPos];
+
+				switch (cell.type) {
+					case CT::BORDER:
+						addInstance(circularBookShelfMatrices);
+						break;
+
+					case CT::ENTRANCE:
+						if (cell.borderType == BT::ENTRANCE_MIDDLE) {
+							bossEntrancePos = pos;
+							bossEntranceRot = rotation + 180.0f; // Adjust rotation for entrance
+						}
+						break;
+
+					default:
+						break;
+				}
+			}
+		}
+
+		book_shelf1->InitializeInstancing(circularBookShelfMatrices);
+
+	}
+
+	void drawCircularBorder(shared_ptr<Program> shader, bool cullFlag) {
+		vCircularBookShelfMatrices.clear(); // Clear matrices for the next draw call
+
+
+		if (!shader || !book_shelf1 || grid.getSize().x == 0 || grid.getSize().y == 0) return; // Safety checks
+		shader->bind();
+		if (shader->hasUniform("hasInstancing")) glUniform1i(shader->getUniform("hasInstancing"), GL_TRUE);
+
+		for (unsigned int i = 0; i < circularBookShelfMatrices.size(); ++i) {
+			glm::vec3 pos = glm::vec3(circularBookShelfMatrices[i][3][0],
+				circularBookShelfMatrices[i][3][1],
+				circularBookShelfMatrices[i][3][2]);
+			if (!cullFlag || !ViewFrustCull(pos, 2.0f, planes)) {
+				vCircularBookShelfMatrices.push_back(circularBookShelfMatrices[i]);
+			}
+		}
+
+
+		book_shelf1->updateInstancingOffsetVBO(vCircularBookShelfMatrices);
+		book_shelf1->DrawInstanced(vCircularBookShelfMatrices);
+
+		if (shader->hasUniform("hasInstancing")) glUniform1i(shader->getUniform("hasInstancing"), GL_FALSE);
+		shader->unbind();
+
+
+	}
+
 	void render(float frametime, float animTime) {
 		// Get current frame buffer size
 		int width, height;
@@ -4007,7 +4917,7 @@ public:
 		particleSystem->update(frametime); // Update particles
 		checkAllEnemies();
 		checkBossfight();
-		BossEnemyShoot(frametime);
+		BossEnemyAttacks(frametime);
 		restartGeneration();
 		//debugMessages();
 
@@ -4057,6 +4967,7 @@ public:
 		// ===================================================
 		glViewport(0, 0, width, height); // Return viewport to screen size
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // Clear framebuffer
+		drawSkybox(SkyboxProg, Projection, View);
 
 		// Setup Camera
 		Projection->pushMatrix();
@@ -4111,7 +5022,34 @@ public:
 			ShadowProg->unbind();
 		}
 
-		if (Config::DRAW_PARTICLES && particleProg) {
+		//===================
+		// Second Pass Cont.
+		//===================
+
+		if (Config::DEBUG_AABBS) {
+			drawAABB(playerBB->min, playerBB->max, debugLineProg, Projection, View, { 1,0,0 });
+			//drawAABB(sphereBB->min, sphereBB->max, debugLineProg, Projection, View, { 0,1,0 });
+			for (int i = 0; i < bossActiveSpells.size(); i++) {
+				if (!bossActiveSpells[i].active) {
+					continue;
+				}
+				else {
+					drawAABB(bossActiveSpells[i].aabbMin, bossActiveSpells[i].aabbMax, debugLineProg, Projection, View, { 0,1,0 });
+				}
+			}
+			for (int i = 0; i < activeSpells.size(); i++) {
+				if (activeSpells[i].active) {
+					drawAABB(activeSpells[i].aabbMin, activeSpells[i].aabbMax, debugLineProg, Projection, View, { 0,1,0 });
+				}
+			}
+			for (const auto* enemy : enemies) {
+				if (enemy && enemy->isAlive()) {
+					drawAABB(enemy->getAABBMin(), enemy->getAABBMax(), debugLineProg, Projection, View, {0,0,1});
+				}
+			}
+		}
+
+		if (Config::DRAW_PARTICLES) {
 			particleProg->bind();
 			// glPointSize(10.0f); // Remove this line, size is now per-particle in shader
 			glUniformMatrix4fv(particleProg->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
@@ -4164,6 +5102,10 @@ public:
 			// drawDoor(prog2, Model);
 			// drawBooks(prog2, Model);
 			// drawEnemies(prog2, Model);
+			#if USE_INSTANCING
+			drawLibInstancing(ShadowProg, false); // Draw the library shelves without culling
+			#else
+			drawCircularBorder(ShadowProg, false); // Draw the circular library shelves
 			drawLibrary(ShadowProg, Model, false);
 			drawBossRoom(ShadowProg, Model, false);
 			drawBossEnemy(ShadowProg, Model);
@@ -4196,6 +5138,7 @@ public:
 		if (key == GLFW_KEY_4 && action == GLFW_PRESS) Config::EXPOSURE -= 0.1f;
 		if (key == GLFW_KEY_9 && action == GLFW_PRESS) Config::DEBUG_LIGHTING = !Config::DEBUG_LIGHTING;
 		if (key == GLFW_KEY_0 && action == GLFW_PRESS) Config::DEBUG_GEOM = !Config::DEBUG_GEOM;
+		if (key == GLFW_KEY_B && action == GLFW_PRESS) Config::DEBUG_AABBS = !Config::DEBUG_AABBS;
 
 		if (key == GLFW_KEY_GRAVE_ACCENT && action == GLFW_PRESS)
 		{
@@ -4291,7 +5234,7 @@ public:
 				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
 			}
 		}
-		if (key == GLFW_KEY_U && action == GLFW_PRESS) {
+		if (key == GLFW_KEY_U && action == GLFW_PRESS && keysCollectedCount == keysneededToCollect) {
 			unlock = true;
 			canFightboss = true;
 		}
@@ -4414,6 +5357,15 @@ int main(int argc, char* argv[]) {
 	application->initMapGen();
 	application->initGeom(resourceDir);
 	application->initGround();
+	application->initQuadTree();
+	application->initSkyboxCube();
+	application->initSkyboxTex(resourceDir);
+	application->initCircularBorder();
+	application->initAABBWireframe();
+  
+	#if USE_INSTANCING
+	application->initInstancingMatrices();
+	#endif
 	glGenQueries(1, &application->occlusionQueryID);
 
 	ma_sound_set_looping(&sound, MA_TRUE); // Set looping to true using the function

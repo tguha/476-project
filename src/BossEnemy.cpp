@@ -9,10 +9,11 @@ const glm::vec3& rotation, float specialAttackCooldown, SpellType spellType)
     }
 
 void BossEnemy::changePhase() {
-    if (this->getHitpoints() >= BOSS_ENRAGED_HP && !this->enraged) {
-        this->enraged = true;
+    // 66% and 33% thresholds for phase changes
+    if (this->getHitpoints() <= BOSS_HP_MAX * 2 / 3 && this->phase == BossPhase::PHASE_1) {
         this->phase = BossPhase::PHASE_2; // Change to phase 2
-    } else if (this->getHitpoints() <= BOSS_HP_MAX / 2 && this->phase == BossPhase::PHASE_2) {
+        this->enraged = true; // Set enraged state
+    } else if (this->getHitpoints() <= BOSS_HP_MAX / 3 && this->phase == BossPhase::PHASE_2) {
         this->phase = BossPhase::PHASE_3; // Change to phase 3
     }
 }
