@@ -25,6 +25,7 @@ namespace Config {// --- Global Game Settings (Config::<thing you want>)---
     // In-Game Debugging (can be toggled real time)
     inline static bool DEBUG_LIGHTING = false;
     inline static bool DEBUG_GEOM = false;
+    inline static bool DEBUG_AABBS = false;
 
     // Rendering & Shaders
     constexpr int MAX_BONES = 200;
@@ -61,15 +62,47 @@ namespace Config {// --- Global Game Settings (Config::<thing you want>)---
     constexpr float ENEMY_HIT_DURATION = 0.5f; // Duration of hit effect
     constexpr float ENEMY_HIT_COOLDOWN = 1.0f; // Cooldown before enemy can be hit again
 
+    // Spell settings
+    constexpr float ORB_HEAL_AMOUNT = 20.0f; // Amount of health restored by healing orbs
+
     // Ice Elemental settings
     constexpr float ICE_ELEMENTAL_HP_MAX = 200.0f;
     constexpr float ICE_ELEMENTAL_TRANS_Y = 2.0f;
-    constexpr float ICE_ELEMENTAL_MOVE_SPEED = 0.02f;
+    constexpr float ICE_ELEMENTAL_MOVE_SPEED = 2.0f;
     constexpr float ICE_ELEMENTAL_ROTATION_SPEED = 1.0f; // Radians per second
-    constexpr float ICE_ELEMENTAL_MELEE_DAMAGE = 20.0f;
+    constexpr float ICE_ELEMENTAL_MELEE_DAMAGE = 33.0f;
     constexpr float ICE_ELEMENTAL_MELEE_SPEED = 1.0f;
     constexpr float ICE_ELEMENTAL_MELEE_RANGE = 3.0f;
-    constexpr float ICE_ELEMENTAL_AGGRO_RANGE = 10.0f; // Cooldown before enemy can attack again
+    constexpr float ICE_ELEMENTAL_AGGRO_RANGE = 4.0f; // Cooldown before enemy can attack again
+    constexpr float ICE_ELEMENTAL_SIGHT_RANGE = 10.0f; // scale
+    constexpr float ICE_ELEMENTAL_TERRITORY_RADIUS = 20.0f; // Territory radius for ice elemental
+
+    // Fire Elemental settings
+    constexpr float FIRE_ELEMENTAL_HP_MAX = 150.0f;
+    constexpr float FIRE_ELEMENTAL_TRANS_Y = 2.0f;
+    constexpr float FIRE_ELEMENTAL_MOVE_SPEED = 3.2f;
+    constexpr float FIRE_ELEMENTAL_ROTATION_SPEED = 1.2f; // Radians per second
+    constexpr float FIRE_ELEMENTAL_MELEE_DAMAGE = 20.0f;
+    constexpr float FIRE_ELEMENTAL_MELEE_SPEED = 1.2f;
+    constexpr float FIRE_ELEMENTAL_MELEE_RANGE = 3.5f;
+    constexpr float FIRE_ELEMENTAL_AGGRO_RANGE = 7.0f; // Aggro range for fire elemental
+    constexpr float FIRE_ELEMENTAL_SIGHT_RANGE = 14.0f; // Teleport interval for fire elemental
+    constexpr float FIRE_ELEMENTAL_TERRITORY_RADIUS = 10.0f; // Teleport interval for fire elemental
+    // constexpr float FIRE_ELEMENTAL_SCALE = vec3(1.0f, 1.0f, 1.0f); // scale
+
+    // Lightning Elemental settings
+    constexpr float LIGHTNING_ELEMENTAL_HP_MAX = 100.0f;
+    constexpr float LIGHTNING_ELEMENTAL_TRANS_Y = 2.0f;
+    constexpr float LIGHTNING_ELEMENTAL_MOVE_SPEED = 4.6f;
+    constexpr float LIGHTNING_ELEMENTAL_ROTATION_SPEED = 1.8f; // Radians per second
+    constexpr float LIGHTNING_ELEMENTAL_MELEE_DAMAGE = 10.0f;
+    constexpr float LIGHTNING_ELEMENTAL_MELEE_SPEED = 1.8f;
+    constexpr float LIGHTNING_ELEMENTAL_MELEE_RANGE = 5.0f;
+    constexpr float LIGHTNING_ELEMENTAL_AGGRO_RANGE = 3.0f; // Aggro range for lightning elemental
+    constexpr float LIGHTNING_ELEMENTAL_SIGHT_RANGE = 20.0f; // Sight range for lightning elemental
+    constexpr float LIGHTNING_ELEMENTAL_TP_INTERVAL = 1.5f;
+    constexpr float LIGHTNING_ELEMENTAL_TERRITORY_RADIUS = 30.0f; // Territory radius for lightning elemental
+    // constexpr float LIGHTNING_ELEMENTAL_SCALE = vec3(1.0f, 1.0f, 1.0f); // scale
 
     // Projectile settings
     constexpr float PROJECTILE_DAMAGE = 100.0f;

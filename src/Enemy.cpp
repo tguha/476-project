@@ -3,7 +3,11 @@
 
 // --- Constructor Implementation ---
 Enemy::Enemy(const glm::vec3& position, float hitpoints, float moveSpeed, AssimpModel* model, const glm::vec3& scale, const glm::vec3& rotation)
-            : Entity(position, hitpoints, moveSpeed, model, scale, rotation) {}
+            : Entity(position, hitpoints, moveSpeed, model, scale, rotation) {
+                this->spawnPos = position; // Store the spawn position
+                this->hit = false; // Initialize hit status
+                this->aggro = false; // Initialize aggro status
+            }
 
 
 bool Enemy::isHit() const {
@@ -95,12 +99,18 @@ void Enemy::update(Player* player, float deltaTime) {
     // Aggro logic
     bool playerInFront = isInFront > angleThreshold;
     float distanceToPlayer = glm::distance(flatEnemyPos, flatPlayerPos);
-    bool withinAggroRange = distanceToPlayer <= this->getAggroRange();
+    bool withinSightRange = distanceToPlayer <= this->getSightRange();
 
-    if ((playerInFront && withinAggroRange) || this->isHit()) {
+    if ((playerInFront && withinSightRange) || this->isHit() || (distanceToPlayer <= this->getAggroRange())) {
         setAggro(true);
     }
 
+    if (distance(this->getPosition(), this->getSpawnPos()) > this->territoryRadius) {
+        // Reset position if too far from spawn
+        // this->setPosition(this->getSpawnPos());
+        this->setAggro(false); // Reset aggro when returning to spawn
+        moveTowardsPlayer(this->getSpawnPos(), deltaTime);
+    }
     // if (((glm::distance(this->getPosition(), player->getPosition()) <= this->getAggroRange()) && (isInFront == 1.0f)) || this->isHit()) {
     //     setAggro(true);
     // }
@@ -125,4 +135,32 @@ void Enemy::meleeAttack(Player* player, float deltaTime) {
     } else {
         this->meleeTimer -= deltaTime;
     }
+}
+
+AssimpModel* Enemy::getModel() const {
+    return this->collisionModel;
+}
+
+float Enemy::getSightRange() const {
+    return this->sightRange;
+}
+
+void Enemy::setSightRange(float range) {
+    this->sightRange = range;
+}
+
+glm::vec3 Enemy::getSpawnPos() const {
+    return this->spawnPos;
+}
+
+void Enemy::setSpawnPos(const glm::vec3& pos) {
+    this->spawnPos = pos;
+}
+
+void Enemy::setDropSpawned(const bool spawned) {
+    this->dropSpawned = spawned;
+}
+
+bool Enemy::isDropSpawned() const {
+    return this->dropSpawned;
 }
