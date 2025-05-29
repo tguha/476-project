@@ -19,11 +19,11 @@ class Entity {
         glm::vec3 aabbMin;
         glm::vec3 aabbMax;
         glm::vec3 collisionScale;    // Scale applied to the collision model's AABB
-        AssimpModel* collisionModel; // Pointer to the model used for collision bounds
     
     protected:
         float hitpoints;
         bool alive;
+        AssimpModel* collisionModel; // Pointer to the model used for collision bounds
     
     public:
         Entity(const glm::vec3& position, float hitpoints, float moveSpeed, AssimpModel* model, const glm::vec3& scale, const glm::vec3& rotation);
@@ -44,6 +44,7 @@ class Entity {
         float getRotZ() const;
         void setRotZ(float rotZ);
 
+        void setHitpoints(float hp);
         float getHitpoints() const;
         bool isAlive() const;
         void setAlive();

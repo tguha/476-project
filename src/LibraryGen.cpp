@@ -305,58 +305,60 @@ void LibraryGen::placeClusters(int count) {
 }
 
 void LibraryGen::placeEnemies(int numEnemies) {
-    // Randomly place enemies in the grid
-    std::uniform_int_distribution<int> distX(0, grid.getSize().x - 1);
-    std::uniform_int_distribution<int> distY(0, grid.getSize().y - 1);
+    int gridWidth = grid.getSize().x;
+int gridHeight = grid.getSize().y;
 
-    std::cout << "Placing enemies..." << std::endl;
+// Calculate how many rows and cols of sectors to create
+int sectorCols = std::ceil(std::sqrt(numEnemies));
+int sectorRows = std::ceil(float(numEnemies) / sectorCols);
 
-    int attempts = 0;
-    int maxAttempts = grid.getSize().x * grid.getSize().y;
+int sectorWidth = gridWidth / sectorCols;
+int sectorHeight = gridHeight / sectorRows;
 
-    std::vector<glm::ivec2> enemyPos;
+vector<glm::ivec2> enemyPos; // Vector to store enemy positions
 
-    while (enemyPos.size() < numEnemies && attempts < maxAttempts) {
-        attempts++;
-        glm::ivec2 pos{distX(seedGen), distY(seedGen)};
-        std::cout << "Trying to place enemy at: " << pos.x << ", " << pos.y << std::endl;
+int placed = 0;
+for (int row = 0; row < sectorRows && placed < numEnemies; ++row) {
+    for (int col = 0; col < sectorCols && placed < numEnemies; ++col) {
+        // Sector bounds
+        int xStart = col * sectorWidth;
+        int xEnd = std::min((col + 1) * sectorWidth - 1, gridWidth - 1);
+        int yStart = row * sectorHeight;
+        int yEnd = std::min((row + 1) * sectorHeight - 1, gridHeight - 1);
 
-        bool valid = true;
+        std::uniform_int_distribution<int> distX(xStart, xEnd);
+        std::uniform_int_distribution<int> distY(yStart, yEnd);
 
-        if (grid[pos].type == CellType::SPAWN ||
-            grid[pos].type == CellType::ENEMY_SPAWN ||
-            grid[pos].type == CellType::BORDER) {
-            valid = false;
-        }
+        int tries = 0;
+        bool placedInSector = false;
 
-        if (glm::distance(glm::vec2(pos), glm::vec2(spawnPosinGrid)) < 4.0f) {
-            valid = false; // Avoid placing enemies too close to the spawn point
-        }
+        while (!placedInSector && tries < 20) {
+            glm::ivec2 pos{distX(seedGen), distY(seedGen)};
+            tries++;
 
-        // Check if too close to existing enemies
-        for (const auto& enemy : enemyPos) {
-            if (glm::distance(glm::vec2(enemy), glm::vec2(pos)) < 3.0f) {
-                valid = false; // Avoid placing enemies too close to each other
-                break;
+            bool valid = true;
+
+            if (grid[pos].type == CellType::SPAWN ||
+                grid[pos].type == CellType::ENEMY_SPAWN ||
+                grid[pos].type == CellType::BORDER) {
+                valid = false;
+            }
+
+            if (glm::distance(glm::vec2(pos), glm::vec2(spawnPosinGrid)) < 4.0f) {
+                valid = false;
+            }
+
+            if (valid) {
+                enemyPos.push_back(pos);
+                grid[pos] = Cell(CellType::ENEMY_SPAWN);
+                std::cout << "Placed enemy at: " << pos.x << ", " << pos.y << std::endl;
+                placedInSector = true;
+                placed++;
             }
         }
-
-
-
-        // for (const auto& center : clusterCenters) {
-        //     if (glm::distance(glm::vec2(center), glm::vec2(pos)) < 3.0f) {
-        //         valid = false; // Avoid placing enemies too close to cluster centers
-        //         break;
-        //     }
-        // }
-
-        if (valid) {
-            enemyPos.push_back(pos);
-            grid[pos] = Cell(CellType::ENEMY_SPAWN); // Mark the enemy position in the grid
-            std::cout << "Placed enemy at: " << pos.x << ", " << pos.y << std::endl;
-        }
-
     }
+}
+
 
     for (const auto& pos : enemyPos) {
         // Add enemy positions to the list

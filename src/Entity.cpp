@@ -29,6 +29,18 @@ float Entity::getHitpoints() const {
     return hitpoints;
 }
 
+void Entity::setHitpoints(float hp) {
+    hitpoints = hp;
+    if (hitpoints <= 0) {
+        hitpoints = 0;
+        alive = false; // Set alive flag to false if hitpoints drop to 0 or below
+    }
+
+    if (hitpoints > originalHitpoints) {
+        hitpoints = originalHitpoints; // Ensure hitpoints do not exceed original value
+    }
+}
+
 bool Entity::isAlive() const {
     // Check both the flag and hitpoints for robustness
     return alive && hitpoints > 0;

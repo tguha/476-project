@@ -26,6 +26,8 @@
 // #include "Grid.h"
 #include "Enemy.h"
 #include "IceElemental.h"
+#include "FireElemental.h"
+#include "LightningElemental.h"
 #include "Player.h"
 #include "BossRoomGen.h"
 #include "FrustumCulling.h"
@@ -137,6 +139,8 @@ public:
 	AssimpModel *CatWizard;
 
 	AssimpModel *iceElemental;
+	AssimpModel *fireElemental;
+	AssimpModel *lightningElemental;
 
 	BossEnemy *bossEnemy;
 
@@ -1067,6 +1071,8 @@ public:
 		sphere = new AssimpModel(resourceDirectory + "/SmoothSphere.obj");
 
 		iceElemental = new AssimpModel(resourceDirectory + "/IceElemental/IceElem.fbx");
+		fireElemental = new AssimpModel(resourceDirectory + "/FireElemental/FireElem.fbx");
+		lightningElemental = new AssimpModel(resourceDirectory + "/LightningElemental/LightningElem.fbx");
 
 		healthBar = new AssimpModel(resourceDirectory + "/Quad/hud_quad.obj");
 		healthBar->assignTexture("texture_diffuse", resourceDirectory + "/healthbar.bmp");
@@ -1217,6 +1223,18 @@ public:
 				break;
 			case Material::blue_body:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.35f, 0.4f, 0.914f);
+				glUniform1f(shader->getUniform("MatRough"), 0.8f);
+				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
+				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				break;
+			case Material::red_body:
+				glUniform3f(shader->getUniform("MatAlbedo"), 0.914f, 0.35f, 0.4f);
+				glUniform1f(shader->getUniform("MatRough"), 0.8f);
+				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
+				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				break;
+			case Material::yellow_body:
+				glUniform3f(shader->getUniform("MatAlbedo"), 0.914f, 0.914f, 0.35f);
 				glUniform1f(shader->getUniform("MatRough"), 0.8f);
 				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
@@ -1645,16 +1663,45 @@ public:
 		// }
 		std::vector<vec3> enemySpawnPositions = library->getEnemySpawnPositions();
 
-		// for (auto e = enemies.begin(); e != enemies.end(); ++e) {
-		// 	enemies.erase(e);
-		// }
-
-		enemies.clear(); // Clear existing enemies
+			for (Enemy* enemy : enemies) {
+				delete enemy; // Free heap memory
+			}
+			enemies.clear();
 
 		for (const auto& spawnPos : enemySpawnPositions) {
-			enemies.push_back(new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.z), ENEMY_HP_MAX, 2.0f, iceElemental, vec3(1.0f), vec3(0.0f)));
+			// enemies.push_back(new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.z), ENEMY_HP_MAX, 2.0f, iceElemental, vec3(1.0f), vec3(0.0f)));
 			keysneededToCollect++; // Increment the key count for each enemy spawned
+
 			// cout << " Enemy placed at: (" << spawnPos.x << ", " << spawnPos.y << ", " << spawnPos.z << ")" << endl;
+
+				// randomize enemy type, but make sure there is at least one of each type
+				static bool guaranteed[3] = {false, false, false};
+				static int guaranteedCount = 0;
+
+				int enemyType;
+				if (guaranteedCount < 3) {
+					// Assign each type once
+					for (int t = 0; t < 3; ++t) {
+						if (!guaranteed[t]) {
+							enemyType = t;
+							guaranteed[t] = true;
+							guaranteedCount++;
+							break;
+						}
+					}
+				} else {
+					enemyType = rand() % 3;
+				}
+
+				if (enemyType == 0) {
+					enemies.push_back(new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.z), Config::ICE_ELEMENTAL_HP_MAX, Config::ICE_ELEMENTAL_MOVE_SPEED, iceElemental, vec3(1.0f, 1.0f, 1.0f), vec3(0.0f)));
+				} 
+				else if (enemyType == 1) {
+					enemies.push_back(new FireElemental(vec3(spawnPos.x, Config::FIRE_ELEMENTAL_TRANS_Y, spawnPos.z), Config::FIRE_ELEMENTAL_HP_MAX, Config::FIRE_ELEMENTAL_MOVE_SPEED, fireElemental, vec3(0.1f, 0.1f, 0.1f), vec3(0.0f)));
+				}
+				else if (enemyType == 2) {
+					enemies.push_back(new LightningElemental(vec3(spawnPos.x, Config::LIGHTNING_ELEMENTAL_TRANS_Y, spawnPos.z), Config::LIGHTNING_ELEMENTAL_HP_MAX, Config::LIGHTNING_ELEMENTAL_MOVE_SPEED, lightningElemental, vec3(0.1f, 0.1f, 0.1f), vec3(0.0f)));
+				}
 		}
 	}
 
@@ -1892,6 +1939,7 @@ public:
 				if (currentPlayerSpellType == SpellType::FIRE) spellTypeName = "FIRE";
 				else if (currentPlayerSpellType == SpellType::ICE) spellTypeName = "ICE";
 				else if (currentPlayerSpellType == SpellType::LIGHTNING) spellTypeName = "LIGHTNING";
+				else if (currentPlayerSpellType == SpellType::HEAL) spellTypeName = "HEAL";
 
 				std::cout << "Collected a Spell Orb! Equipped: " << spellTypeName << " Spell. Orbs available: " << orbsCollectedCount << std::endl;
 			}
@@ -2096,6 +2144,7 @@ public:
 
 	void drawEnemies(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		for (auto* enemy : enemies) {
+			
 			if (!enemy || !enemy->isAlive()) {
 				// Ensure a key is added only once per dead enemy if not already present
                 // This simple check assumes positions are unique enough for dead enemies.
@@ -2125,7 +2174,7 @@ public:
 				// 	//enemyLastPos = true;
                 // }
 
-				if (!enemy->dropSpawned) {
+				if (!enemy->isDropSpawned()) {
 					glm::vec3 keyPos = enemy->getPosition();
 					keyPos.y -= 1.5f; // Adjust height for key position
 					keyCollectibles.emplace_back(key, keyPos, 0.1f, Material::gold, SpellType::NONE);
@@ -2134,18 +2183,34 @@ public:
 
 				continue; // Skip null or dead enemies
 			}
+
+			// Get enemy material based on type
+			Material enemyMaterial = Material::black;
+			glm::vec3 enemyScale = vec3(1.0f, 1.0f, 1.0f); // Default scale
+			if (dynamic_cast<const IceElemental*>(enemy)) {
+				// cout << "Ice Elemental" << endl;
+				enemyMaterial = Material::blue_body; // Ice Elemental
+				enemyScale = vec3(1.0f, 1.0f, 1.0f);
+			} else if (dynamic_cast<const FireElemental*>(enemy)) {
+				// cout << "Fire Elemental" << endl;
+				enemyMaterial = Material::red_body; // Fire Elemental
+				enemyScale = vec3(0.01f);
+			} else if (dynamic_cast<const LightningElemental*>(enemy)) {
+				// cout << "Lightning Elemental" << endl;
+				enemyMaterial = Material::yellow_body; // Lightning Elemental
+				enemyScale = vec3(0.005f);
+			}
+
 			shader->bind();
 			Model->pushMatrix(); {
 				Model->translate(enemy->getPosition());
-				// Model->scale(glm::vec3(1.0f, 1.0f, 1.0f));
-				Model->scale(enemy->getScale()); // Use enemy's scale
+				Model->scale(enemyScale); // Scale the enemy model
 				Model->rotate(enemy->getRotY(), glm::vec3(0, 1, 0));
 				Model->rotate(glm::radians(-90.0f), glm::vec3(1, 0, 0)); // rotate -90 degrees around x axis
-				// Model->scale(enemy->getScale()); // Use enemy's scale
-				SetMaterial(shader, Material::blue_body); // Set body material
+				SetMaterial(shader, enemyMaterial); // Set body material
 				if (shader->hasUniform("enemyAlpha")) glUniform1f(shader->getUniform("enemyAlpha"), enemy->getDamageTimer() / Config::ENEMY_HIT_DURATION);
 				setModel(shader, Model);
-				iceElemental->Draw(shader); // Draw the scaled sphere as the body
+				(enemy->getModel())->Draw(shader); // Draw the scaled sphere as the body
 			} Model->popMatrix();
 			shader->unbind();
 		} // End loop through enemies
@@ -2822,7 +2887,7 @@ public:
 						// static int nextSpellTypeIndex = 1; // Start with FIRE (index 1 in SpellType enum)
 						SpellType newSpellType = static_cast<SpellType>(nextSpellTypeIndex);
 						nextSpellTypeIndex++;
-						if (nextSpellTypeIndex > 3) { // Assuming 3 spell types: FIRE, ICE, LIGHTNING
+						if (nextSpellTypeIndex > 4) { // Assuming 4 spell types: FIRE, ICE, LIGHTNING, HEAL
 							nextSpellTypeIndex = 1; // Cycle back to FIRE
 						}
 
@@ -3407,6 +3472,16 @@ public:
 				p_scale_min = 0.35f; // Slightly smaller but more numerous for lightning
 				p_scale_max = 0.6f;
 				newProj.speed = 20.0f; // Faster lightning projectile
+				break;
+			case SpellType::HEAL:
+				spellTypeName = "HEAL";
+				particles_to_spawn = 30; // Fewer particles for healing
+				p_color_start = glm::vec4(0.2f, 1.0f, 0.2f, 1.0f);
+				p_color_end = glm::vec4(0.2, 1.0f, 0.2f, 1.0f);
+				p_scale_min = 0.35f; // Slightly smaller but more numerous for lightning
+				p_scale_max = 0.6f;
+				newProj.speed = 0.0f; // No speed for healing, just a visual effect
+				player->setHitpoints(player->getHitpoints() + Config::ORB_HEAL_AMOUNT); // Heal the player
 				break;
 			case SpellType::NONE:
 			default:
