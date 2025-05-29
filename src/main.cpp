@@ -2103,7 +2103,7 @@ public:
 					keyPos.y = keyPos.y - 1.5f;
 					//std::cout << "key position " << keyPos.x << " " << keyPos.y << " " << keyPos.z << " " << std::endl;
 
-                    keyCollectibles.emplace_back(key, keyPos, 0.1f, vec3(0.9, 0.9, 0.9), SpellType::NONE); 
+                    keyCollectibles.emplace_back(key, keyPos, 0.1f, Material::gold, SpellType::NONE); 
 					drawKey(shader, Model );
 					//enemyLastPos = true;
                 }
