@@ -987,11 +987,11 @@ public:
 		string errStr;
 
 		// load the walking character moded
-		player_rig = new AssimpModel(resourceDirectory + "/CatWizard/CatWizardAnimation2.fbx");
+		player_rig = new AssimpModel(resourceDirectory + "/CatWizard/CatWizardAnimationRig2.fbx");
 		player_rig->assignTexture("texture_diffuse", resourceDirectory + "/CatWizard/textures/ImphenziaPalette02-Albedo.png");
 		//PROBLEM GETTING ANIMATION FROM "Fixed" FBX
-		player_walk = new Animation(resourceDirectory + "/CatWizard/CatWizardAnimation2.fbx", player_rig, 2);
-		player_idle = new Animation(resourceDirectory + "/CatWizard/CatWizardAnimation2.fbx", player_rig, 1);
+		player_walk = new Animation(resourceDirectory + "/CatWizard/CatWizardAnimationRig2.fbx", player_rig, 1);
+		player_idle = new Animation(resourceDirectory + "/CatWizard/CatWizardAnimationRig2.fbx", player_rig, 2);
 		//player_idle = new Animation(resourceDirectory + "/Vanguard/Vanguard.fbx", player_rig, 1);
 
 		//TEST Load the cat
