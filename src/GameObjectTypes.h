@@ -118,6 +118,10 @@ struct SpellProjectile {
         localAABBMax_logical = glm::vec3(s, s, s);
         active = true;
     }
+
+    void setLifetime(float time) {
+        lifetime = time;
+    }
 };
 
 struct WallObject {

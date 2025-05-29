@@ -261,7 +261,7 @@ public:
 	std::vector<glm::mat4> vchestMatrices;
 	std::vector<glm::mat4> vcandelabraMatrices;
 	std::vector<glm::mat4> vclockMatrices;
-  
+
   // --- Paw Prints ---
 	// CPU: record and upload a list of paw prints
 	// maintain up to a maximum and replace the oldest when adding a new print
@@ -287,7 +287,7 @@ public:
 		if (prints.size() > Config::PRINTS_MAX) prints.pop_front(); // remove oldest print
 		Config::LAST_PAW_POS = cur;
 	}
-  
+
 	// Set up the FBO for storing the light's depth map
 	void initShadow() {
 		glGenFramebuffers(1, &depthMapFBO); // Generate FBO for shadow depth
@@ -2114,10 +2114,10 @@ public:
 				if (!enemy->dropSpawned) {
 					glm::vec3 keyPos = enemy->getPosition();
 					keyPos.y -= 1.5f; // Adjust height for key position
-          keyCollectibles.emplace_back(key, keyPos, 0.1f, Material::gold, SpellType::NONE); 
+          keyCollectibles.emplace_back(key, keyPos, 0.1f, Material::gold, SpellType::NONE);
 					enemy->setDropSpawned(true); // Mark that the key has been spawned
 				}
-        
+
 				continue; // Skip null or dead enemies
 			}
 			shader->bind();
@@ -3444,7 +3444,9 @@ public:
 			for (auto* enemy : enemies) {
 				if (!enemy || !enemy->isAlive()) continue;
 
-				if (checkAABBCollision(proj.aabbMin, proj.aabbMax, enemy->getAABBMin(), enemy->getAABBMax())) {
+				glm::vec3 enemyMin = glm::vec3(enemy->getAABBMin().x, enemy->getAABBMin().y - 1.0f, enemy->getAABBMin().z);
+				glm::vec3 enemyMax = glm::vec3(enemy->getAABBMax().x, enemy->getAABBMax().y + 1.0f, enemy->getAABBMax().z);
+				if (checkAABBCollision(proj.aabbMin, proj.aabbMax, enemyMin, enemyMax)) {
 					cout << "[DEBUG] Fireball HIT enemy!" << endl;
 					enemy->takeDamage(damageAmount);
 					proj.active = false;
@@ -3575,6 +3577,7 @@ public:
 			}
 
 			SpellProjectile& proj = bossActiveSpells[i];
+			proj.setLifetime(5.0f);
 
 			if (glfwGetTime() - proj.spawnTime > proj.lifetime) {
 				proj.active = false;
