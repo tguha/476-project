@@ -111,6 +111,8 @@ class BossRoomGen {
             return BossroomworldOrigin.z + localZ;
         }
 
+        glm::vec2 getOpenPosinBossRoom();
+
     private:
         Grid<Cell> grid; // Grid of CellType
         std::vector<glm::vec2> EntranceCenters;
@@ -125,6 +127,8 @@ class BossRoomGen {
         float radiusX;
         float radiusY;
         std::vector<glm::vec2> clusterCenters;
+        bool hasPlacedEntrance = false; // Flag to check if entrance has been placed
+        bool hasPlacedExit = false; // Flag to check if exit has been placed
 
 
         std::map<ClusterType, float> objMinSpacing = {

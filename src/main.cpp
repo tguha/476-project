@@ -204,7 +204,7 @@ public:
 
 	BossRoomGen *bossRoom = new BossRoomGen();
 	Grid<BossRoomGen::Cell> bossGrid;
-	ivec2 bossGridSize = glm::ivec2(30, 30); // Size of the grid (number of cells in each dimension)
+	ivec2 bossGridSize = glm::ivec2(40, 40); // Size of the grid (number of cells in each dimension)
 
 	ivec2 bossEntranceDir = glm::ivec2(0, 1); // Direction of the boss entrance (relative to the library grid)
 
@@ -261,6 +261,14 @@ public:
 	std::vector<glm::mat4> vchestMatrices;
 	std::vector<glm::mat4> vcandelabraMatrices;
 	std::vector<glm::mat4> vclockMatrices;
+
+	std::vector<glm::mat4> circularBookShelfMatrices;
+	glm::vec3 bossEntrancePos;
+	float bossEntranceRot;
+
+	std::vector<glm::mat4> vCircularBookShelfMatrices;
+	int activeEnemiesCount = 0; // Count of active enemies in the scene
+	int keysneededToCollect = 0; // Total number of keys to collect in the scene
 
   // --- Paw Prints ---
 	// CPU: record and upload a list of paw prints
@@ -738,6 +746,7 @@ public:
 
 				float i = bossRoom->mapGridXtoWorldX(x);
 				float j = bossRoom->mapGridYtoWorldZ(z);
+				if (bossGrid[gridPos].type == BossRoomGen::CellType::BORDER) continue; // Skip borders for instancing already initialized in another function
 				glm::vec3 pos(i, libraryCenter.y, j);
 				float rotation = bossGrid[gridPos].transformData.rotation;
 				glm::vec3 scale = bossGrid[gridPos].transformData.scale;
@@ -1089,7 +1098,7 @@ public:
 		vec3 bossSpawnPos = bossRoom->getWorldOrigin();
 
 		initEnemies();
-		bossEnemy = new BossEnemy(bossSpawnPos, BOSS_HP_MAX, sphere, vec3(1.0f), vec3(0, 1, 0), BOSS_SPECIAL_ATTACK_COOLDOWN, SpellType::FIRE);
+		bossEnemy = new BossEnemy(bossSpawnPos, BOSS_HP_MAX, sphere, vec3(4.0f), vec3(0, 1, 0), BOSS_SPECIAL_ATTACK_COOLDOWN, SpellType::ICE);
 	}
 
 	void SetMaterial(shared_ptr<Program> shader, Material color) {
@@ -1644,6 +1653,7 @@ public:
 
 		for (const auto& spawnPos : enemySpawnPositions) {
 			enemies.push_back(new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.z), ENEMY_HP_MAX, 2.0f, iceElemental, vec3(1.0f), vec3(0.0f)));
+			keysneededToCollect++; // Increment the key count for each enemy spawned
 			// cout << " Enemy placed at: (" << spawnPos.x << ", " << spawnPos.y << ", " << spawnPos.z << ")" << endl;
 		}
 	}
@@ -2009,17 +2019,19 @@ public:
 	}
 
 	void checkAllEnemies() {
-		if (canFightboss) return; // Already set to true
-		allEnemiesDead = true; // Assume all are dead unless we find one alive
+		// if (canFightboss) return; // Already set to true
+		// allEnemiesDead = true; // Assume all are dead unless we find one alive
+		activeEnemiesCount = 0; // Reset active enemies count
 		for (const auto* enemy : enemies) {
 			if (enemy && enemy->isAlive()) {
-				allEnemiesDead = false; // Found at least one alive enemy
-				break;
+				// allEnemiesDead = false; // Found at least one alive enemy
+				// break;
+				activeEnemiesCount++;
 			}
 		}
-		if (allEnemiesDead) {
-			canFightboss = true; // All enemies are dead, boss can be fought
-		}
+		// if (allEnemiesDead) {
+		// 	canFightboss = true; // All enemies are dead, boss can be fought
+		// }
 	}
 
 	void checkBossfight() {
@@ -2070,6 +2082,7 @@ public:
 			initQuadTree(); // Reinitialize the quad tree
 			initEnemies(); // Reinitialize enemies
 			bossActiveSpells.clear();
+			bossEnemy->resetPhase();
 			// enemies.push_back(new Enemy(libraryCenter + vec3(-5.0f, 0.8f, 8.0f), 50.0f, 2.0f, sphere, glm::vec3(0.5f, 1.28f, 0.5f), vec3(0.0f))); // <<-- Pass sphere and scale
 			activeSpells.clear(); // Clear active spells
 			unlock = false;
@@ -2077,6 +2090,7 @@ public:
 			#if USE_INSTANCING
 			initInstancingMatrices();
 			#endif
+			initCircularBorder();
 		}
 	}
 
@@ -2114,7 +2128,7 @@ public:
 				if (!enemy->dropSpawned) {
 					glm::vec3 keyPos = enemy->getPosition();
 					keyPos.y -= 1.5f; // Adjust height for key position
-          keyCollectibles.emplace_back(key, keyPos, 0.1f, Material::gold, SpellType::NONE);
+					keyCollectibles.emplace_back(key, keyPos, 0.1f, Material::gold, SpellType::NONE);
 					enemy->setDropSpawned(true); // Mark that the key has been spawned
 				}
 
@@ -2123,9 +2137,11 @@ public:
 			shader->bind();
 			Model->pushMatrix(); {
 				Model->translate(enemy->getPosition());
-				Model->scale(glm::vec3(1.0f, 1.0f, 1.0f));
+				// Model->scale(glm::vec3(1.0f, 1.0f, 1.0f));
+				Model->scale(enemy->getScale()); // Use enemy's scale
 				Model->rotate(enemy->getRotY(), glm::vec3(0, 1, 0));
 				Model->rotate(glm::radians(-90.0f), glm::vec3(1, 0, 0)); // rotate -90 degrees around x axis
+				// Model->scale(enemy->getScale()); // Use enemy's scale
 				SetMaterial(shader, Material::blue_body); // Set body material
 				if (shader->hasUniform("enemyAlpha")) glUniform1f(shader->getUniform("enemyAlpha"), enemy->getDamageTimer() / Config::ENEMY_HIT_DURATION);
 				setModel(shader, Model);
@@ -2487,16 +2503,16 @@ public:
 				float j = bossRoom->mapGridYtoWorldZ(z); // Center the shelf in the cell
 				if (!cullFlag || !ViewFrustCull(glm::vec3(i, 0, j), 2.0f, planes)) {
 					if (bossGrid[gridPos].type == BossRoomGen::CellType::BORDER) {
-						int test = bossRoom->mapXtoGridX(i);
-						int test2 = bossRoom->mapZtoGridY(j);
-						Model->pushMatrix();
-						Model->loadIdentity();
-						Model->translate(vec3(i, libraryCenter.y, j)); // Position set in class members
-						Model->rotate(glm::radians(bossGrid[gridPos].transformData.rotation), vec3(0, 1, 0)); // Rotate for left/right walls
-						Model->scale(bossGrid[gridPos].transformData.scale); // Scale set in class members
-						setModel(shader, Model);
-						book_shelf1->Draw(shader); // Use the bookshelf model for the border
-						Model->popMatrix();
+						// int test = bossRoom->mapXtoGridX(i);
+						// int test2 = bossRoom->mapZtoGridY(j);
+						// Model->pushMatrix();
+						// Model->loadIdentity();
+						// Model->translate(vec3(i, libraryCenter.y, j)); // Position set in class members
+						// Model->rotate(glm::radians(bossGrid[gridPos].transformData.rotation), vec3(0, 1, 0)); // Rotate for left/right walls
+						// Model->scale(bossGrid[gridPos].transformData.scale); // Scale set in class members
+						// setModel(shader, Model);
+						// book_shelf1->Draw(shader); // Use the bookshelf model for the border
+						// Model->popMatrix();
 					}
 					else if (bossGrid[gridPos].type == BossRoomGen::CellType::ENTRANCE) {
 						if (bossGrid[gridPos].borderType == BossRoomGen::BorderType::ENTRANCE_MIDDLE) {
@@ -2582,9 +2598,9 @@ public:
 		float pupilScale = 0.1f;
 		float pupilOffsetForward = 0.02f; // Push pupil slightly in front of white
 
-		if (bossEnemy->isAlive()) {
+		if (bossEnemy->isAlive() && unlock) {
 			bossEnemy->lookAtPlayer(player->getPosition()); // Make the boss look at the player
-			glm::vec3 bossPos = bossEnemy->getPosition() + glm::vec3(0, 0.8f, 0); // Position the boss slightly above the ground
+			glm::vec3 bossPos = bossEnemy->getPosition() + glm::vec3(0, 2.0f, 0); // Position the boss slightly above the ground
 			glm::vec3 bossRotation = bossEnemy->getRotation(); // Get rotation from the enemy object
 			float bossRotY = bossEnemy->getRotY();
 
@@ -2593,6 +2609,7 @@ public:
 				Model->loadIdentity(); // Reset the model matrix
 				Model->translate(bossPos);
 				Model->rotate(bossRotY, bossRotation); // Rotate the body to match the boss's rotation
+				Model->scale(bossEnemy->getScale());
 				// --- Draw Main Body (Pill Shape) ---
 				Model->pushMatrix();
 				{
@@ -3474,6 +3491,90 @@ public:
 
 	void drawProjectiles(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		// This function is now empty as particles handle visuals.
+		// This function is now empty as particles handle visuals for boss fireballs too.
+		if (!shader || !Model || !sphere) return; // Need shader, stack, model
+
+		shader->bind();
+		// Set material for projectiles (e.g., bright yellow/white, maybe emissive if shader supports)
+		SetMaterial(shader, Material::gold);
+		// Optional: Emissive properties if shader supports them
+		// if(shader->hasUniform("hasEmittance")) glUniform1i(shader->getUniform("hasEmittance"), 1);
+		// if(shader->hasUniform("MatEmitt")) glUniform3f(shader->getUniform("MatEmitt"), 1.0f, 1.0f, 0.8f);
+
+		for (const auto& proj : activeSpells) {
+			if (!proj.active) continue;
+			float current_particle_system_time = particleSystem->getCurrentTime();
+
+			float p_speed_min = 0.05f;
+			float p_speed_max = 0.1f;
+			float p_spread = 1.5f;
+			// lifespans  short so they die quickly and are recycled for other effects
+			float p_lifespan_min = 0.2f;
+			float p_lifespan_max = 0.6f;
+
+			// Base particle color (TODO: can be tweaked, maybe slightly transparent)
+			glm::vec4 p_color_start;
+			glm::vec4 p_color_end;
+			float p_scale_min = 0.1f;
+			float p_scale_max = 0.25f;
+
+			int current_particles_to_spawn = 2; // Set a fixed number of particles for all orbs
+			// Customize particle aura based on spell type
+			switch (currentPlayerSpellType) {
+				case SpellType::FIRE:
+					// current_particles_to_spawn = 15; // Increased for density with short life
+					p_color_start = glm::vec4(1.0f, 0.5f, 0.1f, 0.8f);
+					p_color_end = glm::vec4(0.9f, 0.2f, 0.0f, 0.3f);
+					p_scale_min = 0.25f;
+					p_scale_max = 0.45f;
+					break;
+				case SpellType::ICE:
+					// current_particles_to_spawn = 15; // Increased for density
+					p_color_start = glm::vec4(0.5f, 0.8f, 1.0f, 0.8f);
+					p_color_end = glm::vec4(0.2f, 0.5f, 0.8f, 0.3f);
+					p_scale_min = 0.25f;
+					p_scale_max = 0.45f;
+					break;
+				case SpellType::LIGHTNING:
+					// current_particles_to_spawn = 15; // Increased for density
+					p_color_start = glm::vec4(1.0f, 1.0f, 0.5f, 0.8f);
+					p_color_end = glm::vec4(0.8f, 0.8f, 0.2f, 0.3f);
+					p_scale_min = 0.25f;
+					p_scale_max = 0.45f;
+					break;
+				default:
+					// current_particles_to_spawn is 15 (standardized)
+					// p_color_start and p_color_end use orb.color
+					// p_lifespan_min/max are standardized
+					// Make scales consistent with other types:
+					p_scale_min = 0.25f;
+					p_scale_max = 0.45f;
+					break;
+			}
+			particleSystem->spawnParticleBurst(proj.position, // Emit from orb center
+												glm::vec3(0,1,0), // Emit upwards slowly or randomly
+												current_particles_to_spawn,
+												current_particle_system_time,
+												p_speed_min, p_speed_max,
+												p_spread,
+												p_lifespan_min, p_lifespan_max,
+												p_color_start, p_color_end,
+												p_scale_min, p_scale_max);
+
+			Model->pushMatrix();
+			Model->loadIdentity(); // Start from identity for projectile
+
+			// Use the pre-calculated transform from updateAABB
+			Model->multMatrix(proj.transform);
+			Model->scale(0.15f);
+
+			setModel(shader, Model);
+			sphere->Draw(shader); // Draw the sphere model
+
+			Model->popMatrix();
+		}
+
+		shader->unbind();
 	}
 
 	/* boss projectiles */
@@ -3496,8 +3597,8 @@ public:
 			float p_speed_max = 0.1f;
 			float p_spread = 1.5f;
 			// lifespans  short so they die quickly and are recycled for other effects
-			float p_lifespan_min = 0.6f;
-			float p_lifespan_max = 0.8f;
+			float p_lifespan_min = 0.3f;
+			float p_lifespan_max = 0.6f;
 
 			// Base particle color (TODO: can be tweaked, maybe slightly transparent)
 			glm::vec4 p_color_start;
@@ -3505,7 +3606,7 @@ public:
 			float p_scale_min = 0.1f;
 			float p_scale_max = 0.25f;
 
-			int current_particles_to_spawn = 5; // Set a fixed number of particles for all orbs
+			int current_particles_to_spawn = 3; // Set a fixed number of particles for all orbs
 			// Customize particle aura based on spell type
 			switch (bossEnemy->getBossSpellType()) {
 				case SpellType::FIRE:
@@ -3577,7 +3678,7 @@ public:
 			}
 
 			SpellProjectile& proj = bossActiveSpells[i];
-			proj.setLifetime(5.0f);
+			proj.setLifetime(8.0f);
 
 			if (glfwGetTime() - proj.spawnTime > proj.lifetime) {
 				proj.active = false;
@@ -3643,7 +3744,7 @@ public:
 
 		if (particleSystem) {
             float current_particle_system_time = particleSystem->getCurrentTime();
-            int particles_to_spawn = 10;
+            int particles_to_spawn = 5;
 
             float p_speed_min = newProj.speed * 0.2f;
             float p_speed_max = newProj.speed * 0.5f;
@@ -3709,14 +3810,56 @@ public:
 			<< "). Active spells: " << bossActiveSpells.size() << endl;
 	}
 
-	void BossEnemyShoot(float deltaTime) {
+	void BossEnemyAttacks(float deltaTime) {
 		if (bossEnemy && bossfightstarted && !bossfightended && bossEnemy->isAlive()) {
-			// increment every 2 seconds
-			if (glfwGetTime() - bossEnemy->getSpecialAttackCooldown() > 2.0f) {
-				bossEnemy->setSpecialAttackCooldown(glfwGetTime());
-				shootBossSpell();
+			bossEnemy->changePhase(); // Update boss phase logic
+			switch (bossEnemy->getPhase()) {
+				case BossEnemy::BossPhase::PHASE_1:
+					// shooting spell at player
+					if (glfwGetTime() - bossEnemy->getSpecialAttackCooldown() > 2.0f) {
+						bossEnemy->setSpecialAttackCooldown(glfwGetTime());
+						shootBossSpell();
+					}
+					updateBossProjectiles(deltaTime);
+					break;
+				case BossEnemy::BossPhase::PHASE_2:
+					// Phase 2 logic, e.g., spawning minions
+					if (glfwGetTime() - bossEnemy->getAttack1Cooldown() > 4.0f) {
+						glm::vec2 spawnPos = bossRoom->getOpenPosinBossRoom();
+						bossEnemy->setAttack1Cooldown(glfwGetTime());
+
+						if (activeEnemiesCount <= 5) {
+							enemies.push_back(new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.y), ENEMY_HP_MAX, 2.0f, iceElemental, vec3(0.65f), vec3(0.0f)));
+						}
+					}
+					updateBossProjectiles(deltaTime);
+					break;
+				case BossEnemy::BossPhase::PHASE_3:
+					// Phase 3 logic, phase 1 and 2 combined but more aggressive
+					if (glfwGetTime() - bossEnemy->getSpecialAttackCooldown() > 1.0f) {
+						bossEnemy->setSpecialAttackCooldown(glfwGetTime());
+						shootBossSpell();
+					}
+					if (glfwGetTime() - bossEnemy->getAttack1Cooldown() > 3.0f) {
+						glm::vec2 spawnPos = bossRoom->getOpenPosinBossRoom();
+						bossEnemy->setAttack1Cooldown(glfwGetTime());
+
+						if (activeEnemiesCount <= 5) {
+							enemies.push_back(new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.y), ENEMY_HP_MAX, 2.0f, iceElemental, vec3(0.65f), vec3(0.0f)));
+						}
+					}
+					updateBossProjectiles(deltaTime);
+					break;
+				default:
+					cout << "[DEBUG] Boss phase not recognized or unsupported." << endl;
+					break;
 			}
-			updateBossProjectiles(deltaTime);
+
+
+		}
+
+		if (bossfightended) {
+			enemies.clear(); // Clear all enemies when boss fight ends
 		}
 	}
 
@@ -3881,8 +4024,10 @@ public:
 
 		Model->pushMatrix();
 			Model->loadIdentity();
-			Model->translate(vec3(0.0f, 2.5f, 38.5f));
-			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			// Model->translate(vec3(0.0f, 2.5f, 38.5f));
+			Model->translate(vec3(bossEntrancePos.x, bossEntrancePos.y + 2.5f, bossEntrancePos.z));  //doorPosition
+			Model->rotate(glm::radians(bossEntranceRot), vec3(0.0f, 1.0f, 0.0f));
+			// Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
 			Model->scale(0.1f);
 			SetMaterial(shader, Material::gold); //gold
 			setModel(shader, Model);
@@ -3893,8 +4038,10 @@ public:
 		//middle lock
 		Model->pushMatrix();
 			Model->loadIdentity();
-			Model->translate(vec3(0.0f, 1.5f, 38.5f));  //doorPosition
-			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			// Model->translate(vec3(0.0f, 1.5f, 38.5f));  //doorPosition
+			Model->translate(vec3(bossEntrancePos.x, bossEntrancePos.y + 1.5f, bossEntrancePos.z));
+			Model->rotate(glm::radians(bossEntranceRot), vec3(0.0f, 1.0f, 0.0f));
+			// Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
 			Model->scale(0.1f);
 			SetMaterial(shader, Material::gold); //gold
 			setModel(shader, Model);
@@ -3905,8 +4052,10 @@ public:
 		//lower lock
 		Model->pushMatrix();
 			Model->loadIdentity();
-			Model->translate(vec3(0.0f, 0.5f, 38.5f));
-			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			// Model->translate(vec3(0.0f, 0.5f, 38.5f));
+			Model->translate(vec3(bossEntrancePos.x, bossEntrancePos.y + 0.5f, bossEntrancePos.z));
+			Model->rotate(glm::radians(bossEntranceRot), vec3(0.0f, 1.0f, 0.0f));
+			// Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
 			Model->scale(0.1f);
 			SetMaterial(shader, Material::gold); //gold
 			setModel(shader, Model);
@@ -3993,8 +4142,10 @@ public:
 		//top lock
 		Model->pushMatrix();
 			Model->loadIdentity();
-			Model->translate(vec3(0.0f, 2.5f, 38.5f));  //doorPosition
-			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			// Model->translate(vec3(0.0f, 2.5f, 38.5f));  //doorPosition
+			Model->translate(vec3(bossEntrancePos.x, bossEntrancePos.y + 2.5f, bossEntrancePos.z));
+			Model->rotate(glm::radians(bossEntranceRot), vec3(0.0f, 1.0f, 0.0f));
+			// Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
 			Model->scale(0.1f);
 			SetMaterial(shader, Material::gold); //gold
 			setModel(shader, Model);
@@ -4004,8 +4155,10 @@ public:
 		//top handle
 		Model->pushMatrix();
 			Model->loadIdentity();
-			Model->translate(vec3(0.0f, 2.5f, 38.5f));
-			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			// Model->translate(vec3(0.0f, 2.5f, 38.5f));
+			Model->translate(vec3(bossEntrancePos.x, bossEntrancePos.y + 2.5f, bossEntrancePos.z));
+			Model->rotate(glm::radians(bossEntranceRot), vec3(0.0f, 1.0f, 0.0f));
+			// Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
 			Model->rotate(1 * glm::radians(15.0) + lTheta, vec3(0.0f, 0.0f, 1.0f)); //max -30?
 			Model->scale(0.1f);
 			// Model->rotate(  glm::radians(90.0) , vec3(0.0f, 1.0f, 0.0f)); //max -30
@@ -4017,8 +4170,10 @@ public:
 		//middle lock
 		Model->pushMatrix();
 			Model->loadIdentity();
-			Model->translate(vec3(0.0f, 1.5f, 38.5f));
-			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			// Model->translate(vec3(0.0f, 1.5f, 38.5f));
+			Model->translate(vec3(bossEntrancePos.x, bossEntrancePos.y + 1.5f, bossEntrancePos.z));
+			Model->rotate(glm::radians(bossEntranceRot), vec3(0.0f, 1.0f, 0.0f));
+			// Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
 			Model->scale(0.1f);
 			SetMaterial(shader, Material::gold); //gold
 			setModel(shader, Model);
@@ -4028,8 +4183,10 @@ public:
 		//midle handle
 		Model->pushMatrix();
 			Model->loadIdentity();
-			Model->translate(vec3(0.0f, 1.5f, 38.5f));
-			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			// Model->translate(vec3(0.0f, 1.5f, 38.5f));
+			Model->translate(vec3(bossEntrancePos.x, bossEntrancePos.y + 1.5f, bossEntrancePos.z));
+			Model->rotate(glm::radians(bossEntranceRot), vec3(0.0f, 1.0f, 0.0f));
+			// Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
 			Model->rotate(1 * glm::radians(15.0) + lTheta, vec3(0.0f, 0.0f, 1.0f)); //max -30?
 			Model->scale(0.1f);
 			// Model->rotate(  glm::radians(90.0) , vec3(0.0f, 1.0f, 0.0f)); //max -30
@@ -4041,8 +4198,10 @@ public:
 		// lower lock
 		Model->pushMatrix();
 			Model->loadIdentity();
-			Model->translate(vec3(0.0f, 0.5f, 38.5f));
-			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			// Model->translate(vec3(0.0f, 0.5f, 38.5f));
+			Model->translate(vec3(bossEntrancePos.x, bossEntrancePos.y + 0.5f, bossEntrancePos.z));
+			Model->rotate(glm::radians(bossEntranceRot), vec3(0.0f, 1.0f, 0.0f));
+			// Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
 			Model->scale(0.1f);
 			SetMaterial(shader, Material::gold); //gold
 			setModel(shader, Model);
@@ -4052,8 +4211,10 @@ public:
 		//lower handle
 		Model->pushMatrix();
 			Model->loadIdentity();
-			Model->translate(vec3(0.0f, 0.5f, 38.5f));
-			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			// Model->translate(vec3(0.0f, 0.5f, 38.5f));
+			Model->translate(vec3(bossEntrancePos.x, bossEntrancePos.y + 0.5f, bossEntrancePos.z));
+			Model->rotate(glm::radians(bossEntranceRot), vec3(0.0f, 1.0f, 0.0f));
+			// Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
 			Model->rotate(1 * glm::radians(15.0) + lTheta, vec3(0.0f, 0.0f, 1.0f)); //max -30?
 			Model->scale(0.1f);
 			// Model->rotate(  glm::radians(90.0) , vec3(0.0f, 1.0f, 0.0f)); //max -30
@@ -4293,6 +4454,7 @@ public:
 		#if USE_INSTANCING
 		drawLibInstancing(prog, CULL);
 		#else
+		drawCircularBorder(prog, CULL); // Draw the circular library shelves
 		// 2. Draw the Static Library Shelves
 		drawLibrary(prog, Model, CULL);
 
@@ -4369,6 +4531,7 @@ public:
 		#if USE_INSTANCING
 		drawLibInstancing(prog, false); // Draw the library shelves without culling
 		#else
+		drawCircularBorder(prog, false); // Draw the circular library shelves
 
 		// 2. Draw the Static Library Shelves
 		drawLibrary(prog, Model, true);
@@ -4483,6 +4646,85 @@ public:
 
 	}
 
+	void initCircularBorder() {
+		circularBookShelfMatrices.clear();
+
+		for (int z = 0; z < bossGrid.getSize().y; ++z) {
+			for (int x = 0; x < bossGrid.getSize().x; ++x) {
+				glm::ivec2 gridPos(x, z);
+
+				float i = bossRoom->mapGridXtoWorldX(x);
+				float j = bossRoom->mapGridYtoWorldZ(z);
+				if ((bossGrid[gridPos].type != BossRoomGen::CellType::BORDER) &&
+					(bossGrid[gridPos].type != BossRoomGen::CellType::ENTRANCE)) {
+					continue; // Skip non-border cells
+				}
+				glm::vec3 pos(i, libraryCenter.y, j);
+				float rotation = bossGrid[gridPos].transformData.rotation;
+				glm::vec3 scale = bossGrid[gridPos].transformData.scale;
+				glm::mat4 model = glm::translate(glm::mat4(1.0f), pos);
+				model = glm::rotate(model, glm::radians(rotation), glm::vec3(0, 1, 0));
+				model = glm::scale(model, scale);
+
+				auto addInstance = [&](std::vector<glm::mat4>& container) {
+					container.push_back(model);
+				};
+
+				using CT = BossRoomGen::CellType;
+				using BT = BossRoomGen::BorderType;
+				using OT = BossRoomGen::CellObjType;
+
+				const auto& cell = bossGrid[gridPos];
+
+				switch (cell.type) {
+					case CT::BORDER:
+						addInstance(circularBookShelfMatrices);
+						break;
+
+					case CT::ENTRANCE:
+						if (cell.borderType == BT::ENTRANCE_MIDDLE) {
+							bossEntrancePos = pos;
+							bossEntranceRot = rotation + 180.0f; // Adjust rotation for entrance
+						}
+						break;
+
+					default:
+						break;
+				}
+			}
+		}
+
+		book_shelf1->InitializeInstancing(circularBookShelfMatrices);
+
+	}
+
+	void drawCircularBorder(shared_ptr<Program> shader, bool cullFlag) {
+		vCircularBookShelfMatrices.clear(); // Clear matrices for the next draw call
+
+
+		if (!shader || !book_shelf1 || grid.getSize().x == 0 || grid.getSize().y == 0) return; // Safety checks
+		shader->bind();
+		if (shader->hasUniform("hasInstancing")) glUniform1i(shader->getUniform("hasInstancing"), GL_TRUE);
+
+		for (unsigned int i = 0; i < circularBookShelfMatrices.size(); ++i) {
+			glm::vec3 pos = glm::vec3(circularBookShelfMatrices[i][3][0],
+				circularBookShelfMatrices[i][3][1],
+				circularBookShelfMatrices[i][3][2]);
+			if (!cullFlag || !ViewFrustCull(pos, 2.0f, planes)) {
+				vCircularBookShelfMatrices.push_back(circularBookShelfMatrices[i]);
+			}
+		}
+
+
+		book_shelf1->updateInstancingOffsetVBO(vCircularBookShelfMatrices);
+		book_shelf1->DrawInstanced(vCircularBookShelfMatrices);
+
+		if (shader->hasUniform("hasInstancing")) glUniform1i(shader->getUniform("hasInstancing"), GL_FALSE);
+		shader->unbind();
+
+
+	}
+
 	void render(float frametime, float animTime) {
 		// Get current frame buffer size
 		int width, height;
@@ -4499,9 +4741,9 @@ public:
 		updateProjectiles(frametime);
 		updateFTimeout(frametime);
 		particleSystem->update(frametime); // Update particles
-		// checkAllEnemies();
+		checkAllEnemies();
 		checkBossfight();
-		BossEnemyShoot(frametime);
+		BossEnemyAttacks(frametime);
 		restartGeneration();
 		//debugMessages();
 
@@ -4665,6 +4907,7 @@ public:
 			#if USE_INSTANCING
 			drawLibInstancing(ShadowProg, false); // Draw the library shelves without culling
 			#else
+			drawCircularBorder(ShadowProg, false); // Draw the circular library shelves
 			drawLibrary(ShadowProg, Model, false);
 			drawBossRoom(ShadowProg, Model, false);
 			#endif
@@ -4799,7 +5042,7 @@ public:
 				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
 			}
 		}
-		if (key == GLFW_KEY_U && action == GLFW_PRESS) {
+		if (key == GLFW_KEY_U && action == GLFW_PRESS && keysCollectedCount == keysneededToCollect) {
 			unlock = true;
 			canFightboss = true;
 		}
@@ -4910,6 +5153,7 @@ int main(int argc, char* argv[]) {
 	application->initGeom(resourceDir);
 	application->initGround();
 	application->initQuadTree();
+	application->initCircularBorder();
 	#if USE_INSTANCING
 	application->initInstancingMatrices();
 	#endif

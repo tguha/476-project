@@ -10,7 +10,8 @@ Entity::Entity(const glm::vec3& startPosition, float hp, float speed, AssimpMode
     collisionScale(scale),
     rotation(rotation),
     aabbMin(startPosition), // Initialize AABB roughly
-    aabbMax(startPosition)
+    aabbMax(startPosition),
+    scale(scale) // Initialize scale
 {
     if (hitpoints <= 0) { // Ensure entity starts dead if given 0 or less HP
         alive = false;
