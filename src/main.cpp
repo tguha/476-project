@@ -5152,6 +5152,7 @@ public:
 			drawDamageIndicator(1.0f);
 		}
 
+		// Needs to be before MiniMap rendering
 		glEnable(GL_BLEND); // Enable blending for text rendering
 		// RenderText(textProg, "Cats are ok.  Cur time: " + to_string(glfwGetTime()), 10.0f, 265.0f, 1.0f, glm::vec3(1.0f, 1.0f, 0.9f),
 		// 		window_width, window_height);
