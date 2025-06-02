@@ -39,6 +39,7 @@
 #include "../particles/particleGen.h"
 #include "TextureManager.h"
 #include "Quadtree.h"
+#include "Freetype.h"
 
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -72,6 +73,7 @@ public:
 	shared_ptr<Program> redFlashProg;
 	shared_ptr<Program> SkyboxProg;
 	shared_ptr<Program> debugLineProg;
+	shared_ptr<Program> textProg;
 
 	// ground data - Reused for all flat ground planes
 	GLuint GrndBuffObj = 0, GrndNorBuffObj = 0, GIndxBuffObj = 0; // Initialize to 0
@@ -589,6 +591,9 @@ public:
 		glClearColor(.12f, .34f, .56f, 1.0f);
 		glEnable(GL_DEPTH_TEST);
 
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
 		// Initialize GLSL programs for shadow mapping
 		DepthProg = make_shared<Program>();
 		DepthProg->setVerbose(Config::DEBUG_SHADER);
@@ -712,6 +717,15 @@ public:
 		debugLineProg->addUniform("M");
 		debugLineProg->addUniform("color");
 
+		textProg = make_shared<Program>();
+		textProg->setVerbose(true);
+		textProg->setShaderNames(resourceDirectory + "/textVert.glsl", resourceDirectory + "/textFrag.glsl");
+		textProg->init();
+		textProg->addAttribute("vertex");
+		textProg->addUniform("projection");
+		textProg->addUniform("textTex");
+		textProg->addUniform("textColor");
+
 		updateCameraVectors();
 
 		pawTex = make_shared<Texture>();
@@ -757,6 +771,9 @@ public:
 		GLuint normalTex = genSolidTexture(flatN, GL_RGB);
 
 		TextureManager::initFallbacks(whiteTex, normalTex, blackTex);
+
+		int fError = initFont(resourceDirectory);
+		cout << "Font error? " << fError << endl;
 	}
 
 	GLuint genSolidTexture(const unsigned char* pixel, GLenum format) {
@@ -1263,6 +1280,8 @@ public:
 
 		initEnemies();
 		bossEnemy = new BossEnemy(bossSpawnPos, BOSS_HP_MAX, sphere, vec3(4.0f), vec3(0, 1, 0), BOSS_SPECIAL_ATTACK_COOLDOWN, SpellType::ICE);
+
+		initTextQuad();
 	}
 
 	void SetMaterial(shared_ptr<Program> shader, Material color) {
@@ -4976,6 +4995,8 @@ public:
 		vec3 lc = Config::LIGHT_COLOR;
 		mat4 LO, LV, LSpace;
 
+		glDisable(GL_BLEND); // Disable blending for depth map rendering
+
 		// ========================================================================
 		// First Pass: Render scene from light's perspective to generate depth map
 		// ========================================================================
@@ -5131,6 +5152,13 @@ public:
 			drawDamageIndicator(1.0f);
 		}
 
+		glEnable(GL_BLEND); // Enable blending for text rendering
+		// RenderText(textProg, "Cats are ok.  Cur time: " + to_string(glfwGetTime()), 10.0f, 265.0f, 1.0f, glm::vec3(1.0f, 1.0f, 0.9f),
+		// 		window_width, window_height);
+		RenderText(textProg, "Cats are ok.  Cur time: " + to_string(glfwGetTime()), 25.0f, 25.0f, 1.0f, glm::vec3(1.0f, 1.0f, 0.9f),
+				width, height);
+		glDisable(GL_BLEND); // Disable blending after text rendering
+
 		if (Config::DRAW_MINIMAP) { // Draw the mini map
 			ShadowProg->bind();
 			//cout << "Drawing minimap" << endl;
@@ -5163,6 +5191,12 @@ public:
 			drawEnemies(ShadowProg, Model);
 			ShadowProg->unbind();
 		}
+
+		// glEnable(GL_BLEND); // Enable blending for text rendering
+		// // RenderText(textProg, "Cats are ok.  Cur time: " + to_string(glfwGetTime()), 10.0f, 265.0f, 1.0f, glm::vec3(1.0f, 1.0f, 0.9f),
+		// // 		window_width, window_height);
+		// RenderText(textProg, "Cats are ok.  Cur time: " + to_string(glfwGetTime()), 25.0f, 25.0f, 1.0f, glm::vec3(1.0f, 1.0f, 0.9f),
+		// 		width, height);
 
 		// --- Cleanup ---
 		Projection->popMatrix();
