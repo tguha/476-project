@@ -30,8 +30,22 @@ void Animator::UpdateAnimation(float dt)
 }
 
 void Animator::PlayAnimation(Animation* pAnimation) {
+    //In Progres
     m_CurrentAnimation = pAnimation;
     m_CurrentTime = 0.0;
+    float tickRate = m_CurrentAnimation->GetTicksPerSecond();
+    if (tickRate <= 0) {
+        tickRate = 25.0f; // Default value if not specified
+    }
+
+    
+    while (m_CurrentTime < pAnimation->GetDuration()) {
+        
+        m_CurrentTime += 0.1;
+    }
+    //m_CurrentTime += dt * tickRate; // Update current time based on delta time and ticks per second
+    //m_CurrentTime = fmod(m_CurrentTime, m_CurrentAnimation->GetDuration()); // Loop the animation
+
 }
 
 void Animator::CalculateBoneTransform(const AssimpNodeData* node, glm::mat4 parentTransform)

@@ -145,7 +145,7 @@ public:
 	vector<Book> books; // vector of books to be drawn
 
 	AssimpModel* player_rig;
-	Animation *player_walk, *player_idle;
+	Animation *player_walk, *player_idle, *player_roll, *player_grab_book;
 	Animator *catwizard_animator;
 
 	AssimpModel *CatWizard;
@@ -197,7 +197,8 @@ public:
 	bool movingBackward = false;
 	bool movingLeft = false;
 	bool movingRight = false;
-
+	bool rolling = false;
+	bool grabbingBook = false;
 	//unlock bool
 	bool unlock = false;
 	float lTheta = 0;
@@ -1158,15 +1159,18 @@ public:
 		string errStr;
 
 		// load the walking character moded
-		player_rig = new AssimpModel(resourceDirectory + "/CatWizard/CatWizardAnimationRig2.fbx");
+		player_rig = new AssimpModel(resourceDirectory + "/CatWizard/CatWizardAnimation4.fbx");
 		player_rig->assignTexture("texture_diffuse", resourceDirectory + "/CatWizard/textures/ImphenziaPalette02-Albedo.png");
-		//PROBLEM GETTING ANIMATION FROM "Fixed" FBX
-		player_walk = new Animation(resourceDirectory + "/CatWizard/CatWizardAnimationRig2.fbx", player_rig, 1);
-		player_idle = new Animation(resourceDirectory + "/CatWizard/CatWizardAnimationRig2.fbx", player_rig, 2);
-		//player_idle = new Animation(resourceDirectory + "/Vanguard/Vanguard.fbx", player_rig, 1);
 
-		//TEST Load the cat
-		//CatWizard = new AssimpModel(resourceDirectory + "/CatWizard/BlendWalkFix.fbx");
+		//Getting Player animations
+		player_walk = new Animation(resourceDirectory + "/CatWizard/CatWizardAnimation4.fbx", player_rig, 4);
+		player_idle = new Animation(resourceDirectory + "/CatWizard/CatWizardAnimation4.fbx", player_rig, 1);
+		player_roll = new Animation(resourceDirectory + "/CatWizard/CatWizardAnimation4.fbx", player_rig, 3);
+		player_grab_book = new Animation(resourceDirectory + "/CatWizard/CatWizardAnimation4.fbx", player_rig, 2);
+		
+		
+
+		//Player bounding box
 		playerBB = make_shared<AABB>();
 		playerBB->min = player_rig->getBoundingBoxMin() * manScale.x;
 		playerBB->max = player_rig->getBoundingBoxMax() * manScale.x;
@@ -1905,8 +1909,14 @@ public:
 		}
 		curS->bind();
 
-		if (movingBackward || movingForward || movingLeft || movingRight) {
+		if ((movingBackward || movingForward || movingLeft || movingRight) && !grabbingBook && !rolling) {
 			manState = Man_State::WALKING;
+		}
+		else if (grabbingBook) {
+			manState = Man_State::GRAB_BOOK;
+		}
+		else if (rolling) {
+			manState = Man_State::ROLL;
 		}
 		else {
 			manState = Man_State::IDLE;
@@ -1923,7 +1933,13 @@ public:
 		else if (manState == Man_State::IDLE){
 			catwizard_animator->SetCurrentAnimation(player_idle);
 		}
+		else if (manState == Man_State::GRAB_BOOK) {
+			catwizard_animator->SetCurrentAnimation(player_grab_book);
+		}
+		else if (manState == Man_State::ROLL) {
+			catwizard_animator->SetCurrentAnimation(player_roll);
 
+		}
 		// Update bone matrices
 
 		vector<glm::mat4> transforms = catwizard_animator->GetFinalBoneMatrices();
@@ -5271,6 +5287,8 @@ public:
 		if (key == GLFW_KEY_F && action == GLFW_PRESS) { // Interaction Key
 			//F Time out to avoid pointer crash
 			if (fTimeout <= 0) {
+				grabbingBook = true;
+				//catwizard_animator->PlayAnimation(player_grab_book);
 				interactWithBooks();
 				fTimeout = 3.0f;
 			}
