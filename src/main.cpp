@@ -117,6 +117,7 @@ public:
 
 	// setup collectibles vector
 	std::vector<Collectible> orbCollectibles;
+	std::unordered_map<SpellType, int> spellCounts;
 	int orbsCollectedCount = 0;
 	std::vector<Enemy*> enemies;
 
@@ -1874,10 +1875,10 @@ public:
 					enemies.push_back(new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.z), Config::ICE_ELEMENTAL_HP_MAX, Config::ICE_ELEMENTAL_MOVE_SPEED, iceElemental, vec3(1.0f, 1.0f, 1.0f), vec3(0.0f)));
 				}
 				else if (enemyType == 1) {
-					enemies.push_back(new FireElemental(vec3(spawnPos.x, Config::FIRE_ELEMENTAL_TRANS_Y, spawnPos.z), Config::FIRE_ELEMENTAL_HP_MAX, Config::FIRE_ELEMENTAL_MOVE_SPEED, fireElemental, vec3(0.1f, 0.1f, 0.1f), vec3(0.0f)));
+					enemies.push_back(new FireElemental(vec3(spawnPos.x, Config::FIRE_ELEMENTAL_TRANS_Y, spawnPos.z), Config::FIRE_ELEMENTAL_HP_MAX, Config::FIRE_ELEMENTAL_MOVE_SPEED, fireElemental, vec3(0.01f, 0.01f, 0.01f), vec3(0.0f)));
 				}
 				else if (enemyType == 2) {
-					enemies.push_back(new LightningElemental(vec3(spawnPos.x, Config::LIGHTNING_ELEMENTAL_TRANS_Y, spawnPos.z), Config::LIGHTNING_ELEMENTAL_HP_MAX, Config::LIGHTNING_ELEMENTAL_MOVE_SPEED, lightningElemental, vec3(0.1f, 0.1f, 0.1f), vec3(0.0f)));
+					enemies.push_back(new LightningElemental(vec3(spawnPos.x, Config::LIGHTNING_ELEMENTAL_TRANS_Y, spawnPos.z), Config::LIGHTNING_ELEMENTAL_HP_MAX, Config::LIGHTNING_ELEMENTAL_MOVE_SPEED, lightningElemental, vec3(0.01f, 0.01f, 0.01f), vec3(0.0f)));
 				}
 		}
 	}
@@ -2130,7 +2131,9 @@ public:
 				// orb.state = OrbState::COLLECTED; // Optionally set state
 
 				currentPlayerSpellType = orb.spellType; // Equip the collected spell type
-				orbsCollectedCount++; // This might now just mean "spell charges" or be repurposed
+				// orbsCollectedCount++; // This might now just mean "spell charges" or be repurposed
+				spellCounts[orb.spellType]++; // Increment the count for the specific spell type
+				orbsCollectedCount++; // Increment the total orbs collected count
 
 				// Debug output for spell type equipped
 				std::string spellTypeName = "NONE";
@@ -3568,6 +3571,7 @@ public:
 			// Remove visual orb logic... (find first collected orb and erase)
 			for (auto it = orbCollectibles.begin(); it != orbCollectibles.end(); ++it) {
 				if (it->collected) {
+					spellCounts[it->spellType]--; // Increment spell count for the type being shot
 					orbCollectibles.erase(it);
 					break;
 				}
