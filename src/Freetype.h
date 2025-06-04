@@ -155,6 +155,14 @@ void RenderText(std::shared_ptr<Program> textProg, std::string text, float x, fl
     textProg->unbind();
 }
 
+float lastTime = 0.0f;
+float getFPS() {
+    float currentTime = static_cast<float>(glfwGetTime());
+    float deltaTime = currentTime - lastTime;
+    lastTime = currentTime;
+    return 1.0f / deltaTime; // return frames per second
+}
+
 
 
 

@@ -5158,6 +5158,9 @@ public:
 		// 		window_width, window_height);
 		RenderText(textProg, "Cats are ok.  Cur time: " + to_string(glfwGetTime()), 25.0f, 25.0f, 1.0f, glm::vec3(1.0f, 1.0f, 0.9f),
 				width, height);
+		float formattedfps = floor(getFPS() * 100) / 100; // Format FPS to 2 decimal places
+		RenderText(textProg, "FPS: " + to_string(formattedfps), width - 100.0f, height - 50.0f, 1.0f, glm::vec3(1.0f, 1.0f, 0.9f),
+				width, height);
 		glDisable(GL_BLEND); // Disable blending after text rendering
 
 		if (Config::DRAW_MINIMAP) { // Draw the mini map

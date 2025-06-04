@@ -187,3 +187,8 @@ add_custom_target(clean_assimp
     COMMAND ${CMAKE_COMMAND} -E remove_directory ${ASSIMP_INSTALL_DIR}
     COMMENT "Cleaning Assimp installation directory"
 )
+
+add_custom_target(clean_freetype
+    COMMAND ${CMAKE_COMMAND} -E remove_directory ${FREETYPE_INSTALL_DIR}
+    COMMENT "Cleaning FreeType installation directory"
+)
