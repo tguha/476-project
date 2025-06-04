@@ -247,7 +247,6 @@ public:
 	float cameraVisibleCooldown = 0.0f; // Cooldown for camera visibility check
 	bool wasVisibleLastFrame = true;
 
-	SpellType currentPlayerSpellType = SpellType::FIRE; // Player starts with Fire spell by default
 	int nextSpellTypeIndex = 1; // Used to cycle spell types for new orbs: 1=FIRE, 2=ICE, 3=LIGHTNING
 
 	// Shadows
@@ -288,6 +287,16 @@ public:
 	std::vector<glm::mat4> vCircularBookShelfMatrices;
 	int activeEnemiesCount = 0; // Count of active enemies in the scene
 	int keysneededToCollect = 0; // Total number of keys to collect in the scene
+
+	SpellType spellSlots[4] = {
+		SpellType::LIGHTNING,
+		SpellType::FIRE,
+		SpellType::ICE,
+		SpellType::HEAL
+	};
+
+	int currentSpellSlotIndex = 1; // Current spell type in use
+	SpellType currentPlayerSpellType = spellSlots[currentSpellSlotIndex]; // Player starts with Fire spell by default
 
 	// --- Paw Prints ---
 	// CPU: record and upload a list of paw prints
@@ -574,7 +583,9 @@ public:
 
 		if (action == GLFW_PRESS)
 		{
-			shootSpell(); // Changed from shootSpell
+			if (spellCounts[currentPlayerSpellType] > 0) {
+				shootSpell(); // Changed from shootSpell
+			}
 		}
 	}
 
@@ -2130,7 +2141,14 @@ public:
 				orb.collected = true;
 				// orb.state = OrbState::COLLECTED; // Optionally set state
 
-				currentPlayerSpellType = orb.spellType; // Equip the collected spell type
+				// for (int i = 0; i < 4; i++) {
+				// 	if (orb.spellType == spellSlots[i]) {
+				// 		currentSpellSlotIndex = i;
+				// 		break;
+				// 	}
+				// }
+
+				// currentPlayerSpellType = spellSlots[currentSpellSlotIndex]; // Equip the collected spell type
 				// orbsCollectedCount++; // This might now just mean "spell charges" or be repurposed
 				spellCounts[orb.spellType]++; // Increment the count for the specific spell type
 				orbsCollectedCount++; // Increment the total orbs collected count
@@ -2150,7 +2168,12 @@ public:
 		simpleShader->bind();
 
 		int collectedOrbDrawIndex = 0;
-
+		std::map<SpellType, float> upOffsets = {
+				{ SpellType::FIRE, 0.0f },
+				{ SpellType::ICE, 0.0f },
+				{ SpellType::LIGHTNING, 0.0f },
+				{ SpellType::HEAL, 0.0f } // No scale offset for HEAL
+		};
 		for (auto& orb : orbCollectibles) {
             // Particle emission for uncollected, idle orbs
             if (!orb.collected && orb.state == OrbState::IDLE && particleSystem) {
@@ -2218,21 +2241,37 @@ public:
 			glm::vec3 currentDrawPosition;
 			float currentDrawScale = orb.scale; // Use base scale
 
-			if (orb.collected) {
+			float fireSideOffset = 0.15f;
+			float iceSideOffset = 0.30f;
+			float lightningSideOffset = 0.0f;
+			float healSideOffset = 0.4f;
+
+			static std::map<SpellType, float> sideOffsets = {
+				{ SpellType::FIRE, fireSideOffset },
+				{ SpellType::ICE, iceSideOffset },
+				{ SpellType::LIGHTNING, lightningSideOffset },
+				{ SpellType::HEAL, healSideOffset} // No side offset for HEAL
+			};
+
+			if (orb.collected && spellCounts[orb.spellType] > 0) {
 				// Calculate position behind the player (same logic as before)
 				float backOffset = 0.4f;
 				float upOffsetBase = 0.6f;
 				float stackOffset = orb.scale * 2.5f;
-				float sideOffset = 0.15f;
+				float sideOffset = sideOffsets[orb.spellType];
 				glm::vec3 playerForward = normalize(manMoveDir);
 				glm::vec3 playerUp = glm::vec3(0.0f, 1.0f, 0.0f);
 				glm::vec3 playerRight = normalize(cross(playerForward, playerUp));
-				float currentUpOffset = upOffsetBase + (collectedOrbDrawIndex * stackOffset);
-				float currentSideOffset = (collectedOrbDrawIndex % 2 == 0 ? -sideOffset : sideOffset);
+				// float currentUpOffset = upOffsetBase + (collectedOrbDrawIndex * stackOffset);
+				float currentUpOffset = upOffsetBase + upOffsets[orb.spellType];
+				upOffsets[orb.spellType] += stackOffset; // Increment up offset for next orb of the same type
+				// float currentSideOffset = (collectedOrbDrawIndex % 2 == 0 ? -sideOffset : sideOffset);
+
 				currentDrawPosition = charMove() - playerForward * backOffset
 					+ playerUp * currentUpOffset
-					+ playerRight * currentSideOffset;
+					+ playerRight * sideOffset;
 				collectedOrbDrawIndex++;
+
 			}
 			else {
 				currentDrawPosition = orb.position;
@@ -3559,6 +3598,7 @@ public:
 
 	// --- Shooting Function ---
 	void shootSpell() {
+
 		cout << "[DEBUG] shootSpell() called. Orbs: " << orbsCollectedCount << endl;
 		if (orbsCollectedCount <= 0 && !debugCamera) { // Allow shooting in debug camera without orbs
 			cout << "[DEBUG] Cannot shoot: No orbs." << endl;
@@ -3567,11 +3607,12 @@ public:
 
 		// Consume an orb if not in debug mode
 		if (!debugCamera) {
-			orbsCollectedCount--;
 			// Remove visual orb logic... (find first collected orb and erase)
 			for (auto it = orbCollectibles.begin(); it != orbCollectibles.end(); ++it) {
-				if (it->collected) {
+				if (it->collected && it->spellType == currentPlayerSpellType) {
 					spellCounts[it->spellType]--; // Increment spell count for the type being shot
+					cout << "Spells remaining of this type: " << spellCounts[it->spellType] << endl;
+					orbsCollectedCount--;
 					orbCollectibles.erase(it);
 					break;
 				}
@@ -3593,7 +3634,7 @@ public:
 		activeSpells.emplace_back(spawnPos, shootDir, (float)glfwGetTime());
 		SpellProjectile& newProj = activeSpells.back();
 
-		if (particleSystem) {
+		if (particleSystem && spellCounts[currentPlayerSpellType] > 0) {
 			float current_particle_system_time = particleSystem->getCurrentTime();
 			int particles_to_spawn = 10;
 
@@ -5303,6 +5344,16 @@ public:
 				//Movement Variable
 				movingRight = false;
 			}
+			else if (key == GLFW_KEY_Q && action == GLFW_PRESS) {
+				currentSpellSlotIndex = (currentSpellSlotIndex - 1 + 4) % 4;
+				cout << "Current Spell: " << currentSpellSlotIndex << endl;
+				currentPlayerSpellType = spellSlots[currentSpellSlotIndex];
+			}
+			else if (key == GLFW_KEY_E && action == GLFW_PRESS) {
+				currentSpellSlotIndex = (currentSpellSlotIndex + 1) % 4;
+				cout << "Current Spell: " << currentSpellSlotIndex << endl;
+				currentPlayerSpellType = spellSlots[currentSpellSlotIndex];
+			}
 		}
 		if (key == GLFW_KEY_Z && action == GLFW_PRESS) {
 			glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
@@ -5468,7 +5519,7 @@ int main(int argc, char* argv[]) {
 	glfwSetInputMode(windowManager->getHandle(), GLFW_STICKY_KEYS, GLFW_TRUE);
 
 	cout << "Controls: " << endl << "WASD: Move" << endl << "Mouse: Look around" << endl
-		<< "'F': Interact with book" << endl<< "'~' Fullscreen" << endl << "'L': Toggle cursor mode" << endl
+		<< "'F': Interact with book" << endl << "'Q and E': Switch spell slot" << endl << "'~' Fullscreen" << endl << "'L': Toggle cursor mode" << endl
 		<< "[DEBUG] Press K To Enter Debug Camera Mode." << endl << "+/- Change Brightness, 1/2 Change Saturation"
 		<< endl << "While in Debug Camera mode, M toggles player movement and N toggles enemy movement" << endl;
 
