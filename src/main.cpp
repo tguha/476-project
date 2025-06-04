@@ -138,6 +138,7 @@ public:
 	AssimpModel *cube, *sphere;
 	AssimpModel *border, *lock, *lockHandle, *key;
 	AssimpModel *bookCover, *bookPaper;
+	AssimpModel *chandelier, *pillar;
 
 	//key collectibles
 	std::vector<Collectible> keyCollectibles;
@@ -1271,11 +1272,13 @@ public:
 		//lock
 
 		key = new AssimpModel(resourceDirectory + "/Key_and_Lock/key.obj");
-
 		lock = new AssimpModel(resourceDirectory + "/Key_and_Lock/lockCopy.obj");
 		lockHandle = new AssimpModel(resourceDirectory + "/Key_and_Lock/lockHandle.obj");
 
 		cout << "[DEBUG] Stored Base Sphere Local AABB." << endl;
+
+		chandelier = new AssimpModel(resourceDirectory + "/chandelier.obj");
+		pillar = new AssimpModel(resourceDirectory + "/pillar.obj");
 
 		vec3 bossSpawnPos = bossRoom->getWorldOrigin();
 
@@ -4587,6 +4590,26 @@ public:
 
 	}
 
+	void drawDetails(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model){
+		shader->bind();
+
+		Model->pushMatrix();
+			Model->loadIdentity();
+			// Model->translate(vec3(0.0f, 2.5f, 38.5f));
+			//Model->translate(vec3(bossEntrancePos.x, bossEntrancePos.y + 2.5f, bossEntrancePos.z));  //doorPosition
+			Model->rotate(glm::radians(bossEntranceRot), vec3(0.0f, 1.0f, 0.0f));
+			// Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			Model->scale(0.1f);
+			SetMaterial(shader, Material::gold); //gold
+			setModel(shader, Model);
+			chandelier->Draw(shader);
+			pillar->Draw(shader);
+		Model->popMatrix();
+
+		shader->unbind();
+
+	}
+
 	void drawBossHealthBar(glm::mat4 viewMatrix, glm::mat4 projMatrix) {
 		float healthBarWidth = 200.0f;
 		float healthBarHeight = 20.0f;
@@ -4815,6 +4838,7 @@ public:
 		drawOrbs(prog, Model);
 
 		drawKey(prog, Model);
+		drawDetails(prog, Model);
 
 		drawProjectiles(prog, Model);
 
