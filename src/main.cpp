@@ -1288,7 +1288,7 @@ public:
 		initTextQuad();
 	}
 
-	void SetMaterial(shared_ptr<Program> shader, Material color) {
+	void SetMaterial(shared_ptr<Program> shader, Material color) { // drawmini
 		/*
 		Albedo(Base Color) :
 		Never use pure black (0,0,0) or pure white (1,1,1)
@@ -1424,6 +1424,12 @@ public:
 				glUniform3f(shader->getUniform("MatAlbedo"), 1.0f, 0.766f, 0.336f);
 				glUniform1f(shader->getUniform("MatRough"), 0.2f);
 				glUniform1f(shader->getUniform("MatMetal"), 1.0f);
+				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				break;
+			case Material:: player_green:
+				glUniform3f(shader->getUniform("MatAlbedo"), 0.35f, 0.914f, 0.4f);
+				glUniform1f(shader->getUniform("MatRough"), 0.8f);
+				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
 				break;
 		}
@@ -4150,7 +4156,7 @@ public:
 		glUniform3f(curS->getUniform("MatDif"), 0.95f, 0.78f, 0.14f);
 		glUniform3f(curS->getUniform("MatSpec"), 0.3f, 0.3f, 0.3f);
 		glUniform1f(curS->getUniform("MatShine"), 8.0f);*/
-		SetMaterial(curS, Material::gold);
+		SetMaterial(curS, Material::player_green);
 		setModel(curS, Model);
 		//player_rig->Draw(curS);
 		sphere->Draw(curS);
@@ -4838,7 +4844,7 @@ public:
 		drawOrbs(prog, Model);
 
 		drawKey(prog, Model);
-		drawDetails(prog, Model);
+		//drawDetails(prog, Model);
 
 		drawProjectiles(prog, Model);
 
