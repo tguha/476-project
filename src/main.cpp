@@ -20,6 +20,7 @@
 #include "WindowManager.h"
 #include "Texture.h"
 #include "Spline.h"
+#include "Bezier.h"
 #include "stb_image.h"
 #include "AssimpModel.h"
 #include "Animator.h"
@@ -199,6 +200,13 @@ public:
 	bool movingRight = false;
 	bool rolling = false;
 	bool grabbingBook = false;
+
+	vec3 rollDestination = vec3(0.0f); //Set when a roll is called
+	float rollDuration; //Defined in initGeom when pulling the animations from the FBX
+	float rollProgress = 0.0f;
+	//Distance a roll takes you
+	float rollDistance = 5.0f;
+
 	//unlock bool
 	bool unlock = false;
 	float lTheta = 0;
@@ -1164,11 +1172,11 @@ public:
 
 		//Getting Player animations
 		player_walk = new Animation(resourceDirectory + "/CatWizard/CatWizardAnimation4.fbx", player_rig, 4);
-		player_idle = new Animation(resourceDirectory + "/CatWizard/CatWizardAnimation4.fbx", player_rig, 1);
-		player_roll = new Animation(resourceDirectory + "/CatWizard/CatWizardAnimation4.fbx", player_rig, 3);
+		player_idle = new Animation(resourceDirectory + "/CatWizard/CatWizardAnimation4.fbx", player_rig, 3);
+		player_roll = new Animation(resourceDirectory + "/CatWizard/CatWizardAnimation4.fbx", player_rig, 1);
 		player_grab_book = new Animation(resourceDirectory + "/CatWizard/CatWizardAnimation4.fbx", player_rig, 2);
 		
-		
+		rollDuration = player_roll->GetDuration();
 
 		//Player bounding box
 		playerBB = make_shared<AABB>();
@@ -1922,9 +1930,6 @@ public:
 			manState = Man_State::IDLE;
 		}
 
-		if (animTime != 0.0) {
-			catwizard_animator->UpdateAnimation(1.5f * animTime);
-		}
 
 		// Animation update
 		if (manState == Man_State::WALKING) {
@@ -1940,8 +1945,12 @@ public:
 			catwizard_animator->SetCurrentAnimation(player_roll);
 
 		}
+		
+		if (animTime != 0.0) {
+			catwizard_animator->UpdateAnimation(1.5f * animTime);
+		}
+		
 		// Update bone matrices
-
 		vector<glm::mat4> transforms = catwizard_animator->GetFinalBoneMatrices();
 
 
@@ -1961,8 +1970,8 @@ public:
 		// *** USE CAMERA ROTATION FOR MODEL ***
 
 
+		Model->rotate(glm::radians(180.0f), vec3(0, 1, 0));
 		Model->rotate((player->getRotY()), vec3(0, 1, 0)); // <<-- FIXED ROTATION
-
 		Model->scale(0.01f);
 
 		// Update VISUAL bounding box (can be different from collision box if needed)
@@ -2360,7 +2369,7 @@ public:
 
                 // if (!keyAlreadyExists ) { //&& !enemyLastPos
 
-				// 	//get enemy pos once, then don't change it until change pick it up?
+				// 	//get enemy pos once, then don't change it until change  it up?
 				// 	keyPos.y = keyPos.y - 1.5f;
 				// 	//std::cout << "key position " << keyPos.x << " " << keyPos.y << " " << keyPos.z << " " << std::endl;
 
@@ -3474,6 +3483,10 @@ public:
 
 	// --- Modified charMove ---
 	vec3 charMove() {
+		if (rolling) {
+			//Prevent moving during rolling
+			return player->getPosition();
+		}
 		float moveSpeed = 4.5f * AnimDeltaTime; // Use frame-rate independent speed
 		vec3 desiredMoveDelta = vec3(0.0f);
 
@@ -3664,6 +3677,7 @@ public:
 			<< "). Active spells: " << activeSpells.size() << endl;
 	}
 
+
 	// --- updateProjectiles ---
 	void updateProjectiles(float deltaTime) {
 
@@ -3718,6 +3732,90 @@ public:
 				}
 			}
 		}
+	}
+
+	vec3 dodgeRoll() {
+		if (rolling || !(movingForward || movingBackward || movingLeft || movingRight )) {
+			//If we arent moving, or we are rolling do not continue
+			return player->getPosition();
+		}
+		//Reset animation to begining
+		catwizard_animator->resetTime();
+		rolling = true;
+		
+		vec3 desiredMoveDelta = vec3(0.0f);
+
+		// Calculate desired movement direction based on input
+		if (movingForward)  desiredMoveDelta += manMoveDir;
+		if (movingBackward) desiredMoveDelta -= manMoveDir;
+		if (movingLeft)     desiredMoveDelta -= right;
+		if (movingRight)    desiredMoveDelta += right;
+
+		// Normalize and scale movement delta
+		float moveLength = length(desiredMoveDelta);
+		if (moveLength > 0.0f) {
+			desiredMoveDelta = (desiredMoveDelta / moveLength) * rollDistance;
+		}
+
+		
+		
+		rollDestination = player->getPosition() + desiredMoveDelta;
+		return rollDestination;
+	}
+
+	void updateDodgeRoll(float dt) {
+		float tickRate = player_roll->GetTicksPerSecond();
+		if (tickRate <= 0) {
+			tickRate = 25.0f; // Default value if not specified
+		}
+		tickRate = tickRate * 1.5;
+		rollProgress += dt * tickRate;
+
+		if (rollProgress >= rollDuration) {
+			//cout << "done!" << endl;
+			rolling = false;
+			rollProgress = 0;
+			return;
+		}
+
+		/*
+		cout << "Roll Duration: " << rollDuration << endl <<
+			"RollProg: " << rollProgress << endl << 
+			"Step Value: " << rollProgress/rollDuration << endl
+			<< "Roll Destination: x|" << rollDestination.x << " y: " << rollDestination.y << " z: " << rollDestination.z << endl;
+			*/
+		
+		vec3 rollStep = Bezier::lErp(player->getPosition(), rollDestination, rollProgress/rollDuration);
+		
+		//Collision
+		glm::quat playerOrientation = glm::angleAxis(player->getRotY(), glm::vec3(0, 1, 0));
+		vec3 currentPos = player->getPosition();
+		vec3 allowedPos = player->getPosition(); // Start with current position
+
+		// Try moving along X only
+
+		vec3 nextPosX = vec3(rollStep.x, currentPos.y, currentPos.z);
+		if (!checkCollisionAt(nextPosX, playerOrientation)) {
+			allowedPos.x = rollStep.x; // Allow X movement
+		}
+		else {
+			cout << "[DEBUG] X-Collision prevented." << endl;
+			rollDestination.x = allowedPos.x;
+
+		}
+
+		// Try moving along Z only (starting from potentially updated X)
+		vec3 nextPosZ = vec3(allowedPos.x, currentPos.y, rollStep.z); 
+		if (!checkCollisionAt(nextPosZ, playerOrientation)) {
+			allowedPos.z = rollStep.z; // Allow Z movement
+		}
+		else {
+			cout << "[DEBUG] Z-Collision prevented." << endl;
+			rollDestination.z = allowedPos.z;
+		}
+
+		player->setPosition(vec3(allowedPos.x, groundY, allowedPos.z)); // Update player position
+
 	}
 
 	void drawProjectiles(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
@@ -4971,6 +5069,7 @@ public:
 		updateOrbs((float)glfwGetTime());
 		updateKeys((float)glfwGetTime());
 		if (enemyActive) { updateEnemies(frametime); }
+		if (rolling) { updateDodgeRoll(frametime); };
 		updateProjectiles(frametime);
 		updateFTimeout(frametime);
 		particleSystem->update(frametime); // Update particles
@@ -5287,7 +5386,7 @@ public:
 		if (key == GLFW_KEY_F && action == GLFW_PRESS) { // Interaction Key
 			//F Time out to avoid pointer crash
 			if (fTimeout <= 0) {
-				grabbingBook = true;
+				grabbingBook = !grabbingBook;
 				//catwizard_animator->PlayAnimation(player_grab_book);
 				interactWithBooks();
 				fTimeout = 3.0f;
@@ -5319,14 +5418,12 @@ public:
 			playerActive = !playerActive;
 		}
 
-		// Shoot fireball with SPACEBAR
+		// DodgeRoll with Spacebar
 		if (key == GLFW_KEY_SPACE && action == GLFW_PRESS) {
-			if (player->isAlive()) { // Only shoot if alive
-				shootSpell();
-			}
+			dodgeRoll();
 		}
 
-		if (!player->isAlive() && key == GLFW_KEY_R && action == GLFW_PRESS) restartGen = true; // Changed restart to R
+		if ((debugCamera || !player->isAlive()) && key == GLFW_KEY_R && action == GLFW_PRESS) restartGen = true; // Changed restart to R
 	}
 
 	void scrollCallback(GLFWwindow* window, double deltaX, double deltaY) {
