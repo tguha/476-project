@@ -2381,6 +2381,8 @@ public:
 			activeSpells.clear(); // Clear active spells
 			unlock = false;
 			keyCollectibles.clear(); // Clear key collectibles
+			keysCollectedCount = 0;
+			keysneededToCollect = 0; // Reset key count
 			#if USE_INSTANCING
 			initInstancingMatrices();
 			#endif
@@ -4015,7 +4017,7 @@ public:
 
 	void shootBossSpell() {
 		// vec3 shootDir = bossEnemy->getBossDirection();
-		float upOffset = 7.0f;      // Height relative to player base (groundY)	
+		float upOffset = 7.0f;      // Height relative to player base (groundY)
 
 		// make projectile aim towards player
 		vec3 shootDir = normalize(player->getPosition() - vec3(bossEnemy->getPosition().x, bossEnemy->getPosition().y + upOffset, bossEnemy->getPosition().z));
@@ -4023,7 +4025,7 @@ public:
 		vec3 bossRight = normalize(cross(shootDir, vec3(0.0f, 1.0f, 0.0f)));
 
 		float forwardOffset = 0.5f; // How far in front of player center
-		
+
 		float rightOffset = 0.0f;   // Offset to the side (e.g., right hand)
 
 		vec3 spawnPos = bossEnemy->getPosition()
@@ -5284,7 +5286,7 @@ public:
 		glEnable(GL_BLEND); // Enable blending for text rendering
 		// RenderText(textProg, "Cats are ok.  Cur time: " + to_string(glfwGetTime()), 10.0f, 265.0f, 1.0f, glm::vec3(1.0f, 1.0f, 0.9f),
 		// 		window_width, window_height);
-		RenderText(textProg, "Cats are ok.  Cur time: " + to_string(glfwGetTime()), 25.0f, 25.0f, 1.0f, glm::vec3(1.0f, 1.0f, 0.9f),
+		RenderText(textProg, "Keys collected: x" + to_string(keysCollectedCount), 25.0f, 25.0f, 1.0f, glm::vec3(1.0f, 1.0f, 0.9f),
 				width, height);
 		float formattedfps = floor(getFPS() * 100) / 100; // Format FPS to 2 decimal places
 		RenderText(textProg, "FPS: " + to_string(formattedfps), width - 100.0f, height - 50.0f, 1.0f, glm::vec3(1.0f, 1.0f, 0.9f),
