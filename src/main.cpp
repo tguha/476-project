@@ -53,7 +53,6 @@ using namespace glm;
 
 ma_engine engine;
 ma_sound sound;
-ma_sound spell_sound; 
 
 class Application : public EventCallbacks {
 public:
@@ -3721,9 +3720,6 @@ public:
 				p_scale_min, p_scale_max);
 		}
 
-		// Play spell sound effect
-		ma_sound_start(&spell_sound);
-
 		cout << "[DEBUG] Spell Fired! Start:(" << spawnPos.x << "," << spawnPos.y << "," << spawnPos.z
 			<< ") Dir: (" << shootDir.x << "," << shootDir.y << "," << shootDir.z
 			<< "). Active spells: " << activeSpells.size() << endl;
@@ -5627,14 +5623,6 @@ int main(int argc, char* argv[]) {
 		return -1;
 	}
 
-	// Load spell sound effect
-	if (ma_sound_init_from_file(&engine, "../resources/firespellsound.mp3", 0, NULL, NULL, &spell_sound) != MA_SUCCESS) {
-		printf("Failed to load spell sound\n");
-		ma_sound_uninit(&sound); // Uninitialize background sound if spell sound fails
-		ma_engine_uninit(&engine);
-		return -1;
-	}
-
 	// This is the code that will likely change program to program as you
 	// may need to initialize or set up different data and state
 
@@ -5689,8 +5677,6 @@ int main(int argc, char* argv[]) {
 
 	// Quit program
 	windowManager->shutdown();
-	ma_sound_uninit(&sound);
-	ma_sound_uninit(&spell_sound); 
-	ma_engine_uninit(&engine); 
+	ma_engine_uninit(&engine); // Uninitialize miniaudio
 	return 0;
 }
