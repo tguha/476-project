@@ -2374,15 +2374,16 @@ public:
 			libraryQuadTree->cleanup(); // Clean up the quad tree
 			bossRoomQuadTree->cleanup(); // Clean up the boss room quad tree
 			initQuadTree(); // Reinitialize the quad tree
+			keysneededToCollect = 0; // Reset key count
 			initEnemies(); // Reinitialize enemies
 			bossActiveSpells.clear();
 			bossEnemy->resetPhase();
+			bossEnemy->setPosition(bossRoom->getWorldOrigin()); // Reset boss position to the room origin to middle of the boss room
 			// enemies.push_back(new Enemy(libraryCenter + vec3(-5.0f, 0.8f, 8.0f), 50.0f, 2.0f, sphere, glm::vec3(0.5f, 1.28f, 0.5f), vec3(0.0f))); // <<-- Pass sphere and scale
 			activeSpells.clear(); // Clear active spells
 			unlock = false;
 			keyCollectibles.clear(); // Clear key collectibles
 			keysCollectedCount = 0;
-			keysneededToCollect = 0; // Reset key count
 			#if USE_INSTANCING
 			initInstancingMatrices();
 			#endif
@@ -4713,10 +4714,12 @@ public:
 
 	}
 
-	void drawBossHealthBar(glm::mat4 viewMatrix, glm::mat4 projMatrix) {
-		float healthBarWidth = 200.0f;
+	void drawBossHealthBar(glm::mat4 viewMatrix, glm::mat4 projMatrix, float width, float height) {
+		float healthBarWidth = 500.0f;
 		float healthBarHeight = 20.0f;
 		float healthBarOffsetY = 25.0f;  // Offset above enemy head
+		float healthBarStartX = (width - 1)/ 2;
+		float healthBarStartY = height - 100.0f;
 
 		int screenWidth, screenHeight;
 		glfwGetFramebufferSize(windowManager->getHandle(), &screenWidth, &screenHeight);
@@ -4726,32 +4729,34 @@ public:
 		if (bossEnemy && bossEnemy->isAlive()) {
 			glm::vec3 enemyWorldPos = bossEnemy->getAABBMax(); // Top position in world coordinates
 
-			// Transform enemy position to clip space
-			glm::vec4 clipSpacePos = projMatrix * viewMatrix * glm::vec4(enemyWorldPos, 1.0f);
+			// // Transform enemy position to clip space
+			// glm::vec4 clipSpacePos = projMatrix * viewMatrix * glm::vec4(enemyWorldPos, 1.0f);
 
-			// If enemy is behind camera, skip
-			if (clipSpacePos.w <= 0) return;
+			// // If enemy is behind camera, skip
+			// if (clipSpacePos.w <= 0) return;
 
-			// Perspective divide (NDC)
-			glm::vec3 ndcPos = glm::vec3(clipSpacePos) / clipSpacePos.w;
+			// // Perspective divide (NDC)
+			// glm::vec3 ndcPos = glm::vec3(clipSpacePos) / clipSpacePos.w;
 
-			// Convert NDC (-1 to 1) to screen coordinates
-			glm::vec2 screenPos;
-			screenPos.x = (ndcPos.x * 0.5f + 0.5f) * screenWidth;
-			screenPos.y = (ndcPos.y * 0.5f + 0.5f) * screenHeight;
+			// // Convert NDC (-1 to 1) to screen coordinates
+			// glm::vec2 screenPos;
+			// screenPos.x = (ndcPos.x * 0.5f + 0.5f) * screenWidth;
+			// screenPos.y = (ndcPos.y * 0.5f + 0.5f) * screenHeight;
 
-			// Offset above enemy's head
-			screenPos.y += healthBarOffsetY;
+			// // Offset above enemy's head
+			// screenPos.y += healthBarOffsetY;
 
 			// Set HUD Model matrix
-			glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(screenPos.x - (healthBarWidth / 2.0f), screenPos.y, 0.0f));
+			// glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(screenPos.x - (healthBarWidth / 2.0f), screenPos.y, 0.0f));
+			glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(healthBarStartX, healthBarStartY, 0.0f));  // HUD position
 			model = glm::scale(model, glm::vec3(healthBarWidth, healthBarHeight, 1.0f));
 
 			hudProg->bind();
 			glUniformMatrix4fv(hudProg->getUniform("projection"), 1, GL_FALSE, glm::value_ptr(hudProjection));
 			glUniformMatrix4fv(hudProg->getUniform("model"), 1, GL_FALSE, glm::value_ptr(model));
 			glUniform1f(hudProg->getUniform("healthPercent"), bossEnemy->getHitpoints() / BOSS_HP_MAX);
-			glUniform1f(hudProg->getUniform("BarStartX"), screenPos.x - (healthBarWidth / 2.0f));
+			// glUniform1f(hudProg->getUniform("BarStartX"), screenPos.x - (healthBarWidth / 2.0f));
+			glUniform1f(hudProg->getUniform("BarStartX"), healthBarStartX); // Pass max health value
 			glUniform1f(hudProg->getUniform("BarWidth"), healthBarWidth);
 			healthBar->Draw(hudProg);
 			hudProg->unbind();
@@ -5260,7 +5265,7 @@ public:
 			drawEnemyHealthBars(View->topMatrix(), Projection->topMatrix());
 
 			if (bossfightstarted && !bossfightended) {
-				drawBossHealthBar(View->topMatrix(), Projection->topMatrix());
+				drawBossHealthBar(View->topMatrix(), Projection->topMatrix(), static_cast<float>(width), static_cast<float>(height));
 			}
 		}
 
@@ -5291,6 +5296,11 @@ public:
 		float formattedfps = floor(getFPS() * 100) / 100; // Format FPS to 2 decimal places
 		RenderText(textProg, "FPS: " + to_string(formattedfps), width - 100.0f, height - 50.0f, 1.0f, glm::vec3(1.0f, 1.0f, 0.9f),
 				width, height);
+
+		if (bossfightstarted && !bossfightended) {
+				RenderText(textProg, "BOSS HP", width / 2.0f, height - 70.0f, 1.0f, glm::vec3(1.0f, 0.0f, 0.0f),
+				width, height);
+			}
 		glDisable(GL_BLEND); // Disable blending after text rendering
 
 		if (Config::DRAW_MINIMAP) { // Draw the mini map
