@@ -38,7 +38,7 @@ void LightningElemental::moveTowardsPlayer(const glm::vec3& playerPosition, floa
     }
     teleportTimer -= deltaTime; // Decrease teleport timer
 
-    printf("teleportTimer: %f\n", teleportTimer);
+    // printf("teleportTimer: %f\n", teleportTimer);
 
     /* Slow rotation towards player */
     float targetRotY = atan2(direction.x, direction.z);
