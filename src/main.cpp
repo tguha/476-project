@@ -40,6 +40,7 @@
 #include "../particles/particleGen.h"
 #include "TextureManager.h"
 #include "Quadtree.h"
+#include "Freetype.h"
 
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -53,6 +54,7 @@ using namespace glm;
 
 ma_engine engine;
 ma_sound sound;
+ma_sound spell_sound; 
 
 class Application : public EventCallbacks {
 public:
@@ -73,6 +75,7 @@ public:
 	shared_ptr<Program> redFlashProg;
 	shared_ptr<Program> SkyboxProg;
 	shared_ptr<Program> debugLineProg;
+	shared_ptr<Program> textProg;
 
 	// ground data - Reused for all flat ground planes
 	GLuint GrndBuffObj = 0, GrndNorBuffObj = 0, GIndxBuffObj = 0; // Initialize to 0
@@ -116,6 +119,7 @@ public:
 
 	// setup collectibles vector
 	std::vector<Collectible> orbCollectibles;
+	std::unordered_map<SpellType, int> spellCounts;
 	int orbsCollectedCount = 0;
 	std::vector<Enemy*> enemies;
 
@@ -136,6 +140,7 @@ public:
 	AssimpModel *cube, *sphere;
 	AssimpModel *border, *lock, *lockHandle, *key;
 	AssimpModel *bookCover, *bookPaper;
+	AssimpModel *stoneGolem;
 
 	//key collectibles
 	std::vector<Collectible> keyCollectibles;
@@ -256,7 +261,6 @@ public:
 	float cameraVisibleCooldown = 0.0f; // Cooldown for camera visibility check
 	bool wasVisibleLastFrame = true;
 
-	SpellType currentPlayerSpellType = SpellType::FIRE; // Player starts with Fire spell by default
 	int nextSpellTypeIndex = 1; // Used to cycle spell types for new orbs: 1=FIRE, 2=ICE, 3=LIGHTNING
 
 	// Shadows
@@ -297,6 +301,16 @@ public:
 	std::vector<glm::mat4> vCircularBookShelfMatrices;
 	int activeEnemiesCount = 0; // Count of active enemies in the scene
 	int keysneededToCollect = 0; // Total number of keys to collect in the scene
+
+	SpellType spellSlots[4] = {
+		SpellType::LIGHTNING,
+		SpellType::FIRE,
+		SpellType::ICE,
+		SpellType::HEAL
+	};
+
+	int currentSpellSlotIndex = 1; // Current spell type in use
+	SpellType currentPlayerSpellType = spellSlots[currentSpellSlotIndex]; // Player starts with Fire spell by default
 
 	// --- Paw Prints ---
 	// CPU: record and upload a list of paw prints
@@ -588,8 +602,10 @@ public:
 
 		if (action == GLFW_PRESS)
 		{
-			shootSpell(); // Changed from shootSpell
-			shootSpell(); // Changed from shootSpell
+			if (spellCounts[currentPlayerSpellType] > 0) {
+				shootSpell(); // Changed from shootSpell
+			}
+
 		}
 	}
 
@@ -606,6 +622,9 @@ public:
 		// Set background color and enable z-buffer test
 		glClearColor(.12f, .34f, .56f, 1.0f);
 		glEnable(GL_DEPTH_TEST);
+
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
 		// Initialize GLSL programs for shadow mapping
 		DepthProg = make_shared<Program>();
@@ -730,6 +749,15 @@ public:
 		debugLineProg->addUniform("M");
 		debugLineProg->addUniform("color");
 
+		textProg = make_shared<Program>();
+		textProg->setVerbose(true);
+		textProg->setShaderNames(resourceDirectory + "/textVert.glsl", resourceDirectory + "/textFrag.glsl");
+		textProg->init();
+		textProg->addAttribute("vertex");
+		textProg->addUniform("projection");
+		textProg->addUniform("textTex");
+		textProg->addUniform("textColor");
+
 		updateCameraVectors();
 
 		pawTex = make_shared<Texture>();
@@ -775,6 +803,9 @@ public:
 		GLuint normalTex = genSolidTexture(flatN, GL_RGB);
 
 		TextureManager::initFallbacks(whiteTex, normalTex, blackTex);
+
+		int fError = initFont(resourceDirectory);
+		cout << "Font error? " << fError << endl;
 	}
 
 	GLuint genSolidTexture(const unsigned char* pixel, GLenum format) {
@@ -1260,6 +1291,9 @@ public:
 		healthBar = new AssimpModel(resourceDirectory + "/Quad/hud_quad.obj");
 		healthBar->assignTexture("texture_diffuse", resourceDirectory + "/healthbar.bmp");
 
+		stoneGolem = new AssimpModel(resourceDirectory + "/StoneGolem/Stone.obj");
+		stoneGolem->assignTexture("texture_diffuse", resourceDirectory + "/StoneGolem/textures/diffuso.tif");
+
 		/*
 		* KEY COLLECTIBLE IS BROKEN. THIS IS THE COMMENTED OUT PROGRESS OF MADILINE SINCE PROJECT DOESN'T COMPILE WITH IT
 		//key
@@ -1283,8 +1317,12 @@ public:
 
 		vec3 bossSpawnPos = bossRoom->getWorldOrigin();
 
+
+
 		initEnemies();
-		bossEnemy = new BossEnemy(bossSpawnPos, BOSS_HP_MAX, sphere, vec3(4.0f), vec3(0, 1, 0), BOSS_SPECIAL_ATTACK_COOLDOWN, SpellType::ICE);
+		bossEnemy = new BossEnemy(bossSpawnPos, BOSS_HP_MAX, stoneGolem, vec3(1.3f, 0.8f, 1.0f), vec3(0, 1, 0), BOSS_SPECIAL_ATTACK_COOLDOWN, SpellType::ICE);
+
+		initTextQuad();
 	}
 
 	void SetMaterial(shared_ptr<Program> shader, Material color) {
@@ -1874,13 +1912,13 @@ public:
 				}
 
 				if (enemyType == 0) {
-					enemies.push_back(new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.z), Config::ICE_ELEMENTAL_HP_MAX, Config::ICE_ELEMENTAL_MOVE_SPEED, iceElemental, vec3(1.0f, 1.0f, 1.0f), vec3(0.0f)));
+					enemies.push_back(new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.z), Config::ICE_ELEMENTAL_HP_MAX, Config::ICE_ELEMENTAL_MOVE_SPEED, iceElemental, vec3(1.0f, 1.0f, 1.0f), vec3(glm::radians(90.0f), 0.0f, 0.0f)));
 				}
 				else if (enemyType == 1) {
-					enemies.push_back(new FireElemental(vec3(spawnPos.x, Config::FIRE_ELEMENTAL_TRANS_Y, spawnPos.z), Config::FIRE_ELEMENTAL_HP_MAX, Config::FIRE_ELEMENTAL_MOVE_SPEED, fireElemental, vec3(0.1f, 0.1f, 0.1f), vec3(0.0f)));
+					enemies.push_back(new FireElemental(vec3(spawnPos.x, Config::FIRE_ELEMENTAL_TRANS_Y, spawnPos.z), Config::FIRE_ELEMENTAL_HP_MAX, Config::FIRE_ELEMENTAL_MOVE_SPEED, fireElemental, vec3(0.01f, 0.01f, 0.01f), vec3(glm::radians(90.0f), 0.0f, 0.0f)));
 				}
 				else if (enemyType == 2) {
-					enemies.push_back(new LightningElemental(vec3(spawnPos.x, Config::LIGHTNING_ELEMENTAL_TRANS_Y, spawnPos.z), Config::LIGHTNING_ELEMENTAL_HP_MAX, Config::LIGHTNING_ELEMENTAL_MOVE_SPEED, lightningElemental, vec3(0.1f, 0.1f, 0.1f), vec3(0.0f)));
+					enemies.push_back(new LightningElemental(vec3(spawnPos.x, Config::LIGHTNING_ELEMENTAL_TRANS_Y, spawnPos.z), Config::LIGHTNING_ELEMENTAL_HP_MAX, Config::LIGHTNING_ELEMENTAL_MOVE_SPEED, lightningElemental, vec3(0.01f, 0.01f, 0.01f), vec3(glm::radians(90.0f), 0.0f, glm::radians(90.0f))));
 				}
 		}
 	}
@@ -2145,8 +2183,17 @@ public:
 				orb.collected = true;
 				// orb.state = OrbState::COLLECTED; // Optionally set state
 
-				currentPlayerSpellType = orb.spellType; // Equip the collected spell type
-				orbsCollectedCount++; // This might now just mean "spell charges" or be repurposed
+				// for (int i = 0; i < 4; i++) {
+				// 	if (orb.spellType == spellSlots[i]) {
+				// 		currentSpellSlotIndex = i;
+				// 		break;
+				// 	}
+				// }
+
+				// currentPlayerSpellType = spellSlots[currentSpellSlotIndex]; // Equip the collected spell type
+				// orbsCollectedCount++; // This might now just mean "spell charges" or be repurposed
+				spellCounts[orb.spellType]++; // Increment the count for the specific spell type
+				orbsCollectedCount++; // Increment the total orbs collected count
 
 				// Debug output for spell type equipped
 				std::string spellTypeName = "NONE";
@@ -2163,7 +2210,12 @@ public:
 		simpleShader->bind();
 
 		int collectedOrbDrawIndex = 0;
-
+		std::map<SpellType, float> upOffsets = {
+				{ SpellType::FIRE, 0.0f },
+				{ SpellType::ICE, 0.0f },
+				{ SpellType::LIGHTNING, 0.0f },
+				{ SpellType::HEAL, 0.0f } // No scale offset for HEAL
+		};
 		for (auto& orb : orbCollectibles) {
             // Particle emission for uncollected, idle orbs
             if (!orb.collected && orb.state == OrbState::IDLE && particleSystem) {
@@ -2231,21 +2283,37 @@ public:
 			glm::vec3 currentDrawPosition;
 			float currentDrawScale = orb.scale; // Use base scale
 
-			if (orb.collected) {
+			float fireSideOffset = 0.15f;
+			float iceSideOffset = 0.30f;
+			float lightningSideOffset = 0.0f;
+			float healSideOffset = 0.4f;
+
+			static std::map<SpellType, float> sideOffsets = {
+				{ SpellType::FIRE, fireSideOffset },
+				{ SpellType::ICE, iceSideOffset },
+				{ SpellType::LIGHTNING, lightningSideOffset },
+				{ SpellType::HEAL, healSideOffset} // No side offset for HEAL
+			};
+
+			if (orb.collected && spellCounts[orb.spellType] > 0) {
 				// Calculate position behind the player (same logic as before)
 				float backOffset = 0.4f;
 				float upOffsetBase = 0.6f;
 				float stackOffset = orb.scale * 2.5f;
-				float sideOffset = 0.15f;
+				float sideOffset = sideOffsets[orb.spellType];
 				glm::vec3 playerForward = normalize(manMoveDir);
 				glm::vec3 playerUp = glm::vec3(0.0f, 1.0f, 0.0f);
 				glm::vec3 playerRight = normalize(cross(playerForward, playerUp));
-				float currentUpOffset = upOffsetBase + (collectedOrbDrawIndex * stackOffset);
-				float currentSideOffset = (collectedOrbDrawIndex % 2 == 0 ? -sideOffset : sideOffset);
+				// float currentUpOffset = upOffsetBase + (collectedOrbDrawIndex * stackOffset);
+				float currentUpOffset = upOffsetBase + upOffsets[orb.spellType];
+				upOffsets[orb.spellType] += stackOffset; // Increment up offset for next orb of the same type
+				// float currentSideOffset = (collectedOrbDrawIndex % 2 == 0 ? -sideOffset : sideOffset);
+
 				currentDrawPosition = charMove() - playerForward * backOffset
 					+ playerUp * currentUpOffset
-					+ playerRight * currentSideOffset;
+					+ playerRight * sideOffset;
 				collectedOrbDrawIndex++;
+
 			}
 			else {
 				currentDrawPosition = orb.position;
@@ -2342,13 +2410,16 @@ public:
 			libraryQuadTree->cleanup(); // Clean up the quad tree
 			bossRoomQuadTree->cleanup(); // Clean up the boss room quad tree
 			initQuadTree(); // Reinitialize the quad tree
+			keysneededToCollect = 0; // Reset key count
 			initEnemies(); // Reinitialize enemies
 			bossActiveSpells.clear();
 			bossEnemy->resetPhase();
+			bossEnemy->setPosition(bossRoom->getWorldOrigin()); // Reset boss position to the room origin to middle of the boss room
 			// enemies.push_back(new Enemy(libraryCenter + vec3(-5.0f, 0.8f, 8.0f), 50.0f, 2.0f, sphere, glm::vec3(0.5f, 1.28f, 0.5f), vec3(0.0f))); // <<-- Pass sphere and scale
 			activeSpells.clear(); // Clear active spells
 			unlock = false;
 			keyCollectibles.clear(); // Clear key collectibles
+			keysCollectedCount = 0;
 			#if USE_INSTANCING
 			initInstancingMatrices();
 			#endif
@@ -2420,7 +2491,10 @@ public:
 				Model->translate(enemy->getPosition());
 				Model->scale(enemyScale); // Scale the enemy model
 				Model->rotate(enemy->getRotY(), glm::vec3(0, 1, 0));
-				Model->rotate(glm::radians(-90.0f), glm::vec3(1, 0, 0)); // rotate -90 degrees around x axis
+
+				if (dynamic_cast<const IceElemental*>(enemy)) {
+					Model->rotate(glm::radians(-90.0f), glm::vec3(1, 0, 0)); // Rotate Ice Elemental
+				}
 				SetMaterial(shader, enemyMaterial); // Set body material
 				if (shader->hasUniform("enemyAlpha")) glUniform1f(shader->getUniform("enemyAlpha"), enemy->getDamageTimer() / Config::ENEMY_HIT_DURATION);
 				setModel(shader, Model);
@@ -2879,7 +2953,7 @@ public:
 
 		if (bossEnemy->isAlive() && unlock) {
 			bossEnemy->lookAtPlayer(player->getPosition()); // Make the boss look at the player
-			glm::vec3 bossPos = bossEnemy->getPosition() + glm::vec3(0, 2.0f, 0); // Position the boss slightly above the ground
+			glm::vec3 bossPos = bossEnemy->getPosition() + glm::vec3(0, 0, 0); // Position the boss slightly above the ground
 			glm::vec3 bossRotation = bossEnemy->getRotation(); // Get rotation from the enemy object
 			float bossRotY = bossEnemy->getRotY();
 
@@ -2888,7 +2962,7 @@ public:
 				Model->loadIdentity(); // Reset the model matrix
 				Model->translate(bossPos);
 				Model->rotate(bossRotY, bossRotation); // Rotate the body to match the boss's rotation
-				Model->scale(bossEnemy->getScale());
+				Model->scale(vec3(1.3f, 0.8f, 1.0f));
 				// --- Draw Main Body (Pill Shape) ---
 				Model->pushMatrix();
 				{
@@ -2900,7 +2974,8 @@ public:
 					SetMaterial(shader, Material::purple);
 
 					setModel(shader, Model);
-					sphere->Draw(shader); // Draw the scaled sphere as the body
+					// sphere->Draw(shader); // Draw the scaled sphere as the body
+					stoneGolem->Draw(shader); // Use the stone golem model for the body
 				}
 				Model->popMatrix();
 
@@ -2911,70 +2986,70 @@ public:
 				// White Material Setup (done inside loop per part for clarity now)
 				// Black Material Setup (done inside loop per part for clarity now)
 
-				// Left Eye
-				Model->pushMatrix();
-				{
-					// Go to enemy center, then offset to eye position
-					// Model->translate(bossPos);
-					Model->translate(eyeOffsetBase + glm::vec3(-eyeSeparation, 0, 0));
+				// // Left Eye
+				// Model->pushMatrix();
+				// {
+				// 	// Go to enemy center, then offset to eye position
+				// 	// Model->translate(bossPos);
+				// 	Model->translate(eyeOffsetBase + glm::vec3(-eyeSeparation, 0, 0));
 
-					// White Part
-					Model->pushMatrix();
-					{
-						Model->scale(glm::vec3(whiteScale));
-						// Set white material
-						SetMaterial(shader, Material::eye_white);
-						setModel(shader, Model);
-						sphere->Draw(shader);
-					}
-					Model->popMatrix(); // Pop white scale
+				// 	// White Part
+				// 	Model->pushMatrix();
+				// 	{
+				// 		Model->scale(glm::vec3(whiteScale));
+				// 		// Set white material
+				// 		SetMaterial(shader, Material::eye_white);
+				// 		setModel(shader, Model);
+				// 		sphere->Draw(shader);
+				// 	}
+				// 	Model->popMatrix(); // Pop white scale
 
-					// Pupil Part
-					Model->pushMatrix();
-					{
-						// Move slightly forward from white surface and scale down
-						Model->translate(glm::vec3(0, 0, whiteScale * 0.5f + pupilOffsetForward)); // Offset relative to white scale
-						Model->scale(glm::vec3(pupilScale));
-						// Set black material
-						SetMaterial(shader, Material::black);
-						setModel(shader, Model);
-						sphere->Draw(shader);
-					}
-					Model->popMatrix(); // Pop pupil transform
-				}
-				Model->popMatrix(); // Pop left eye transform
+				// 	// Pupil Part
+				// 	Model->pushMatrix();
+				// 	{
+				// 		// Move slightly forward from white surface and scale down
+				// 		Model->translate(glm::vec3(0, 0, whiteScale * 0.5f + pupilOffsetForward)); // Offset relative to white scale
+				// 		Model->scale(glm::vec3(pupilScale));
+				// 		// Set black material
+				// 		SetMaterial(shader, Material::black);
+				// 		setModel(shader, Model);
+				// 		sphere->Draw(shader);
+				// 	}
+				// 	Model->popMatrix(); // Pop pupil transform
+				// }
+				// Model->popMatrix(); // Pop left eye transform
 
 
-				// Right Eye (Similar to Left)
-				Model->pushMatrix();
-				{
-					// Model->translate(bossPos);
-					Model->translate(eyeOffsetBase + glm::vec3(+eyeSeparation, 0, 0)); // Offset to the right
+				// // Right Eye (Similar to Left)
+				// Model->pushMatrix();
+				// {
+				// 	// Model->translate(bossPos);
+				// 	Model->translate(eyeOffsetBase + glm::vec3(+eyeSeparation, 0, 0)); // Offset to the right
 
-					// White Part
-					Model->pushMatrix();
-					{
-						Model->scale(glm::vec3(whiteScale));
-						// Set white material
-						SetMaterial(shader, Material::eye_white);
-						setModel(shader, Model);
-						sphere->Draw(shader);
-					}
-					Model->popMatrix();
+				// 	// White Part
+				// 	Model->pushMatrix();
+				// 	{
+				// 		Model->scale(glm::vec3(whiteScale));
+				// 		// Set white material
+				// 		SetMaterial(shader, Material::eye_white);
+				// 		setModel(shader, Model);
+				// 		sphere->Draw(shader);
+				// 	}
+				// 	Model->popMatrix();
 
-					// Pupil Part
-					Model->pushMatrix();
-					{
-						Model->translate(glm::vec3(0, 0, whiteScale * 0.5f + pupilOffsetForward));
-						Model->scale(glm::vec3(pupilScale));
-						// Set black material
-						SetMaterial(shader, Material::black);
-						setModel(shader, Model);
-						sphere->Draw(shader);
-					}
-					Model->popMatrix();
-				}
-				Model->popMatrix(); // Pop right eye transform
+				// 	// Pupil Part
+				// 	Model->pushMatrix();
+				// 	{
+				// 		Model->translate(glm::vec3(0, 0, whiteScale * 0.5f + pupilOffsetForward));
+				// 		Model->scale(glm::vec3(pupilScale));
+				// 		// Set black material
+				// 		SetMaterial(shader, Material::black);
+				// 		setModel(shader, Model);
+				// 		sphere->Draw(shader);
+				// 	}
+				// 	Model->popMatrix();
+				// }
+				// Model->popMatrix(); // Pop right eye transform
 			}
 			Model->popMatrix(); // Pop boss body transform
 		}
@@ -3580,6 +3655,7 @@ public:
 
 	// --- Shooting Function ---
 	void shootSpell() {
+
 		cout << "[DEBUG] shootSpell() called. Orbs: " << orbsCollectedCount << endl;
 		if (orbsCollectedCount <= 0 && !debugCamera) { // Allow shooting in debug camera without orbs
 			cout << "[DEBUG] Cannot shoot: No orbs." << endl;
@@ -3588,10 +3664,12 @@ public:
 
 		// Consume an orb if not in debug mode
 		if (!debugCamera) {
-			orbsCollectedCount--;
 			// Remove visual orb logic... (find first collected orb and erase)
 			for (auto it = orbCollectibles.begin(); it != orbCollectibles.end(); ++it) {
-				if (it->collected) {
+				if (it->collected && it->spellType == currentPlayerSpellType) {
+					spellCounts[it->spellType]--; // Increment spell count for the type being shot
+					cout << "Spells remaining of this type: " << spellCounts[it->spellType] << endl;
+					orbsCollectedCount--;
 					orbCollectibles.erase(it);
 					break;
 				}
@@ -3613,7 +3691,7 @@ public:
 		activeSpells.emplace_back(spawnPos, shootDir, (float)glfwGetTime());
 		SpellProjectile& newProj = activeSpells.back();
 
-		if (particleSystem) {
+		if (particleSystem && spellCounts[currentPlayerSpellType] > 0) {
 			float current_particle_system_time = particleSystem->getCurrentTime();
 			int particles_to_spawn = 10;
 
@@ -3685,6 +3763,9 @@ public:
 				p_color_start, p_color_end,
 				p_scale_min, p_scale_max);
 		}
+
+		// Play spell sound effect
+		ma_sound_start(&spell_sound);
 
 		cout << "[DEBUG] Spell Fired! Start:(" << spawnPos.x << "," << spawnPos.y << "," << spawnPos.z
 			<< ") Dir: (" << shootDir.x << "," << shootDir.y << "," << shootDir.z
@@ -4135,12 +4216,16 @@ public:
 	}
 
 	void shootBossSpell() {
-		vec3 shootDir = bossEnemy->getBossDirection();
+		// vec3 shootDir = bossEnemy->getBossDirection();
+		float upOffset = 7.0f;      // Height relative to player base (groundY)
+
+		// make projectile aim towards player
+		vec3 shootDir = normalize(player->getPosition() - vec3(bossEnemy->getPosition().x, bossEnemy->getPosition().y + upOffset, bossEnemy->getPosition().z));
 
 		vec3 bossRight = normalize(cross(shootDir, vec3(0.0f, 1.0f, 0.0f)));
 
 		float forwardOffset = 0.5f; // How far in front of player center
-		float upOffset = 0.8f;      // Height relative to player base (groundY)
+
 		float rightOffset = 0.0f;   // Offset to the side (e.g., right hand)
 
 		vec3 spawnPos = bossEnemy->getPosition()
@@ -4220,6 +4305,70 @@ public:
 			<< "). Active spells: " << bossActiveSpells.size() << endl;
 	}
 
+// Boss slam attack logic
+	struct slamState {
+		bool active = false;
+		float elapsed = 0.0f;
+		float duration = 2.0f;
+		float aoeRadius = 5.0f;
+		glm::vec3 startPos;
+		glm::vec3 targetPos;
+	};
+
+	struct slamState slamState; // Global state for the slam attack
+
+	void bossSlamAttack() {
+		if (!bossEnemy || !bossEnemy->isAlive()) return;
+
+		// Set slam state
+		slamState.active = true;
+		slamState.elapsed = 0.0f;
+		slamState.duration = 2.0f;
+		slamState.aoeRadius = 5.0f;
+
+		slamState.startPos = bossEnemy->getPosition();
+
+		// Reset slam logic
+		slamState.targetPos = player->getPosition();
+		bossEnemy->setSlamDuration(slamState.duration);
+		bossEnemy->setSlamCooldown(0.0f);
+		cout << "[DEBUG] Boss slam attack initiated." << endl;
+	}
+
+	void updateBossSlamAttack(float deltaTime) {
+	if (!slamState.active || !bossEnemy || !bossEnemy->isAlive()) return;
+
+	slamState.elapsed += deltaTime;
+
+	float t = glm::clamp(slamState.elapsed / slamState.duration, 0.0f, 1.0f);
+
+	// Parabolic trajectory
+	glm::vec3 horizontal = glm::mix(slamState.startPos, slamState.targetPos, t);
+	float peakHeight = 6.0f;
+	float heightOffset = peakHeight * sin(glm::pi<float>() * t);
+	glm::vec3 newPos = horizontal + glm::vec3(0.0f, heightOffset, 0.0f);
+	bossEnemy->setPosition(newPos);
+
+	// End of attack
+	if (slamState.elapsed >= slamState.duration) {
+		glm::vec3 playerPos = player->getPosition();
+		float dist = glm::distance(playerPos, slamState.targetPos);
+
+		if (dist < slamState.aoeRadius) {
+			player->takeDamage(Config::BOSS_SLAM_DAMAGE); // AOE damage to player
+			cout << "[DEBUG] Player hit by boss slam!" << endl;
+		} else {
+			cout << "[DEBUG] Player dodged boss slam." << endl;
+		}
+
+		// Reset slam state
+		slamState.active = false;
+		bossEnemy->setSlamCooldown(glfwGetTime());
+	}
+}
+
+
+
 	void BossEnemyAttacks(float deltaTime) {
 		if (bossEnemy && bossfightstarted && !bossfightended && bossEnemy->isAlive()) {
 			bossEnemy->changePhase(); // Update boss phase logic
@@ -4248,7 +4397,7 @@ public:
 					updateBossProjectiles(deltaTime);
 					break;
 				case BossEnemy::BossPhase::PHASE_3:
-					// Phase 3 logic, phase 1 and 2 combined but more aggressive
+					// Phase 3 logic, phase 1 and 2 combined but more aggressive, add slam attack
 					if (glfwGetTime() - bossEnemy->getSpecialAttackCooldown() > 1.0f) {
 						bossEnemy->setSpecialAttackCooldown(glfwGetTime());
 						shootBossSpell();
@@ -4261,7 +4410,12 @@ public:
 							enemies.push_back(new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.y), ENEMY_HP_MAX, 2.0f, iceElemental, vec3(0.65f), vec3(0.0f)));
 						}
 					}
+					if (!slamState.active && (glfwGetTime() - bossEnemy->getSlamCooldown() > Config::BOSS_SLAM_COOLDOWN)) {
+						bossSlamAttack();
+					}
+
 					updateBossProjectiles(deltaTime);
+					updateBossSlamAttack(deltaTime);
 					break;
 				default:
 					cout << "[DEBUG] Boss phase not recognized or unsupported." << endl;
@@ -4759,10 +4913,12 @@ public:
 
 	}
 
-	void drawBossHealthBar(glm::mat4 viewMatrix, glm::mat4 projMatrix) {
-		float healthBarWidth = 200.0f;
+	void drawBossHealthBar(glm::mat4 viewMatrix, glm::mat4 projMatrix, float width, float height) {
+		float healthBarWidth = 500.0f;
 		float healthBarHeight = 20.0f;
 		float healthBarOffsetY = 25.0f;  // Offset above enemy head
+		float healthBarStartX = (width - 1)/ 2;
+		float healthBarStartY = height - 100.0f;
 
 		int screenWidth, screenHeight;
 		glfwGetFramebufferSize(windowManager->getHandle(), &screenWidth, &screenHeight);
@@ -4772,32 +4928,34 @@ public:
 		if (bossEnemy && bossEnemy->isAlive()) {
 			glm::vec3 enemyWorldPos = bossEnemy->getAABBMax(); // Top position in world coordinates
 
-			// Transform enemy position to clip space
-			glm::vec4 clipSpacePos = projMatrix * viewMatrix * glm::vec4(enemyWorldPos, 1.0f);
+			// // Transform enemy position to clip space
+			// glm::vec4 clipSpacePos = projMatrix * viewMatrix * glm::vec4(enemyWorldPos, 1.0f);
 
-			// If enemy is behind camera, skip
-			if (clipSpacePos.w <= 0) return;
+			// // If enemy is behind camera, skip
+			// if (clipSpacePos.w <= 0) return;
 
-			// Perspective divide (NDC)
-			glm::vec3 ndcPos = glm::vec3(clipSpacePos) / clipSpacePos.w;
+			// // Perspective divide (NDC)
+			// glm::vec3 ndcPos = glm::vec3(clipSpacePos) / clipSpacePos.w;
 
-			// Convert NDC (-1 to 1) to screen coordinates
-			glm::vec2 screenPos;
-			screenPos.x = (ndcPos.x * 0.5f + 0.5f) * screenWidth;
-			screenPos.y = (ndcPos.y * 0.5f + 0.5f) * screenHeight;
+			// // Convert NDC (-1 to 1) to screen coordinates
+			// glm::vec2 screenPos;
+			// screenPos.x = (ndcPos.x * 0.5f + 0.5f) * screenWidth;
+			// screenPos.y = (ndcPos.y * 0.5f + 0.5f) * screenHeight;
 
-			// Offset above enemy's head
-			screenPos.y += healthBarOffsetY;
+			// // Offset above enemy's head
+			// screenPos.y += healthBarOffsetY;
 
 			// Set HUD Model matrix
-			glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(screenPos.x - (healthBarWidth / 2.0f), screenPos.y, 0.0f));
+			// glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(screenPos.x - (healthBarWidth / 2.0f), screenPos.y, 0.0f));
+			glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(healthBarStartX, healthBarStartY, 0.0f));  // HUD position
 			model = glm::scale(model, glm::vec3(healthBarWidth, healthBarHeight, 1.0f));
 
 			hudProg->bind();
 			glUniformMatrix4fv(hudProg->getUniform("projection"), 1, GL_FALSE, glm::value_ptr(hudProjection));
 			glUniformMatrix4fv(hudProg->getUniform("model"), 1, GL_FALSE, glm::value_ptr(model));
 			glUniform1f(hudProg->getUniform("healthPercent"), bossEnemy->getHitpoints() / BOSS_HP_MAX);
-			glUniform1f(hudProg->getUniform("BarStartX"), screenPos.x - (healthBarWidth / 2.0f));
+			// glUniform1f(hudProg->getUniform("BarStartX"), screenPos.x - (healthBarWidth / 2.0f));
+			glUniform1f(hudProg->getUniform("BarStartX"), healthBarStartX); // Pass max health value
 			glUniform1f(hudProg->getUniform("BarWidth"), healthBarWidth);
 			healthBar->Draw(hudProg);
 			hudProg->unbind();
@@ -5173,6 +5331,8 @@ public:
 		vec3 lc = Config::LIGHT_COLOR;
 		mat4 LO, LV, LSpace;
 
+		glDisable(GL_BLEND); // Disable blending for depth map rendering
+
 		// ========================================================================
 		// First Pass: Render scene from light's perspective to generate depth map
 		// ========================================================================
@@ -5306,7 +5466,7 @@ public:
 			drawEnemyHealthBars(View->topMatrix(), Projection->topMatrix());
 
 			if (bossfightstarted && !bossfightended) {
-				drawBossHealthBar(View->topMatrix(), Projection->topMatrix());
+				drawBossHealthBar(View->topMatrix(), Projection->topMatrix(), static_cast<float>(width), static_cast<float>(height));
 			}
 		}
 
@@ -5327,6 +5487,22 @@ public:
 			movingRight = false;
 			drawDamageIndicator(1.0f);
 		}
+
+		// Needs to be before MiniMap rendering
+		glEnable(GL_BLEND); // Enable blending for text rendering
+		// RenderText(textProg, "Cats are ok.  Cur time: " + to_string(glfwGetTime()), 10.0f, 265.0f, 1.0f, glm::vec3(1.0f, 1.0f, 0.9f),
+		// 		window_width, window_height);
+		RenderText(textProg, "Keys collected: x" + to_string(keysCollectedCount), 25.0f, 25.0f, 1.0f, glm::vec3(1.0f, 1.0f, 0.9f),
+				width, height);
+		float formattedfps = floor(getFPS() * 100) / 100; // Format FPS to 2 decimal places
+		RenderText(textProg, "FPS: " + to_string(formattedfps), width - 100.0f, height - 50.0f, 1.0f, glm::vec3(1.0f, 1.0f, 0.9f),
+				width, height);
+
+		if (bossfightstarted && !bossfightended) {
+				RenderText(textProg, "BOSS HP", width / 2.0f, height - 70.0f, 1.0f, glm::vec3(1.0f, 0.0f, 0.0f),
+				width, height);
+			}
+		glDisable(GL_BLEND); // Disable blending after text rendering
 
 		if (Config::DRAW_MINIMAP) { // Draw the mini map
 			ShadowProg->bind();
@@ -5360,6 +5536,12 @@ public:
 			drawEnemies(ShadowProg, Model);
 			ShadowProg->unbind();
 		}
+
+		// glEnable(GL_BLEND); // Enable blending for text rendering
+		// // RenderText(textProg, "Cats are ok.  Cur time: " + to_string(glfwGetTime()), 10.0f, 265.0f, 1.0f, glm::vec3(1.0f, 1.0f, 0.9f),
+		// // 		window_width, window_height);
+		// RenderText(textProg, "Cats are ok.  Cur time: " + to_string(glfwGetTime()), 25.0f, 25.0f, 1.0f, glm::vec3(1.0f, 1.0f, 0.9f),
+		// 		width, height);
 
 		// --- Cleanup ---
 		Projection->popMatrix();
@@ -5484,6 +5666,45 @@ public:
 				//Movement Variable
 				movingRight = false;
 			}
+			else if (key == GLFW_KEY_Q && action == GLFW_PRESS) {
+				currentSpellSlotIndex = (currentSpellSlotIndex - 1 + 4) % 4;
+
+				string spellName = "";
+
+				if (currentSpellSlotIndex == 0) {
+					spellName = "Fireball";
+				}
+				else if (currentSpellSlotIndex == 1) {
+					spellName = "Ice Shard";
+				}
+				else if (currentSpellSlotIndex == 2) {
+					spellName = "Lightning Bolt";
+				}
+				else if (currentSpellSlotIndex == 3) {
+					spellName = "Heal";
+				}
+
+				cout << "Current Spell: " << spellName << endl;
+				currentPlayerSpellType = spellSlots[currentSpellSlotIndex];
+			}
+			else if (key == GLFW_KEY_E && action == GLFW_PRESS) {
+				currentSpellSlotIndex = (currentSpellSlotIndex + 1) % 4;
+				string spellName = "";
+				if (currentSpellSlotIndex == 0) {
+					spellName = "Fireball";
+				}
+				else if (currentSpellSlotIndex == 1) {
+					spellName = "Ice Shard";
+				}
+				else if (currentSpellSlotIndex == 2) {
+					spellName = "Lightning Bolt";
+				}
+				else if (currentSpellSlotIndex == 3) {
+					spellName = "Heal";
+				}
+				cout << "Current Spell: " << spellName << endl;
+				currentPlayerSpellType = spellSlots[currentSpellSlotIndex];
+			}
 		}
 		if (key == GLFW_KEY_Z && action == GLFW_PRESS) {
 			glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
@@ -5601,6 +5822,14 @@ int main(int argc, char* argv[]) {
 		return -1;
 	}
 
+	// Load spell sound effect
+	if (ma_sound_init_from_file(&engine, "../resources/firespellsound.mp3", 0, NULL, NULL, &spell_sound) != MA_SUCCESS) {
+		printf("Failed to load spell sound\n");
+		ma_sound_uninit(&sound); // Uninitialize background sound if spell sound fails
+		ma_engine_uninit(&engine);
+		return -1;
+	}
+
 	// This is the code that will likely change program to program as you
 	// may need to initialize or set up different data and state
 
@@ -5627,7 +5856,7 @@ int main(int argc, char* argv[]) {
 	glfwSetInputMode(windowManager->getHandle(), GLFW_STICKY_KEYS, GLFW_TRUE);
 
 	cout << "Controls: " << endl << "WASD: Move" << endl << "Mouse: Look around" << endl
-		<< "'F': Interact with book" << endl<< "'~' Fullscreen" << endl << "'L': Toggle cursor mode" << endl
+		<< "'F': Interact with book" << endl << "'Q and E': Switch spell slot" << endl << "'~' Fullscreen" << endl << "'L': Toggle cursor mode" << endl
 		<< "[DEBUG] Press K To Enter Debug Camera Mode." << endl << "+/- Change Brightness, 1/2 Change Saturation"
 		<< endl << "While in Debug Camera mode, M toggles player movement and N toggles enemy movement" << endl;
 
@@ -5655,6 +5884,8 @@ int main(int argc, char* argv[]) {
 
 	// Quit program
 	windowManager->shutdown();
-	ma_engine_uninit(&engine); // Uninitialize miniaudio
+	ma_sound_uninit(&sound);
+	ma_sound_uninit(&spell_sound); 
+	ma_engine_uninit(&engine); 
 	return 0;
 }

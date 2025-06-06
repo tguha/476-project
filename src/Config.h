@@ -104,6 +104,11 @@ namespace Config {// --- Global Game Settings (Config::<thing you want>)---
     constexpr float LIGHTNING_ELEMENTAL_TERRITORY_RADIUS = 30.0f; // Territory radius for lightning elemental
     // constexpr float LIGHTNING_ELEMENTAL_SCALE = vec3(1.0f, 1.0f, 1.0f); // scale
 
+    // Boss Enemy settings
+    constexpr float BOSS_SLAM_DAMAGE = 80.0f; // Damage dealt by boss slam attack
+    constexpr float BOSS_SLAM_COOLDOWN = 3.0f; // Cooldown for boss slam attack
+    constexpr float BOSS_SLAM_DURATION = 1.5f; // Duration of boss slam attack
+
     // Projectile settings
     constexpr float PROJECTILE_DAMAGE = 100.0f;
 
