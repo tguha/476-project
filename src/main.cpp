@@ -544,7 +544,7 @@ public:
 			float plrotation = -(theta + radians(-90.0f));
 			//Clamp plrotation between -2pi and 2pi
 			plrotation = fmodf(plrotation, glm::radians(360.0f));
-			plrotation += rotationAdjustment;
+			plrotation -= rotationAdjustment;
 
 			player->setRotY(plrotation);
 			player->setRotX(phi);
@@ -3770,10 +3770,6 @@ public:
 
 		// Normalize and scale movement delta
 		float moveLength = length(desiredMoveDelta);
-		
-		//rotationAdjustment = 0.0f;
-		//vec3 viewDir = manMoveDir / length(manMoveDir);
-		//vec3 rollDir = desiredMoveDelta;
 		if (moveLength > 0.0f) {
 			vec3 rollDir = desiredMoveDelta / moveLength;
 		}
@@ -3782,14 +3778,7 @@ public:
 			desiredMoveDelta = (desiredMoveDelta / moveLength) * rollDistance;
 		}
 
-		
-		//rotationAdjustment = acos(dot(viewDir , rollDir));
-		//float rAdjustment = atan(desiredMoveDelta.z /desiredMoveDelta.x);
-		/*cout << "Player Rot: " << player->getRotY() << endl
-			<< "adjust: " << rotationAdjustment << endl
-			<< "x: " << desiredMoveDelta.x << endl
-			<< "z: " << desiredMoveDelta.z << endl;
-		*/
+		setDodgeRotation();
 
 		rollDestination = player->getPosition() + desiredMoveDelta;
 		return rollDestination;
@@ -3817,8 +3806,10 @@ public:
 			"Step Value: " << rollProgress/rollDuration << endl
 			<< "Roll Destination: x|" << rollDestination.x << " y: " << rollDestination.y << " z: " << rollDestination.z << endl;
 			*/
-		
-		vec3 rollStep = Bezier::lErp(player->getPosition(), rollDestination, rollProgress/rollDuration);
+		//Linear
+		//vec3 rollStep = Bezier::lErp(player->getPosition(), rollDestination, rollProgress/rollDuration);
+		//midstep.y = groundY;
+		vec3 rollStep = Bezier::quadErp(player->getPosition(), rollDestination, rollProgress / rollDuration);
 		
 		//Collision
 		glm::quat playerOrientation = glm::angleAxis(player->getRotY(), glm::vec3(0, 1, 0));
@@ -3848,6 +3839,48 @@ public:
 		}
 
 		player->setPosition(vec3(allowedPos.x, groundY, allowedPos.z)); // Update player position
+	}
+
+	void setDodgeRotation() {
+		/*
+			rotationAdjustment = 0.0f;
+
+			vec3 viewDir = manMoveDir / length(manMoveDir);
+			viewDir.y = 0;
+
+			vec3 rollDir = desiredMoveDelta;
+			rollDir.y = 0;
+			rotationAdjustment = acos(dot(viewDir , rollDir));
+			//float rAdjustment = atan(desiredMoveDelta.z /desiredMoveDelta.x);
+			cout << "Player Rot: " << player->getRotY() << endl
+			<< "adjust: " << rotationAdjustment << endl
+			<< "x: " << desiredMoveDelta.x << endl
+			<< "z: " << desiredMoveDelta.z << endl;
+		*/
+
+		//Dot products arent working for some reason 
+		//Excuse my bad code :(
+		if (movingForward && movingRight) {
+			rotationAdjustment = glm::radians(45.0f);
+		}
+		else if (movingRight && !movingBackward) {
+			rotationAdjustment = glm::radians(90.0f);
+		}
+		else if (movingRight && movingBackward) {
+			rotationAdjustment = glm::radians(135.0f);
+		}
+		else if (movingBackward && !movingLeft && !movingRight) {
+			rotationAdjustment = glm::radians(180.0f);
+		}
+		else if (movingBackward && movingLeft) {
+			rotationAdjustment = glm::radians(225.0f);
+		}
+		else if (movingLeft && !movingForward) {
+			rotationAdjustment = glm::radians(270.0f);
+		}
+		else if (movingLeft && movingForward) {
+			rotationAdjustment = glm::radians(315.0f);
+		}
 	}
 
 	void updateGrabBook(float dt) {
