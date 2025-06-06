@@ -2309,7 +2309,7 @@ public:
 				upOffsets[orb.spellType] += stackOffset; // Increment up offset for next orb of the same type
 				// float currentSideOffset = (collectedOrbDrawIndex % 2 == 0 ? -sideOffset : sideOffset);
 
-				currentDrawPosition = charMove() - playerForward * backOffset
+				currentDrawPosition = player->getPosition() - playerForward * backOffset
 					+ playerUp * currentUpOffset
 					+ playerRight * sideOffset;
 				collectedOrbDrawIndex++;
@@ -3576,7 +3576,7 @@ public:
 			//Prevent moving during rolling
 			return player->getPosition();
 		}
-		float moveSpeed = 4.5f * AnimDeltaTime; // Use frame-rate independent speed
+		float moveSpeed = 8.0f * AnimDeltaTime; // Use frame-rate independent speed
 		vec3 desiredMoveDelta = vec3(0.0f);
 
 		// Calculate desired movement direction based on input
@@ -4850,7 +4850,7 @@ public:
 					glm::vec3 playerRight = normalize(cross(playerForward, playerUp));
 					float currentUpOffset = upOffsetBase + (collectedKeyDrawIndex * stackOffset);
 					float currentSideOffset = (collectedKeyDrawIndex % 2 == 0 ? -sideOffset : sideOffset);
-					currentDrawPosition = charMove() - playerForward * backOffset
+					currentDrawPosition = player->getPosition() - playerForward * backOffset
 						+ playerUp * currentUpOffset
 						+ playerRight * currentSideOffset;
 					collectedKeyDrawIndex++;
