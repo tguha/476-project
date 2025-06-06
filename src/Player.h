@@ -5,6 +5,7 @@
 #include "Spell.h"
 #include "Config.h"
 #include "GameObjectTypes.h"
+#include "Animator.h"
 
 class Player : public Entity {
     private:

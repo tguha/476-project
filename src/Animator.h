@@ -16,7 +16,8 @@ class Animator
         void UpdateAnimation(float dt);
         void PlayAnimation(Animation* panimation);
         void CalculateBoneTransform(const AssimpNodeData* node, glm::mat4 parentTransform);
-        void SetCurrentAnimation(Animation* animation) { m_CurrentAnimation = animation; }
+        void SetCurrentAnimation(Animation* animation) { m_CurrentAnimation = animation;}
+        void resetTime() { m_CurrentTime = 0.0f; }
         Animation* GetCurrentAnimation() { return m_CurrentAnimation; }
         std::vector<glm::mat4> GetFinalBoneMatrices() { return m_FinalBoneMatrices; }
     private:

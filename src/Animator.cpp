@@ -21,17 +21,29 @@ void Animator::UpdateAnimation(float dt)
         tickRate = 25.0f; // Default value if not specified
     }
     m_CurrentTime += dt * tickRate; // Update current time based on delta time and ticks per second
-    m_CurrentTime = fmod(m_CurrentTime, m_CurrentAnimation->GetDuration()); // Loop the animation
-
-    glm::mat4 flipY = glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(0, 1, 0));
-    CalculateBoneTransform(&m_CurrentAnimation->GetRootNode(), flipY * m_CurrentAnimation->GetGlobalInverseTransform());
-    //CalculateBoneTransform(&m_CurrentAnimation->GetRootNode(), m_CurrentAnimation->GetGlobalInverseTransform());
+     m_CurrentTime = fmod(m_CurrentTime, m_CurrentAnimation->GetDuration()); // Loop the animation
+    
+    CalculateBoneTransform(&m_CurrentAnimation->GetRootNode(), m_CurrentAnimation->GetGlobalInverseTransform());
     
 }
 
 void Animator::PlayAnimation(Animation* pAnimation) {
+    //In Progres
     m_CurrentAnimation = pAnimation;
     m_CurrentTime = 0.0;
+    float tickRate = m_CurrentAnimation->GetTicksPerSecond();
+    if (tickRate <= 0) {
+        tickRate = 25.0f; // Default value if not specified
+    }
+
+    
+    while (m_CurrentTime < pAnimation->GetDuration()) {
+        
+        m_CurrentTime += 0.1;
+    }
+    //m_CurrentTime += dt * tickRate; // Update current time based on delta time and ticks per second
+    //m_CurrentTime = fmod(m_CurrentTime, m_CurrentAnimation->GetDuration()); // Loop the animation
+
 }
 
 void Animator::CalculateBoneTransform(const AssimpNodeData* node, glm::mat4 parentTransform)
