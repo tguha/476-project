@@ -201,11 +201,14 @@ public:
 	bool rolling = false;
 	bool grabbingBook = false;
 
+	float grabBookDuration;
+	float grabBookProgress = 0.0f;
+
 	vec3 rollDestination = vec3(0.0f); //Set when a roll is called
 	float rollDuration; //Defined in initGeom when pulling the animations from the FBX
 	float rollProgress = 0.0f;
-	//Distance a roll takes you
-	float rollDistance = 5.0f;
+	float rollDistance = 5.0f; //Distance a roll takes you
+	float rotationAdjustment = 0.0f;
 
 	//unlock bool
 	bool unlock = false;
@@ -538,7 +541,12 @@ public:
 			lookAt = playerPos;
 
 			// 5. Update player rotation
-			player->setRotY(-(theta + radians(-90.0f)));
+			float plrotation = -(theta + radians(-90.0f));
+			//Clamp plrotation between -2pi and 2pi
+			plrotation = fmodf(plrotation, glm::radians(360.0f));
+			plrotation += rotationAdjustment;
+
+			player->setRotY(plrotation);
 			player->setRotX(phi);
 
 			manMoveDir = vec3(sin(player->getRotY()), 0, cos(player->getRotY()));
@@ -580,6 +588,7 @@ public:
 
 		if (action == GLFW_PRESS)
 		{
+			shootSpell(); // Changed from shootSpell
 			shootSpell(); // Changed from shootSpell
 		}
 	}
@@ -1177,6 +1186,7 @@ public:
 		player_grab_book = new Animation(resourceDirectory + "/CatWizard/CatWizardAnimation4.fbx", player_rig, 2);
 		
 		rollDuration = player_roll->GetDuration();
+		grabBookDuration = player_grab_book->GetDuration();
 
 		//Player bounding box
 		playerBB = make_shared<AABB>();
@@ -3027,6 +3037,10 @@ public:
 	}
 
 	void interactWithBooks() {
+		//Play Grab Book animation once
+		catwizard_animator->resetTime();
+		grabbingBook = true;
+		
 		float interactionRadius = 5.0f;
 		float interactionRadiusSq = interactionRadius * interactionRadius;
 
@@ -3745,20 +3759,38 @@ public:
 		
 		vec3 desiredMoveDelta = vec3(0.0f);
 
+
 		// Calculate desired movement direction based on input
 		if (movingForward)  desiredMoveDelta += manMoveDir;
 		if (movingBackward) desiredMoveDelta -= manMoveDir;
 		if (movingLeft)     desiredMoveDelta -= right;
 		if (movingRight)    desiredMoveDelta += right;
 
+
+
 		// Normalize and scale movement delta
 		float moveLength = length(desiredMoveDelta);
+		
+		//rotationAdjustment = 0.0f;
+		//vec3 viewDir = manMoveDir / length(manMoveDir);
+		//vec3 rollDir = desiredMoveDelta;
+		if (moveLength > 0.0f) {
+			vec3 rollDir = desiredMoveDelta / moveLength;
+		}
+
 		if (moveLength > 0.0f) {
 			desiredMoveDelta = (desiredMoveDelta / moveLength) * rollDistance;
 		}
 
 		
-		
+		//rotationAdjustment = acos(dot(viewDir , rollDir));
+		//float rAdjustment = atan(desiredMoveDelta.z /desiredMoveDelta.x);
+		/*cout << "Player Rot: " << player->getRotY() << endl
+			<< "adjust: " << rotationAdjustment << endl
+			<< "x: " << desiredMoveDelta.x << endl
+			<< "z: " << desiredMoveDelta.z << endl;
+		*/
+
 		rollDestination = player->getPosition() + desiredMoveDelta;
 		return rollDestination;
 	}
@@ -3775,6 +3807,7 @@ public:
 			//cout << "done!" << endl;
 			rolling = false;
 			rollProgress = 0;
+			rotationAdjustment = 0;
 			return;
 		}
 
@@ -3815,7 +3848,22 @@ public:
 		}
 
 		player->setPosition(vec3(allowedPos.x, groundY, allowedPos.z)); // Update player position
+	}
 
+	void updateGrabBook(float dt) {
+		float tickRate = player_roll->GetTicksPerSecond();
+		if (tickRate <= 0) {
+			tickRate = 25.0f; // Default value if not specified
+		}
+		tickRate = tickRate * 1.5;
+		grabBookProgress += dt * tickRate;
+
+		if (grabBookProgress >= grabBookDuration) {
+			//cout << "done!" << endl;
+			grabbingBook = false;
+			grabBookProgress = 0;
+			return;
+		}
 	}
 
 	void drawProjectiles(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
@@ -5069,7 +5117,8 @@ public:
 		updateOrbs((float)glfwGetTime());
 		updateKeys((float)glfwGetTime());
 		if (enemyActive) { updateEnemies(frametime); }
-		if (rolling) { updateDodgeRoll(frametime); };
+		if (rolling) { updateDodgeRoll(frametime); }
+		if (grabbingBook) { updateGrabBook(frametime); }
 		updateProjectiles(frametime);
 		updateFTimeout(frametime);
 		particleSystem->update(frametime); // Update particles
@@ -5291,14 +5340,40 @@ public:
 	void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
 		if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) glfwSetWindowShouldClose(window, GL_TRUE);
 
-		// Lighting / Shader settings
-		if (key == GLFW_KEY_1 && action == GLFW_PRESS) Config::SATURATION -= 0.1f;
-		if (key == GLFW_KEY_2 && action == GLFW_PRESS) Config::SATURATION += 0.1f;
-		if (key == GLFW_KEY_3 && action == GLFW_PRESS) Config::EXPOSURE += 0.1f;
-		if (key == GLFW_KEY_4 && action == GLFW_PRESS) Config::EXPOSURE -= 0.1f;
-		if (key == GLFW_KEY_9 && action == GLFW_PRESS) Config::DEBUG_LIGHTING = !Config::DEBUG_LIGHTING;
-		if (key == GLFW_KEY_0 && action == GLFW_PRESS) Config::DEBUG_GEOM = !Config::DEBUG_GEOM;
-		if (key == GLFW_KEY_B && action == GLFW_PRESS) Config::DEBUG_AABBS = !Config::DEBUG_AABBS;
+		//Debug
+		if (key == GLFW_KEY_K && action == GLFW_PRESS) {
+			//Debug Camera
+			debugCamera = !debugCamera;
+
+			if (debugCamera) {
+				if (key == GLFW_KEY_L && action == GLFW_PRESS) {
+					cursor_visable = !cursor_visable;
+					if (cursor_visable) {
+						glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+					}
+					else {
+						glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+					}
+				}
+			}
+			if (debugCamera && key == GLFW_KEY_N && action == GLFW_PRESS) {
+				//Debug Enemy Movement
+				enemyActive = !enemyActive;
+			}
+			if (debugCamera && key == GLFW_KEY_M && action == GLFW_PRESS) {
+				//Debug Player Movement Toggle
+				playerActive = !playerActive;
+			}
+			// Lighting / Shader settings
+			if (key == GLFW_KEY_1 && action == GLFW_PRESS) Config::SATURATION -= 0.1f;
+			if (key == GLFW_KEY_2 && action == GLFW_PRESS) Config::SATURATION += 0.1f;
+			if (key == GLFW_KEY_3 && action == GLFW_PRESS) Config::EXPOSURE += 0.1f;
+			if (key == GLFW_KEY_4 && action == GLFW_PRESS) Config::EXPOSURE -= 0.1f;
+			if (key == GLFW_KEY_9 && action == GLFW_PRESS) Config::DEBUG_LIGHTING = !Config::DEBUG_LIGHTING;
+			if (key == GLFW_KEY_0 && action == GLFW_PRESS) Config::DEBUG_GEOM = !Config::DEBUG_GEOM;
+			if (key == GLFW_KEY_B && action == GLFW_PRESS) Config::DEBUG_AABBS = !Config::DEBUG_AABBS;
+
+		}
 
 		if (key == GLFW_KEY_GRAVE_ACCENT && action == GLFW_PRESS)
 		{
@@ -5386,36 +5461,13 @@ public:
 		if (key == GLFW_KEY_F && action == GLFW_PRESS) { // Interaction Key
 			//F Time out to avoid pointer crash
 			if (fTimeout <= 0) {
-				grabbingBook = !grabbingBook;
-				//catwizard_animator->PlayAnimation(player_grab_book);
 				interactWithBooks();
 				fTimeout = 3.0f;
 			}
 		}
-		if (key == GLFW_KEY_L && action == GLFW_PRESS) {
-			cursor_visable = !cursor_visable;
-			if (cursor_visable) {
-				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-			}
-			else {
-				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-			}
-		}
-		if (key == GLFW_KEY_U && action == GLFW_PRESS && keysCollectedCount == keysneededToCollect) {
+		if (key == GLFW_KEY_U && action == GLFW_PRESS && (keysCollectedCount == keysneededToCollect || debugCamera)) {
 			unlock = true;
 			canFightboss = true;
-		}
-		if (key == GLFW_KEY_K && action == GLFW_PRESS) {
-			//Debug Camera
-			debugCamera = !debugCamera;
-		}
-		if (debugCamera && key == GLFW_KEY_N && action == GLFW_PRESS) {
-			//Debug Enemy Movement
-			enemyActive = !enemyActive;
-		}
-		if (debugCamera && key == GLFW_KEY_M && action == GLFW_PRESS) {
-			//Debug Player Movement Toggle
-			playerActive = !playerActive;
 		}
 
 		// DodgeRoll with Spacebar
@@ -5423,7 +5475,8 @@ public:
 			dodgeRoll();
 		}
 
-		if ((debugCamera || !player->isAlive()) && key == GLFW_KEY_R && action == GLFW_PRESS) restartGen = true; // Changed restart to R
+		//Restart key R
+		if ((debugCamera || !player->isAlive()) && key == GLFW_KEY_R && action == GLFW_PRESS) restartGen = true; 
 	}
 
 	void scrollCallback(GLFWwindow* window, double deltaX, double deltaY) {
