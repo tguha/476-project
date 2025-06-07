@@ -41,6 +41,7 @@
 #include "TextureManager.h"
 #include "Quadtree.h"
 #include "Freetype.h"
+#include "Titlescreen.h"
 
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -54,7 +55,7 @@ using namespace glm;
 
 ma_engine engine;
 ma_sound sound;
-ma_sound spell_sound; 
+ma_sound spell_sound;
 
 class Application : public EventCallbacks {
 public:
@@ -308,6 +309,8 @@ public:
 		SpellType::ICE,
 		SpellType::HEAL
 	};
+
+	GameState gameState = GameState::TITLE_SCREEN;
 
 	int currentSpellSlotIndex = 1; // Current spell type in use
 	SpellType currentPlayerSpellType = spellSlots[currentSpellSlotIndex]; // Player starts with Fire spell by default
@@ -804,7 +807,8 @@ public:
 
 		TextureManager::initFallbacks(whiteTex, normalTex, blackTex);
 
-		int fError = initFont(resourceDirectory);
+		std::string fontPath = resourceDirectory + "/fonts/arial.ttf";
+		int fError = initFont(fontPath);
 		cout << "Font error? " << fError << endl;
 	}
 
@@ -1215,7 +1219,7 @@ public:
 		player_idle = new Animation(resourceDirectory + "/CatWizard/CatWizardAnimation4.fbx", player_rig, 3);
 		player_roll = new Animation(resourceDirectory + "/CatWizard/CatWizardAnimation4.fbx", player_rig, 1);
 		player_grab_book = new Animation(resourceDirectory + "/CatWizard/CatWizardAnimation4.fbx", player_rig, 2);
-		
+
 		rollDuration = player_roll->GetDuration();
 		grabBookDuration = player_grab_book->GetDuration();
 
@@ -1993,11 +1997,11 @@ public:
 			catwizard_animator->SetCurrentAnimation(player_roll);
 
 		}
-		
+
 		if (animTime != 0.0) {
 			catwizard_animator->UpdateAnimation(1.5f * animTime);
 		}
-		
+
 		// Update bone matrices
 		vector<glm::mat4> transforms = catwizard_animator->GetFinalBoneMatrices();
 
@@ -3115,7 +3119,7 @@ public:
 		//Play Grab Book animation once
 		catwizard_animator->resetTime();
 		grabbingBook = true;
-		
+
 		float interactionRadius = 5.0f;
 		float interactionRadiusSq = interactionRadius * interactionRadius;
 
@@ -3837,7 +3841,7 @@ public:
 		//Reset animation to begining
 		catwizard_animator->resetTime();
 		rolling = true;
-		
+
 		vec3 desiredMoveDelta = vec3(0.0f);
 
 
@@ -3883,7 +3887,7 @@ public:
 
 		/*
 		cout << "Roll Duration: " << rollDuration << endl <<
-			"RollProg: " << rollProgress << endl << 
+			"RollProg: " << rollProgress << endl <<
 			"Step Value: " << rollProgress/rollDuration << endl
 			<< "Roll Destination: x|" << rollDestination.x << " y: " << rollDestination.y << " z: " << rollDestination.z << endl;
 			*/
@@ -3891,7 +3895,7 @@ public:
 		//vec3 rollStep = Bezier::lErp(player->getPosition(), rollDestination, rollProgress/rollDuration);
 		//midstep.y = groundY;
 		vec3 rollStep = Bezier::quadErp(player->getPosition(), rollDestination, rollProgress / rollDuration);
-		
+
 		//Collision
 		glm::quat playerOrientation = glm::angleAxis(player->getRotY(), glm::vec3(0, 1, 0));
 		vec3 currentPos = player->getPosition();
@@ -3910,7 +3914,7 @@ public:
 		}
 
 		// Try moving along Z only (starting from potentially updated X)
-		vec3 nextPosZ = vec3(allowedPos.x, currentPos.y, rollStep.z); 
+		vec3 nextPosZ = vec3(allowedPos.x, currentPos.y, rollStep.z);
 		if (!checkCollisionAt(nextPosZ, playerOrientation)) {
 			allowedPos.z = rollStep.z; // Allow Z movement
 		}
@@ -3939,7 +3943,7 @@ public:
 			<< "z: " << desiredMoveDelta.z << endl;
 		*/
 
-		//Dot products arent working for some reason 
+		//Dot products arent working for some reason
 		//Excuse my bad code :(
 		if (movingForward && movingRight) {
 			rotationAdjustment = glm::radians(45.0f);
@@ -5554,6 +5558,7 @@ public:
 
 	void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
 		if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) glfwSetWindowShouldClose(window, GL_TRUE);
+		if (key == GLFW_KEY_ENTER && action == GLFW_PRESS) gameState = GameState::IN_GAME;
 
 		//Debug
 		if (key == GLFW_KEY_K && action == GLFW_PRESS) {
@@ -5730,7 +5735,7 @@ public:
 		}
 
 		//Restart key R
-		if ((debugCamera || !player->isAlive()) && key == GLFW_KEY_R && action == GLFW_PRESS) restartGen = true; 
+		if ((debugCamera || !player->isAlive()) && key == GLFW_KEY_R && action == GLFW_PRESS) restartGen = true;
 	}
 
 	void scrollCallback(GLFWwindow* window, double deltaX, double deltaY) {
@@ -5860,6 +5865,21 @@ int main(int argc, char* argv[]) {
 		<< "[DEBUG] Press K To Enter Debug Camera Mode." << endl << "+/- Change Brightness, 1/2 Change Saturation"
 		<< endl << "While in Debug Camera mode, M toggles player movement and N toggles enemy movement" << endl;
 
+	// Title screen
+	while (application->gameState == GameState::TITLE_SCREEN && !glfwWindowShouldClose(windowManager->getHandle()))
+	{
+		int width, height;
+		glfwGetFramebufferSize(windowManager->getHandle(), &width, &height);
+
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // Clear the screen
+
+		initTitleScreen(resourceDir); // Initialize the title screen
+		drawTitleScreen(titleShader, width, height); // Draw the title screen
+
+		glfwSwapBuffers(windowManager->getHandle()); // Swap buffers to display the title screen
+		glfwPollEvents(); // Poll for events
+	}
+
 	// Loop until the user closes the window.
 	while (!glfwWindowShouldClose(windowManager->getHandle())) {
 		auto nextLastTIme = chrono::high_resolution_clock::now();
@@ -5885,7 +5905,7 @@ int main(int argc, char* argv[]) {
 	// Quit program
 	windowManager->shutdown();
 	ma_sound_uninit(&sound);
-	ma_sound_uninit(&spell_sound); 
-	ma_engine_uninit(&engine); 
+	ma_sound_uninit(&spell_sound);
+	ma_engine_uninit(&engine);
 	return 0;
 }

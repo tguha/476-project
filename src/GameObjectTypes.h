@@ -363,3 +363,8 @@ public:
         }
     }
 };
+
+enum class GameState {
+    TITLE_SCREEN,
+    IN_GAME,
+};
