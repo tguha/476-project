@@ -77,6 +77,7 @@ public:
 	shared_ptr<Program> SkyboxProg;
 	shared_ptr<Program> debugLineProg;
 	shared_ptr<Program> textProg;
+	shared_ptr<Program> sunProg;
 
 	std::vector<ColorFilter> colorFilters = {
     { "Classic",   glm::vec4(1.0f, 1.0f, 1.0f, 0.0f) }, // No filter
@@ -109,8 +110,9 @@ public:
 	shared_ptr<Texture> particleAlphaTex;
 	shared_ptr<Texture> pawTex;
 
-	// Skybox texture and VAO/VBO
-	GLuint skyboxCubemap;
+	// Skybox textures and VAO/VBO
+	unordered_map<string, GLuint> skyboxTextures;
+	GLuint currentSkyboxTex;
 	GLuint skyboxCubeVAO = 0;
 	GLuint skyboxCubeVBO = 0;
 
@@ -277,7 +279,7 @@ public:
 
 	// Shadows
 	GLuint depthMapFBO;
-	const GLuint S_WIDTH = 2048, S_HEIGHT = 2048;
+	const GLuint S_WIDTH = 8192, S_HEIGHT = 8192;
 	GLuint depthMap;
 
 	// Geometry for texture render
@@ -457,29 +459,19 @@ public:
 		glBindVertexArray(0);
 	}
 
-	void initSkyboxTex(string resourceDirectory) {
-		glGenTextures(1, &skyboxCubemap);
-		glBindTexture(GL_TEXTURE_CUBE_MAP, skyboxCubemap);
+	GLuint initSkyboxTex(const vector<string>& faces) {
+		GLuint texID;
+		glGenTextures(1, &texID);
+		glBindTexture(GL_TEXTURE_CUBE_MAP, texID);
 
-		vector<string> faces = {
-			resourceDirectory + "/skyboxTex/px.png",
-			resourceDirectory + "/skyboxTex/nx.png",
-			resourceDirectory + "/skyboxTex/py.png",
-			resourceDirectory + "/skyboxTex/ny.png",
-			resourceDirectory + "/skyboxTex/pz.png",
-			resourceDirectory + "/skyboxTex/nz.png"
-		};
+		stbi_set_flip_vertically_on_load(false);
 
 		for (GLuint i = 0; i < faces.size(); i++) {
 			int w, h, n;
 			unsigned char* data = stbi_load(faces[i].c_str(), &w, &h, &n, 0);
 			if (data) {
 				GLenum format = (n == 4 ? GL_RGBA : GL_RGB);
-				glTexImage2D(
-					GL_TEXTURE_CUBE_MAP_POSITIVE_X + i,
-					0, format, w, h, 0,
-					format, GL_UNSIGNED_BYTE, data
-				);
+				glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, format, w, h, 0, format, GL_UNSIGNED_BYTE, data);
 				stbi_image_free(data);
 			}
 			else {
@@ -496,6 +488,50 @@ public:
 		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
 
 		glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
+
+		stbi_set_flip_vertically_on_load(true);
+
+		return texID;
+	}
+
+	void initSkyboxes(const string& resourceDir) {
+		initSkyboxCube();
+		skyboxTextures["day"] = initSkyboxTex({
+			resourceDir + "/skyboxTex/day/px.png",
+			resourceDir + "/skyboxTex/day/nx.png",
+			resourceDir + "/skyboxTex/day/py.png",
+			resourceDir + "/skyboxTex/day/ny.png",
+			resourceDir + "/skyboxTex/day/pz.png",
+			resourceDir + "/skyboxTex/day/nz.png"
+		});
+		skyboxTextures["noon"] = initSkyboxTex({
+			resourceDir + "/skyboxTex/noon/px.png",
+			resourceDir + "/skyboxTex/noon/nx.png",
+			resourceDir + "/skyboxTex/noon/py.png",
+			resourceDir + "/skyboxTex/noon/ny.png",
+			resourceDir + "/skyboxTex/noon/pz.png",
+			resourceDir + "/skyboxTex/noon/nz.png"
+		});
+		skyboxTextures["night"] = initSkyboxTex({
+			resourceDir + "/skyboxTex/night/px.png",
+			resourceDir + "/skyboxTex/night/nx.png",
+			resourceDir + "/skyboxTex/night/py.png",
+			resourceDir + "/skyboxTex/night/ny.png",
+			resourceDir + "/skyboxTex/night/pz.png",
+			resourceDir + "/skyboxTex/night/nz.png"
+		});
+		skyboxTextures["mystic"] = initSkyboxTex({
+			resourceDir + "/skyboxTex/mystic/px.png",
+			resourceDir + "/skyboxTex/mystic/nx.png",
+			resourceDir + "/skyboxTex/mystic/py.png",
+			resourceDir + "/skyboxTex/mystic/ny.png",
+			resourceDir + "/skyboxTex/mystic/pz.png",
+			resourceDir + "/skyboxTex/mystic/nz.png"
+		});
+	}
+
+	void setSkybox(const string& name) {
+		currentSkyboxTex = skyboxTextures[name];
 	}
 
 	void updateCameraVectors() {
@@ -669,6 +705,11 @@ public:
 		debugLineProg->setShaderNames(resourceDirectory + "/line_vert.glsl", resourceDirectory + "/line_frag.glsl");
 		debugLineProg->init();
 
+		sunProg = make_shared<Program>();
+		sunProg->setVerbose(Config::DEBUG_SHADER);
+		sunProg->setShaderNames(resourceDirectory + "/sun_vert.glsl", resourceDirectory + "/sun_frag.glsl");
+		sunProg->init();
+
 		// Add unfigorm and attrubutes to each of the programs
 		DepthProg->addUniform("LP");
 		DepthProg->addUniform("LV");
@@ -771,7 +812,15 @@ public:
 		textProg->addUniform("textTex");
 		textProg->addUniform("textColor");
 
+		sunProg->addUniform("P");
+		sunProg->addUniform("V");
+		sunProg->addUniform("M");
+		sunProg->addUniform("glowColor");
+		sunProg->addAttribute("vertPos");
+
 		updateCameraVectors();
+
+		// --- Textures ---
 
 		pawTex = make_shared<Texture>();
 		pawTex->setFilename(resourceDirectory + "/paw_print.png");
@@ -837,32 +886,32 @@ public:
 		grid = library->getGrid();
 
 		if (bossEntranceDir.y > 0) {
-			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(0)), vec3(-1, 0, 0), 10.0f, borderWallTex);
-			addWall(gridSize.x - 3, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 10.0f, borderWallTex);
-			addWall(gridSize.x - 1, vec3(library->mapGridXtoWorldX((gridSize.x - 1) / 2), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 10.0f, borderWallTex);
-			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(0), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
-			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
+			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(0)), vec3(-1, 0, 0), 7.0f, borderWallTex);
+			addWall(gridSize.x - 3, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 7.0f, borderWallTex);
+			addWall(gridSize.x - 1, vec3(library->mapGridXtoWorldX((gridSize.x - 1) / 2), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 7.0f, borderWallTex);
+			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(0), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 7.0f, borderWallTex);
+			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 7.0f, borderWallTex);
 		}
 		else if (bossEntranceDir.y < 0) {
-			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 10.0f, borderWallTex);
-			addWall(gridSize.x - 3, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(0)), vec3(-1, 0, 0), 10.0f, borderWallTex);
-			addWall(gridSize.x - 1, vec3(library->mapGridXtoWorldX((gridSize.x - 1) / 2), 0, library->mapGridYtoWorldZ(0)), vec3(-1, 0, 0), 10.0f, borderWallTex);
-			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(0), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
-			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
+			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 7.0f, borderWallTex);
+			addWall(gridSize.x - 3, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(0)), vec3(-1, 0, 0), 7.0f, borderWallTex);
+			addWall(gridSize.x - 1, vec3(library->mapGridXtoWorldX((gridSize.x - 1) / 2), 0, library->mapGridYtoWorldZ(0)), vec3(-1, 0, 0), 7.0f, borderWallTex);
+			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(0), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 7.0f, borderWallTex);
+			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 7.0f, borderWallTex);
 		}
 		else if (bossEntranceDir.x > 0) {
-			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 10.0f, borderWallTex);
-			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(0)), vec3(-1, 0, 0), 10.0f, borderWallTex);
-			addWall(gridSize.y - 3, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
-			addWall(gridSize.y - 1, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ((gridSize.y - 1) / 2)), vec3(0, 0, -1), 10.0f, borderWallTex);
-			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(0) , 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
+			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 7.0f, borderWallTex);
+			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(0)), vec3(-1, 0, 0), 7.0f, borderWallTex);
+			addWall(gridSize.y - 3, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 7.0f, borderWallTex);
+			addWall(gridSize.y - 1, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ((gridSize.y - 1) / 2)), vec3(0, 0, -1), 7.0f, borderWallTex);
+			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(0) , 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 7.0f, borderWallTex);
 		}
 		else if (bossEntranceDir.x < 0) {
-			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 10.0f, borderWallTex);
-			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(0)), vec3(-1, 0, 0), 10.0f, borderWallTex);
-			addWall(gridSize.y - 3, vec3(library->mapGridXtoWorldX(0), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
-			addWall(gridSize.y - 1, vec3(library->mapGridXtoWorldX(0), 0, library->mapGridYtoWorldZ((gridSize.y - 1) / 2)), vec3(0, 0, -1), 10.0f, borderWallTex);
-			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
+			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 7.0f, borderWallTex);
+			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(0)), vec3(-1, 0, 0), 7.0f, borderWallTex);
+			addWall(gridSize.y - 3, vec3(library->mapGridXtoWorldX(0), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 7.0f, borderWallTex);
+			addWall(gridSize.y - 1, vec3(library->mapGridXtoWorldX(0), 0, library->mapGridYtoWorldZ((gridSize.y - 1) / 2)), vec3(0, 0, -1), 7.0f, borderWallTex);
+			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 7.0f, borderWallTex);
 		}
 
 		addLibGrnd(gridSize.x * 2, gridSize.y * 2, 0.0f, vec3(0, 0, 0), libraryGroundTex);
@@ -2188,19 +2237,14 @@ public:
 		glDepthFunc(GL_LEQUAL);
 
 		shader->bind();
-		glUniformMatrix4fv(shader->getUniform("P"),
-			1, GL_FALSE,
-			glm::value_ptr(Projection->topMatrix()));
+		glUniformMatrix4fv(shader->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
 
-		glm::mat4 view = View->topMatrix();
-		view[3] = glm::vec4(0, 0, 0, 1);
-		glUniformMatrix4fv(shader->getUniform("V"),
-			1, GL_FALSE,
-			glm::value_ptr(view));
+		mat4 skyView = mat4(mat3(View->topMatrix()));
+		glUniformMatrix4fv(shader->getUniform("V"), 1, GL_FALSE, value_ptr(skyView));
 
 		// bind cubemap
 		glActiveTexture(GL_TEXTURE0 + 12);
-		glBindTexture(GL_TEXTURE_CUBE_MAP, skyboxCubemap);
+		glBindTexture(GL_TEXTURE_CUBE_MAP, currentSkyboxTex);
 		glUniform1i(shader->getUniform("skyTex"), 12);
 
 		// draw cube VAO
@@ -2922,10 +2966,6 @@ public:
 	void drawBossRoom(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model, bool cullFlag) {
 		if (!shader || !Model) return;
 		shader->bind();
-
-		/*if (shader == ShadowProg) {
-			glUniform1i(shader->getUniform("hasMaterial"), 0);
-		}*/
 
 		for (int z = 0; z < bossGrid.getSize().y; ++z) {
 			for (int x = 0; x < bossGrid.getSize().x; ++x) {
@@ -5272,7 +5312,6 @@ public:
 		}
 		//drawKey(prog2, Model);
 
-
 		drawBossEnemy(prog, Model);
 	}
 
@@ -5401,8 +5440,41 @@ public:
 
 		if (shader->hasUniform("hasInstancing")) glUniform1i(shader->getUniform("hasInstancing"), GL_FALSE);
 		shader->unbind();
+	}
 
+	void drawSunMoon(mat4 P, mat4 V) {
+		sunProg->bind();
+		glUniformMatrix4fv(sunProg->getUniform("P"), 1, GL_FALSE, value_ptr(P));
+		glUniformMatrix4fv(sunProg->getUniform("V"), 1, GL_FALSE, value_ptr(V));
 
+		mat4 M = glm::translate(mat4(1.0f), Config::sunPos);
+		M = glm::scale(M, vec3(2.5f)); // adjust sun / moon size here
+		glUniformMatrix4fv(sunProg->getUniform("M"), 1, GL_FALSE, value_ptr(M));
+
+		glUniform3fv(sunProg->getUniform("glowColor"), 1, value_ptr(Config::sunColor));
+
+		sphere->Draw(sunProg);
+		sunProg->unbind();
+	}
+
+	void updateSunMoon(float deltaTime) {
+
+		if (unlock) {
+			if (distance(Config::sunOrbitCenter, Config::targetOrbitCenter) < 0.01f) {
+				Config::sunOrbitCenter = Config::targetOrbitCenter;
+				Config::shadowTargetCenter = Config::targetOrbitCenter;
+			}
+			float interpolationSpeed = 0.5f; // tweak as needed for speed
+			Config::sunOrbitCenter = mix(Config::sunOrbitCenter, Config::targetOrbitCenter, interpolationSpeed * deltaTime);
+			Config::shadowTargetCenter = Config::sunOrbitCenter;
+		}
+
+		float sunSpeed = 0.01f;
+		float angle = Config::previousAngle + deltaTime * sunSpeed;
+		Config::previousAngle = angle;
+		Config::sunPos.x = Config::sunOrbitCenter.x + 40.0f * cos(angle);
+		Config::sunPos.y = Config::sunOrbitCenter.y + 20.0f;
+		Config::sunPos.z = Config::sunOrbitCenter.z + 40.0f * sin(angle);
 	}
 
 	void render(float frametime, float animTime) {
@@ -5426,6 +5498,7 @@ public:
 		checkAllEnemies();
 		checkBossfight();
 		BossEnemyAttacks(frametime);
+		updateSunMoon(frametime);
 		restartGeneration();
 		//debugMessages();
 
@@ -5434,8 +5507,15 @@ public:
 		auto View = make_shared<MatrixStack>();
 		auto Model = make_shared<MatrixStack>();
 
-		vec3 lightPos = vec3(10); // Fixed light position above the scene
-		vec3 lightTarget = libraryCenter; // Light looks at library center
+		vec3 lightPos = Config::sunPos; // Fixed light position above the scene
+		float worldUnitsPerTexel = Config::ORTHO_SIZE / 8192.0f;
+		lightPos.x = floor(lightPos.x / worldUnitsPerTexel) * worldUnitsPerTexel;
+		lightPos.y = floor(lightPos.y / worldUnitsPerTexel) * worldUnitsPerTexel;
+		lightPos.z = floor(lightPos.z / worldUnitsPerTexel) * worldUnitsPerTexel;
+		vec3 lightTarget = Config::shadowTargetCenter; // Light looks at library center
+		float granularity = 0.25f; // world units per "step"
+		//vec3 snappedLightPos = floor(lightPos / granularity) * granularity;
+		//lightTarget = snappedLightPos;
 		vec3 lightDir = normalize(lightPos - lightTarget); // Light direction
 		vec3 lightUp = vec3(0, 1, 0);
 		vec3 lc = Config::LIGHT_COLOR;
@@ -5456,11 +5536,12 @@ public:
 
 			// Create a stable orthographic projection that covers the scene
 			float size = Config::ORTHO_SIZE;
-			LO = glm::ortho(-size, size, -size, size, 1.0f, 200.0f);
+			LO = glm::ortho(-size, size, -size, size, 0.1f, 200.0f);
 			glUniformMatrix4fv(DepthProg->getUniform("LP"), 1, GL_FALSE, value_ptr(LO));
 
 			// Create a stable light view matrix
 			LV = glm::lookAt(lightPos, lightTarget, lightUp);
+
 			glUniformMatrix4fv(DepthProg->getUniform("LV"), 1, GL_FALSE, value_ptr(LV));
 
 			CULL = false;
@@ -5477,7 +5558,6 @@ public:
 		// ===================================================
 		glViewport(0, 0, width, height); // Return viewport to screen size
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // Clear framebuffer
-		drawSkybox(SkyboxProg, Projection, View);
 
 		// Setup Camera
 		Projection->pushMatrix();
@@ -5485,6 +5565,9 @@ public:
 		View->pushMatrix();
 		View->loadIdentity();
 		View->lookAt(eye, lookAt, up); // Use updated eye/lookAt
+
+		currentSkyboxTex = skyboxTextures["day"];
+		drawSkybox(SkyboxProg, Projection, View);
 
 		ExtractVFPlanes(Projection->topMatrix(), View->topMatrix(), planes); // Update frustum planes
 
@@ -5535,6 +5618,8 @@ public:
 		//===================
 		// Second Pass Cont.
 		//===================
+
+		drawSunMoon(Projection->topMatrix(), View->topMatrix());
 
 		if (Config::DEBUG_AABBS) {
 			drawAABB(playerBB->min, playerBB->max, debugLineProg, Projection, View, { 1,0,0 });
@@ -5674,36 +5759,34 @@ public:
 		if (key == GLFW_KEY_K && action == GLFW_PRESS) {
 			//Debug Camera
 			debugCamera = !debugCamera;
-
-			if (debugCamera) {
-				if (key == GLFW_KEY_L && action == GLFW_PRESS) {
-					cursor_visable = !cursor_visable;
-					if (cursor_visable) {
-						glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-					}
-					else {
-						glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-					}
+		}
+		if (debugCamera) {
+			if (key == GLFW_KEY_L && action == GLFW_PRESS) {
+				cursor_visable = !cursor_visable;
+				if (cursor_visable) {
+					glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+				}
+				else {
+					glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
 				}
 			}
-			if (debugCamera && key == GLFW_KEY_N && action == GLFW_PRESS) {
-				//Debug Enemy Movement
-				enemyActive = !enemyActive;
-			}
-			if (debugCamera && key == GLFW_KEY_M && action == GLFW_PRESS) {
-				//Debug Player Movement Toggle
-				playerActive = !playerActive;
-			}
-			// Lighting / Shader settings
-			if (key == GLFW_KEY_1 && action == GLFW_PRESS) Config::SATURATION -= 0.1f;
-			if (key == GLFW_KEY_2 && action == GLFW_PRESS) Config::SATURATION += 0.1f;
-			if (key == GLFW_KEY_3 && action == GLFW_PRESS) Config::EXPOSURE += 0.1f;
-			if (key == GLFW_KEY_4 && action == GLFW_PRESS) Config::EXPOSURE -= 0.1f;
-			if (key == GLFW_KEY_9 && action == GLFW_PRESS) Config::DEBUG_LIGHTING = !Config::DEBUG_LIGHTING;
-			if (key == GLFW_KEY_0 && action == GLFW_PRESS) Config::DEBUG_GEOM = !Config::DEBUG_GEOM;
-			if (key == GLFW_KEY_B && action == GLFW_PRESS) Config::DEBUG_AABBS = !Config::DEBUG_AABBS;
-
 		}
+		if (debugCamera && key == GLFW_KEY_N && action == GLFW_PRESS) {
+			//Debug Enemy Movement
+			enemyActive = !enemyActive;
+		}
+		if (debugCamera && key == GLFW_KEY_M && action == GLFW_PRESS) {
+			//Debug Player Movement Toggle
+			playerActive = !playerActive;
+		}
+		// Lighting / Shader settings
+		if (debugCamera && key == GLFW_KEY_1 && action == GLFW_PRESS) Config::SATURATION -= 0.1f;
+		if (debugCamera && key == GLFW_KEY_2 && action == GLFW_PRESS) Config::SATURATION += 0.1f;
+		if (debugCamera && key == GLFW_KEY_3 && action == GLFW_PRESS) Config::EXPOSURE += 0.1f;
+		if (debugCamera && key == GLFW_KEY_4 && action == GLFW_PRESS) Config::EXPOSURE -= 0.1f;
+		if (debugCamera && key == GLFW_KEY_9 && action == GLFW_PRESS) Config::DEBUG_LIGHTING = !Config::DEBUG_LIGHTING;
+		if (debugCamera && key == GLFW_KEY_0 && action == GLFW_PRESS) Config::DEBUG_GEOM = !Config::DEBUG_GEOM;
+		if (debugCamera && key == GLFW_KEY_B && action == GLFW_PRESS) Config::DEBUG_AABBS = !Config::DEBUG_AABBS;
 
 		if (key == GLFW_KEY_GRAVE_ACCENT && action == GLFW_PRESS)
 		{
@@ -5836,11 +5919,13 @@ public:
 		}
 		if (key == GLFW_KEY_U && action == GLFW_PRESS && (keysCollectedCount == keysneededToCollect || debugCamera)) {
 			unlock = true;
+			Config::targetOrbitCenter = Config::BOSS_CENTER;
 			canFightboss = true;
 		}
 
 		if (key == GLFW_KEY_P && action == GLFW_PRESS) {
 			unlock = true;
+			Config::targetOrbitCenter = Config::BOSS_CENTER;
 			canFightboss = true;
 		}
 
@@ -5963,8 +6048,7 @@ int main(int argc, char* argv[]) {
 	application->initGeom(resourceDir);
 	application->initGround();
 	application->initQuadTree();
-	application->initSkyboxCube();
-	application->initSkyboxTex(resourceDir);
+	application->initSkyboxes(resourceDir);
 	application->initCircularBorder();
 	application->initAABBWireframe();
 
@@ -5998,7 +6082,7 @@ int main(int argc, char* argv[]) {
 		float AnimcurrFrame = glfwGetTime();
 		application->AnimDeltaTime = AnimcurrFrame - application->AnimLastFrame;
 		application->AnimLastFrame = AnimcurrFrame;
-		// Render scene.
+		// Render scene
 		application->render(deltaTime, application->AnimDeltaTime);
 
 		// Swap front and back buffers
