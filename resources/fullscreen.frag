@@ -6,7 +6,7 @@ uniform sampler2D screenTexture;
 uniform float rotation; // angle in radians
 
 void main() {
-    // Center around (0.5, 0.5)
+    // Center around (0.55, 0.55)
     vec2 centeredCoord = TexCoord - vec2(0.5);
     float cosTheta = cos(rotation);
     float sinTheta = sin(rotation);

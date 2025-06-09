@@ -142,6 +142,9 @@ public:
 	AssimpModel *border, *lock, *lockHandle, *key;
 	AssimpModel *bookCover, *bookPaper;
 	AssimpModel *stoneGolem;
+	AssimpModel *door_rig;
+	Animation *door_open, *door_close;
+	Animator *door_animator;
 
 	//key collectibles
 	std::vector<Collectible> keyCollectibles;
@@ -250,6 +253,8 @@ public:
 	bool restartGen = false;
 	bool bossfightstarted = false;
 	bool bossfightended = false;
+	bool doorOpened = false;
+	float doorOpenProgress = 0.0f; // Progress of the door opening animation
 
 	// -- Camera Occlusion Query --
 	GLuint occlusionQueryID = 0; // Occlusion query ID
@@ -298,6 +303,7 @@ public:
 	std::vector<glm::mat4> circularBookShelfMatrices;
 	glm::vec3 bossEntrancePos;
 	float bossEntranceRot;
+	BossRoomGen::transform bossEntrancetransforms;
 
 	std::vector<glm::mat4> vCircularBookShelfMatrices;
 	int activeEnemiesCount = 0; // Count of active enemies in the scene
@@ -1297,6 +1303,14 @@ public:
 
 		stoneGolem = new AssimpModel(resourceDirectory + "/StoneGolem/Stone.obj");
 		stoneGolem->assignTexture("texture_diffuse", resourceDirectory + "/StoneGolem/textures/diffuso.tif");
+
+		door_rig = new AssimpModel(resourceDirectory + "/cluster_assets/door/door_anim.dae");
+		door_rig->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/door/Door_diffuse.png");
+
+		//Getting Player animations
+		door_open = new Animation(resourceDirectory + "/cluster_assets/door/door_anim.dae", door_rig, 0);
+		door_close = new Animation(resourceDirectory + "/cluster_assets/door/door_anim.dae", door_rig, 1);
+		door_animator = new Animator(door_open);
 
 		/*
 		* KEY COLLECTIBLE IS BROKEN. THIS IS THE COMMENTED OUT PROGRESS OF MADILINE SINCE PROJECT DOESN'T COMPILE WITH IT
@@ -2845,7 +2859,7 @@ public:
 		shader->unbind();
 	}
 
-	void drawBossRoom(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model, bool cullFlag) {
+	void drawBossRoom(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model, bool cullFlag, float animTime) {
 		if (!shader || !Model) return;
 		shader->bind();
 
@@ -2866,24 +2880,34 @@ public:
 						// Model->loadIdentity();
 						// Model->translate(vec3(i, libraryCenter.y, j)); // Position set in class members
 						// Model->rotate(glm::radians(bossGrid[gridPos].transformData.rotation), vec3(0, 1, 0)); // Rotate for left/right walls
-						// Model->scale(bossGrid[gridPos].transformData.scale); // Scale set in class members
+						// Model->scale(bossGrid[gr`idPos].transformData.scale); // Scale set in class members
 						// setModel(shader, Model);
 						// book_shelf1->Draw(shader); // Use the bookshelf model for the border
 						// Model->popMatrix();
 					}
 					else if (bossGrid[gridPos].type == BossRoomGen::CellType::ENTRANCE) {
 						if (bossGrid[gridPos].borderType == BossRoomGen::BorderType::ENTRANCE_MIDDLE) {
-							Model->pushMatrix();
-							Model->loadIdentity();
-							Model->translate(vec3(i, 0, j));
-							Model->rotate(glm::radians(bossGrid[gridPos].transformData.rotation), vec3(0, 1, 0)); // Rotate for left/right walls
-							Model->scale(bossGrid[gridPos].transformData.scale); // Scale set in class members
-							setModel(shader, Model);
-							if (unlock == false) {
-								door->Draw(shader); // Use the door model for the entrance
-							}
 
-							Model->popMatrix();
+
+
+							// Model->pushMatrix();
+							// Model->loadIdentity();
+							// Model->translate(vec3(i, 2.0f, j));
+							// Model->rotate(glm::radians(bossGrid[gridPos].transformData.rotation + 180.0f), vec3(0, 1, 0)); // Rotate for left/right walls
+							// Model->scale(bossGrid[gridPos].transformData.scale); // Scale set in class members
+							// // if (unlock == false) {
+							// // 	door->Draw(shader); // Use the door model for the entrance
+
+
+
+							// // }
+							// if (shader->hasUniform("hasBones")) glUniform1i(shader->getUniform("hasBones"), GL_TRUE);
+							// if (shader->hasUniform("texOnly")) glUniform1i(shader->getUniform("texOnly"), GL_TRUE);
+							// setModel(shader, Model);
+							// if (shader->hasUniform("texOnly")) glUniform1i(shader->getUniform("texOnly"), GL_FALSE);
+							// door_rig->Draw(shader); // Use the door model for the entrance
+							// if (shader->hasUniform("hasBones")) glUniform1i(shader->getUniform("hasBones"), GL_FALSE);
+							// Model->popMatrix();
 						}
 						else if (bossGrid[gridPos].borderType == BossRoomGen::BorderType::ENTRANCE_SIDE) {
 							Model->pushMatrix();
@@ -3060,22 +3084,66 @@ public:
 		shader->unbind();
 	}
 
-	void drawDoor(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
-		if (!shader || !Model || !cube) return; // Need cube model
+	void drawDoor(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model, bool cullFlag, float animTime) {
+		if (!shader || !Model || !door_rig) return; // Need cube model
 
 		shader->bind();
 
+		if (bossfightended || restartGen) {
+			door_animator->resetAnimation();
+			doorOpened = false; // Reset door opened state
+			doorOpenProgress = 0.0f; // Reset door open progress
+		}
+
+		if (animTime != 0.0) {
+			if (unlock && !doorOpened){
+				door_animator->UpdateAnimationOnce(0.25 * animTime);
+				if (door_animator->IsFinished()) {
+					std::cout << "Door opened!" << std::endl;
+					doorOpened = true; // Mark the door as opened
+					doorOpenProgress = 0.25f * animTime; // Store the progress
+				}
+			} else if (unlock && doorOpened) {
+				door_animator->UpdateAnimationOnce(0.0f); // Keep the door open
+			}
+			else {
+				door_animator->UpdateAnimation(0.0f);
+			}
+		}
+
+		// Update bone matrices
+		vector<glm::mat4> transforms = door_animator->GetFinalBoneMatrices();
+
+
+		if (shader->hasUniform("finalBonesMatrices[0]")) {
+			int numBones = std::min((int)transforms.size(), Config::MAX_BONES);
+			for (int i = 0; i < numBones; ++i) {
+				string uniformName = "finalBonesMatrices[" + std::to_string(i) + "]";
+				glUniformMatrix4fv(shader->getUniform(uniformName), 1, GL_FALSE, value_ptr(transforms[i]));
+			}
+		}
+		glm::vec3 doorPos = vec3(bossEntrancetransforms.position.x, bossEntrancetransforms.position.y, bossEntrancetransforms.position.z);
+		if (!cullFlag || !ViewFrustCull(doorPos, 2.0f, planes)) {
 		Model->pushMatrix();
 		Model->loadIdentity();
-		Model->translate(doorPosition); // Position set in class members
-		Model->scale(doorScale);      // Scale set in class members
+		Model->translate(vec3(bossEntrancetransforms.position.x, bossEntrancetransforms.position.y, bossEntrancetransforms.position.z)); // Position set in class members
+		Model->rotate(glm::radians(bossEntrancetransforms.rotation), vec3(0, 1, 0)); // Rotate for left/right walls
+		Model->rotate(glm::radians(-90.0f), vec3(1, 0, 0)); // Rotate to face up
+		Model->scale(bossEntrancetransforms.scale); // Scale set in class members
+		// if (unlock == false) {
+		// 	door->Draw(shader); // Use the door model for the entrance
 
-		SetMaterial(shader, Material::wood); // Use Wood material
 
+
+		// }
+		if (shader->hasUniform("hasBones")) glUniform1i(shader->getUniform("hasBones"), GL_TRUE);
+		if (shader->hasUniform("texOnly")) glUniform1i(shader->getUniform("texOnly"), GL_TRUE);
 		setModel(shader, Model);
-		cube->Draw(shader);
-
+		if (shader->hasUniform("texOnly")) glUniform1i(shader->getUniform("texOnly"), GL_FALSE);
+		door_rig->Draw(shader); // Use the door model for the entrance
+		if (shader->hasUniform("hasBones")) glUniform1i(shader->getUniform("hasBones"), GL_FALSE);
 		Model->popMatrix();
+		}
 		shader->unbind();
 	}
 
@@ -5059,7 +5127,9 @@ public:
 		// 2. Draw the Static Library Shelves
 		drawLibrary(prog, Model, CULL);
 
-		drawBossRoom(prog, Model, CULL); // Draw the boss room
+		drawBossRoom(prog, Model, CULL, 0.0); // Draw the boss room
+
+		drawDoor(prog, Model, CULL, 0.0);
 		#endif
 
 		drawPlayer(prog, Model, 0.0);
@@ -5112,7 +5182,9 @@ public:
 		// 2. Draw the Static Library Shelves
 		drawLibrary(prog, Model, true);
 
-		drawBossRoom(prog, Model, true); // Draw the boss room
+		drawBossRoom(prog, Model, true, animTime); // Draw the boss room
+
+		drawDoor(prog, Model, true, animTime);
 		#endif
 
 		// disable color writes
@@ -5258,7 +5330,11 @@ public:
 					case CT::ENTRANCE:
 						if (cell.borderType == BT::ENTRANCE_MIDDLE) {
 							bossEntrancePos = pos;
-							bossEntranceRot = rotation + 180.0f; // Adjust rotation for entrance
+							bossEntranceRot = rotation; // Adjust rotation for entrance
+
+							bossEntrancetransforms.position = pos;
+							bossEntrancetransforms.rotation = rotation; // Adjust rotation for entrance
+							bossEntrancetransforms.scale = scale;
 						}
 						break;
 
@@ -5527,7 +5603,8 @@ public:
 			#else
 			drawCircularBorder(ShadowProg, false); // Draw the circular library shelves
 			drawLibrary(ShadowProg, Model, false);
-			drawBossRoom(ShadowProg, Model, false);
+			drawBossRoom(ShadowProg, Model, false, 0.0);
+			drawDoor(ShadowProg, Model, false, 0.0);
 			#endif
 			// drawLibInstancing(ShadowProg, false); // Draw the library shelves without culling
 			drawBossEnemy(ShadowProg, Model);
@@ -5866,6 +5943,7 @@ int main(int argc, char* argv[]) {
 		<< endl << "While in Debug Camera mode, M toggles player movement and N toggles enemy movement" << endl;
 
 	// Title screen
+	initTitleScreen(resourceDir); // Initialize the title screen
 	while (application->gameState == GameState::TITLE_SCREEN && !glfwWindowShouldClose(windowManager->getHandle()))
 	{
 		int width, height;
@@ -5873,8 +5951,16 @@ int main(int argc, char* argv[]) {
 
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // Clear the screen
 
-		initTitleScreen(resourceDir); // Initialize the title screen
+		glEnable(GL_BLEND); // Enable blending for text rendering
+		RenderText(application->textProg, "Press Enter to Start", width / 2 - 500.0f, height / 2.0f - 50.0f, 3.0f, glm::vec3(1.0f, 1.0f, 0.9f),
+				width, height);
+		RenderText(application->textProg, "THE CAT WIZARD", width / 2 - 500.0f, height / 2.0f + 20.0f, 5.0f, glm::vec3(1.0f, 1.0f, 0.9f),
+				width, height);
+		glDisable(GL_BLEND); // Disable blending after text rendering
+
+
 		drawTitleScreen(titleShader, width, height); // Draw the title screen
+
 
 		glfwSwapBuffers(windowManager->getHandle()); // Swap buffers to display the title screen
 		glfwPollEvents(); // Poll for events
