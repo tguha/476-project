@@ -6171,6 +6171,7 @@ int main(int argc, char* argv[]) {
 		<< endl << "While in Debug Camera mode, M toggles player movement and N toggles enemy movement" << endl;
 
 	// Title screen
+	// initTitleScreenFBO(resourceDir, width, height);
 	initTitleScreen(resourceDir); // Initialize the title screen
 	while (application->gameState == GameState::TITLE_SCREEN && !glfwWindowShouldClose(windowManager->getHandle()))
 	{
@@ -6185,7 +6186,6 @@ int main(int argc, char* argv[]) {
 		RenderText(application->textProg, "THE CAT WIZARD", width / 2 - 500.0f, height / 2.0f + 20.0f, 5.0f, glm::vec3(1.0f, 1.0f, 0.9f),
 				width, height);
 		glDisable(GL_BLEND); // Disable blending after text rendering
-
 
 		drawTitleScreen(titleShader, width, height); // Draw the title screen
 
