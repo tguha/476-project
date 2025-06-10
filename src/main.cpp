@@ -255,6 +255,8 @@ public:
 	bool bossfightended = false;
 	bool doorOpened = false;
 	float doorOpenProgress = 0.0f; // Progress of the door opening animation
+	bool allLocksUnlocked = false;
+	bool interactedwithBook = false; // Flag to check if the player has interacted with a book
 
 	// -- Camera Occlusion Query --
 	GLuint occlusionQueryID = 0; // Occlusion query ID
@@ -320,6 +322,8 @@ public:
 
 	int currentSpellSlotIndex = 1; // Current spell type in use
 	SpellType currentPlayerSpellType = spellSlots[currentSpellSlotIndex]; // Player starts with Fire spell by default
+
+	std::vector<LocksOnDoor> lockOnDoors;
 
 	// --- Paw Prints ---
 	// CPU: record and upload a list of paw prints
@@ -867,6 +871,7 @@ public:
 		bossRoom->generate(bossGridSize, gridSize, glm::vec3(0, 0, 0), bossEntranceDir);
 		bossGrid = bossRoom->getGrid();
 		addLibGrnd(bossGridSize.x * 2, bossGridSize.y * 2, 0.0f, bossRoom->getWorldOrigin(), libraryGroundTex);
+
 	}
 
 	void initInstancingMatrices() {
@@ -1341,6 +1346,8 @@ public:
 		bossEnemy = new BossEnemy(bossSpawnPos, BOSS_HP_MAX, stoneGolem, vec3(1.3f, 0.8f, 1.0f), vec3(0, 1, 0), BOSS_SPECIAL_ATTACK_COOLDOWN, SpellType::ICE);
 
 		initTextQuad();
+		initCircularBorder();
+		initLocks();
 	}
 
 	void SetMaterial(shared_ptr<Program> shader, Material color) {
@@ -2442,6 +2449,7 @@ public:
 			initInstancingMatrices();
 			#endif
 			initCircularBorder();
+			initLocks();
 		}
 	}
 
@@ -3089,12 +3097,6 @@ public:
 
 		shader->bind();
 
-		if (bossfightended || restartGen) {
-			door_animator->resetAnimation();
-			doorOpened = false; // Reset door opened state
-			doorOpenProgress = 0.0f; // Reset door open progress
-		}
-
 		if (animTime != 0.0) {
 			if (unlock && !doorOpened){
 				door_animator->UpdateAnimationOnce(0.25 * animTime);
@@ -3200,6 +3202,7 @@ public:
 		float cellDepth = gridWorldDepth / (float)grid.getSize().y;
 
 		bool interacted = false;
+		interactedwithBook = false;
 
 		int gridX = library->mapXtoGridX(player->getPosition().x);
 		int gridZ = library->mapZtoGridY(player->getPosition().z);
@@ -3261,6 +3264,7 @@ public:
 						newBook.startFalling(groundY, player->getPosition());
 
 						interacted = true;
+						interactedwithBook = true; // Set this to true to indicate interaction occurred
 
 					}
 				}
@@ -4064,7 +4068,7 @@ public:
 		// if(shader->hasUniform("hasEmittance")) glUniform1i(shader->getUniform("hasEmittance"), 1);
 		// if(shader->hasUniform("MatEmitt")) glUniform3f(shader->getUniform("MatEmitt"), 1.0f, 1.0f, 0.8f);
 
-		for (const auto& proj : activeSpells) {
+		for (auto& proj : activeSpells) {
 			if (!proj.active) continue;
 			float current_particle_system_time = particleSystem->getCurrentTime();
 
@@ -4082,39 +4086,49 @@ public:
 			float p_scale_max = 0.25f;
 
 			int current_particles_to_spawn = 2; // Set a fixed number of particles for all orbs
+			bool isHealSpell = false;
 			// Customize particle aura based on spell type
 			switch (currentPlayerSpellType) {
 				case SpellType::FIRE:
 					// current_particles_to_spawn = 15; // Increased for density with short life
-					p_color_start = glm::vec4(1.0f, 0.5f, 0.1f, 0.8f);
-					p_color_end = glm::vec4(0.9f, 0.2f, 0.0f, 0.3f);
-					p_scale_min = 0.25f;
-					p_scale_max = 0.45f;
+					p_color_start = glm::vec4(1.0f, 0.6f, 0.1f, 1.0f);
+					p_color_end = glm::vec4(0.9f, 0.2f, 0.0f, 0.5f);
+					p_scale_min = 0.45f; // Increased size
+					p_scale_max = 0.85f;
 					break;
 				case SpellType::ICE:
 					// current_particles_to_spawn = 15; // Increased for density
-					p_color_start = glm::vec4(0.5f, 0.8f, 1.0f, 0.8f);
+					p_color_start = glm::vec4(0.5f, 0.8f, 1.0f, 1.0f);
 					p_color_end = glm::vec4(0.2f, 0.5f, 0.8f, 0.3f);
-					p_scale_min = 0.25f;
-					p_scale_max = 0.45f;
+					p_scale_min = 0.4f; // Increased size
+					p_scale_max = 0.75f;
 					break;
 				case SpellType::LIGHTNING:
 					// current_particles_to_spawn = 15; // Increased for density
-					p_color_start = glm::vec4(1.0f, 1.0f, 0.5f, 0.8f);
+					p_color_start = glm::vec4(1.0f, 1.0f, 0.5f, 1.0f);
 					p_color_end = glm::vec4(0.8f, 0.8f, 0.2f, 0.3f);
-					p_scale_min = 0.25f;
-					p_scale_max = 0.45f;
+					p_scale_min = 0.35f; // Slightly smaller but more numerous for lightning
+					p_scale_max = 0.6f;
 					break;
+				case SpellType::HEAL:
+					p_color_start = glm::vec4(0.2f, 1.0f, 0.2f, 1.0f);
+					p_color_end = glm::vec4(0.2, 1.0f, 0.2f, 1.0f);
+					p_scale_min = 0.35f; // Slightly smaller but more numerous for lightning
+					p_scale_max = 0.6f;
+					p_lifespan_max = 0.3f; // Longer lifespan for healing effect
+					p_lifespan_min = 0.1f; // Longer lifespan for healing effect
+					isHealSpell = true; // Special case for healing
+					break;
+				case SpellType::NONE:
 				default:
-					// current_particles_to_spawn is 15 (standardized)
-					// p_color_start and p_color_end use orb.color
-					// p_lifespan_min/max are standardized
-					// Make scales consistent with other types:
-					p_scale_min = 0.25f;
-					p_scale_max = 0.45f;
-					break;
+					return; // No valid spell type selected, skip drawing
 			}
-			particleSystem->spawnParticleBurst(proj.position, // Emit from orb center
+			glm::vec3 projPosition = proj.position;
+			if (isHealSpell) {
+				projPosition = player->getPosition() + vec3(Config::randFloat(-0.5f, 0.5f), Config::randFloat(0.8f, 0.0f), Config::randFloat(-0.5f, 0.5f)); // Randomize position around player for heal
+				current_particles_to_spawn = 5; // More particles for healing effect
+			}
+			particleSystem->spawnParticleBurst(projPosition, // Emit from orb center
 												glm::vec3(0,1,0), // Emit upwards slowly or randomly
 												current_particles_to_spawn,
 												current_particle_system_time,
@@ -4123,7 +4137,7 @@ public:
 												p_lifespan_min, p_lifespan_max,
 												p_color_start, p_color_end,
 												p_scale_min, p_scale_max);
-
+			if (isHealSpell) continue; // Skip drawing sphere for heal spell
 			Model->pushMatrix();
 			Model->loadIdentity(); // Start from identity for projectile
 
@@ -4654,56 +4668,161 @@ public:
 		}
 	}
 
-	void drawLock(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
+	void drawLock(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model, float currentTime) {
 		//need models
 		shader->bind();
 
 
-		//top lock
+		// //top lock
 
-		Model->pushMatrix();
-			Model->loadIdentity();
-			// Model->translate(vec3(0.0f, 2.5f, 38.5f));
-			Model->translate(vec3(bossEntrancePos.x, bossEntrancePos.y + 2.5f, bossEntrancePos.z));  //doorPosition
-			Model->rotate(glm::radians(bossEntranceRot), vec3(0.0f, 1.0f, 0.0f));
-			// Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
-			Model->scale(0.1f);
-			SetMaterial(shader, Material::gold); //gold
-			setModel(shader, Model);
-			lock->Draw(shader);
-			lockHandle->Draw(shader);
-		Model->popMatrix();
+		// Model->pushMatrix();
+		// 	Model->loadIdentity();
+		// 	// Model->translate(vec3(0.0f, 2.5f, 38.5f));
+		// 	Model->translate(vec3(bossEntrancePos.x, bossEntrancePos.y + 2.5f, bossEntrancePos.z));  //doorPosition
+		// 	Model->rotate(glm::radians(bossEntranceRot), vec3(0.0f, 1.0f, 0.0f));
+		// 	// Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+		// 	Model->scale(0.1f);
+		// 	SetMaterial(shader, Material::gold); //gold
+		// 	setModel(shader, Model);
+		// 	lock->Draw(shader);
+		// 	lockHandle->Draw(shader);
+		// Model->popMatrix();
 
-		//middle lock
-		Model->pushMatrix();
-			Model->loadIdentity();
-			// Model->translate(vec3(0.0f, 1.5f, 38.5f));  //doorPosition
-			Model->translate(vec3(bossEntrancePos.x, bossEntrancePos.y + 1.5f, bossEntrancePos.z));
-			Model->rotate(glm::radians(bossEntranceRot), vec3(0.0f, 1.0f, 0.0f));
-			// Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
-			Model->scale(0.1f);
-			SetMaterial(shader, Material::gold); //gold
-			setModel(shader, Model);
-			lock->Draw(shader);
-			lockHandle->Draw(shader);
-		Model->popMatrix();
+		// //middle lock
+		// Model->pushMatrix();
+		// 	Model->loadIdentity();
+		// 	// Model->translate(vec3(0.0f, 1.5f, 38.5f));  //doorPosition
+		// 	Model->translate(vec3(bossEntrancePos.x, bossEntrancePos.y + 1.5f, bossEntrancePos.z));
+		// 	Model->rotate(glm::radians(bossEntranceRot), vec3(0.0f, 1.0f, 0.0f));
+		// 	// Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+		// 	Model->scale(0.1f);
+		// 	SetMaterial(shader, Material::gold); //gold
+		// 	setModel(shader, Model);
+		// 	lock->Draw(shader);
+		// 	lockHandle->Draw(shader);
+		// Model->popMatrix();
 
-		//lower lock
-		Model->pushMatrix();
-			Model->loadIdentity();
-			// Model->translate(vec3(0.0f, 0.5f, 38.5f));
-			Model->translate(vec3(bossEntrancePos.x, bossEntrancePos.y + 0.5f, bossEntrancePos.z));
-			Model->rotate(glm::radians(bossEntranceRot), vec3(0.0f, 1.0f, 0.0f));
-			// Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
-			Model->scale(0.1f);
-			SetMaterial(shader, Material::gold); //gold
-			setModel(shader, Model);
-			lock->Draw(shader);
-			lockHandle->Draw(shader);
-		Model->popMatrix();
+		// //lower lock
+		// Model->pushMatrix();
+		// 	Model->loadIdentity();
+		// 	// Model->translate(vec3(0.0f, 0.5f, 38.5f));
+		// 	Model->translate(vec3(bossEntrancePos.x, bossEntrancePos.y + 0.5f, bossEntrancePos.z));
+		// 	Model->rotate(glm::radians(bossEntranceRot), vec3(0.0f, 1.0f, 0.0f));
+		// 	// Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+		// 	Model->scale(0.1f);
+		// 	SetMaterial(shader, Material::gold); //gold
+		// 	setModel(shader, Model);
+		// 	lock->Draw(shader);
+		// 	lockHandle->Draw(shader);
+		// Model->popMatrix();
+
+		for (auto& l : lockOnDoors) {
+			if (l.animDone) continue; // Skip if animation is done
+			if (l.isLocked) {
+				Model->pushMatrix();
+				Model->loadIdentity();
+				Model->translate(l.position);
+				Model->rotate(glm::radians(l.RotY), vec3(0.0f, 1.0f, 0.0f));
+				Model->scale(0.1f);
+				SetMaterial(shader, Material::gold); // Use lock's material
+				setModel(shader, Model);
+				lock->Draw(shader); // Draw the lock model
+				lockHandle->Draw(shader); // Draw the lock handle model
+				Model->popMatrix();
+			} else {
+				// animate
+				float animationDuration = 1.5f;
+				float fallStartDelay = 0.5f;
+				float targetRot = -30.0f; // Target rotation for the handle
+
+				float elapsedTime = currentTime - l.unlockStartTime;
+				elapsedTime = std::max(0.0f, elapsedTime); // Ensure non-negative elapsed time
+
+				float handleRot = 0.0f;
+				float yDrop = 0.0f;
+
+				// Rotate the lock first
+				if (elapsedTime <= fallStartDelay) {
+					float t = elapsedTime / fallStartDelay;
+					handleRot = -30.0f * t; // Rotate from 0 to -30 degrees over the fallStartDelay
+				} else {
+					handleRot = -30.0f; // Keep at -30 degrees after the delay
+				}
+
+				// Then drop the handle
+				if (elapsedTime > fallStartDelay && l.position.y >= 0.0f) {
+					float t = (elapsedTime - fallStartDelay) / (animationDuration - fallStartDelay);
+					t = std::min(t, 1.0f); // Clamp to [0, 1]
+					yDrop = -0.5f * t; // Fall down by 0.5 units over the remaining duration
+				}
+
+				l.position = vec3(l.position.x, l.position.y + yDrop, l.position.z); // Update position with drop
+				l.RotX = handleRot; // Update rotation with handle rotation
+
+
+				Model->pushMatrix();
+					Model->loadIdentity();
+					// Model->translate(vec3(0.0f, 2.5f, 38.5f));  //doorPosition
+					Model->translate(l.position);
+					Model->rotate(glm::radians(l.RotY), vec3(0.0f, 1.0f, 0.0f));
+					Model->rotate(glm::radians(l.RotX), vec3(0.0f, 0.0f, 1.0f)); // Rotate the handle
+					// Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+					Model->scale(0.1f);
+					SetMaterial(shader, Material::gold); //gold
+					setModel(shader, Model);
+					lock->Draw(shader);
+				Model->popMatrix();
+
+				if (elapsedTime > fallStartDelay) {
+					Model->pushMatrix();
+						Model->loadIdentity();
+						// Model->translate(vec3(0.0f, 2.5f, 38.5f));
+						Model->translate(l.position);
+						Model->rotate(glm::radians(l.RotY), vec3(0.0f, 1.0f, 0.0f));
+						// Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+						Model->rotate(1 * glm::radians(15.0) + lTheta, vec3(0.0f, 0.0f, 1.0f)); //max -30?
+						Model->scale(0.1f);
+						// Model->rotate(  glm::radians(90.0) , vec3(0.0f, 1.0f, 0.0f)); //max -30
+						SetMaterial(shader, Material::brown); //brown
+						setModel(shader, Model);
+						lockHandle->Draw(shader);
+					Model->popMatrix();
+				} else {
+					Model->pushMatrix();
+						Model->loadIdentity();
+						// Model->translate(vec3(0.0f, 2.5f, 38.5f));
+						Model->translate(l.position);
+						Model->rotate(glm::radians(l.RotY), vec3(0.0f, 1.0f, 0.0f));
+						// Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+						Model->scale(0.1f);
+						// Model->rotate(  glm::radians(90.0) , vec3(0.0f, 1.0f, 0.0f)); //max -30
+						SetMaterial(shader, Material::brown); //brown
+						setModel(shader, Model);
+						lockHandle->Draw(shader);
+					Model->popMatrix();
+				}
+				if (elapsedTime >= animationDuration) {
+					// checks if lock is done animating
+					l.animDone = true; // Mark this lock as done animating
+				}
+			}
+
+		}
 
 		shader->unbind();
 
+		bool allAnimsDone = true;
+		for (const auto& l : lockOnDoors)  {
+			if (!l.animDone) {
+				allAnimsDone = false; // If any lock is still animating, set to false
+				break;
+			}
+		}
+
+		if (allAnimsDone) {
+			unlock = true;
+			canFightboss = true;
+		}
 
 	}
 
@@ -4907,48 +5026,78 @@ public:
 
 		int collectedKeyDrawIndex = 0;
 		shader->bind();
-		if (!unlock) {
-			for (auto& key : keyCollectibles) {
-				glm::vec3 currentDrawPosition;
-				//float currentDrawScale = key.scale; // Use base scale
-				if (key.collected) {
-					// Calculate position behind the player (same logic as before)
-					float backOffset = 0.4f;
-					float upOffsetBase = 0.6f;
-					float stackOffset = key.scale * 2.5f;
-					float sideOffset = 0.15f;
-					glm::vec3 playerForward = normalize(manMoveDir);
-					glm::vec3 playerUp = glm::vec3(0.0f, 1.0f, 0.0f);
-					glm::vec3 playerRight = normalize(cross(playerForward, playerUp));
-					float currentUpOffset = upOffsetBase + (collectedKeyDrawIndex * stackOffset);
-					float currentSideOffset = (collectedKeyDrawIndex % 2 == 0 ? -sideOffset : sideOffset);
-					currentDrawPosition = player->getPosition() - playerForward * backOffset
-						+ playerUp * currentUpOffset
-						+ playerRight * currentSideOffset;
-					collectedKeyDrawIndex++;
+		for (int i = 0; i < keyCollectibles.size(); ++i) {
+			Collectible& key = keyCollectibles[i];
+			glm::vec3 currentDrawPosition;
+			float currentScale = 1.0f;
+			float Rotx = glm::radians(0.0f); // Rotation around x-axis
+			float Roty = glm::radians(0.0f); // Rotation around y-axis
+			float Rotz = glm::radians(0.0f); // Rotation around z-axis
+			glm::vec3 secondPos = vec3(0.0f, 0.0f, 0.0f); // Placeholder for second position if needed
+			//float currentDrawScale = key.scale; // Use base scale
+			if (key.collected) {
+				// Calculate position behind the player (same logic as before)
+				float backOffset = 0.25f;
+				float upOffsetBase = 0.25f;
+				float stackOffset = 0.03f;
+				float sideOffset = 0.05f;
+				glm::vec3 playerForward = normalize(manMoveDir);
+				glm::vec3 playerUp = glm::vec3(0.0f, 1.0f, 0.0f);
+				glm::vec3 playerRight = normalize(cross(playerForward, playerUp));
+				// float currentUpOffset = upOffsetBase + (collectedKeyDrawIndex * stackOffset);
+				float currentSideOffset = -sideOffset - (collectedKeyDrawIndex * stackOffset); // Offset to the side for stacking
+				float currentUpOffset = upOffsetBase;
+				// float currentSideOffset = 0.0f;
+				currentDrawPosition = player->getPosition() - playerForward * backOffset
+					+ playerUp * currentUpOffset
+					+ playerRight * currentSideOffset;
+				collectedKeyDrawIndex++;
+				currentScale = 0.5f;
+				// Rotx = glm::radians(90.0f); // Rotate around x-axis for collected keys
+				float playerAngle = atan2(playerForward.z, playerForward.x);
+				Roty = playerAngle + glm::radians(90.0f); // Rotate around y-axis to face player direction
+			}
+			else if (key.keyUsed) {
+				// glm::vec3 baseOffset = vec3(0.0f, 0.3f, -0.25f); // Offset above the lock
+
+				// glm::mat4 rotationMat = glm::rotate(glm::mat4(1.0f), glm::radians(lockOnDoors[i].RotX), vec3(0.0f, 0.0f, 1.0f));
+				// glm::vec3 rotatedOffset = glm::vec3(rotationMat * glm::vec4(baseOffset, 1.0f));
+				if (lockOnDoors[i].RotX < 0.0f) {
+					secondPos = vec3(0.0f, 0.0f, -0.08f); // Offset above the lock
 				}
-				else {
-					currentDrawPosition = key.position; // Use the orb's current position (potentially animated by updateOrbs)
-				}
+				currentDrawPosition = lockOnDoors[i].position + vec3(0.0f, 0.3f, -0.25f);
 
-				// std::cout << "key position " << key.position.x << " " << key.position.y << " " << key.position.z << " " << std::endl;
+				currentScale = 1.5f; // Scale for used keys
+				Rotx = glm::radians(90.0f); // Rotate around x-axis for used keys
+				Roty = glm::radians(90.0f - lockOnDoors[i].RotX); // Rotate around y-axis for used keys
+				Rotz = glm::radians(180.0f); // Rotate around z-axis for used keys
+			} else {
+				// Use the key's position for drawing
+				currentDrawPosition = key.position;
+				currentScale = 2.0f;
+				Rotx = glm::radians(90.0f); // Rotate around x-axis for idle keys
+				Roty = glm::radians(-90.0f); // Rotate around y-axis for idle keys
+			}
 
-				// --- Set up transformations ---
-				Model->pushMatrix(); {
-					Model->loadIdentity();
-					Model->translate(currentDrawPosition); //last enemy pos
-					Model->rotate(glm::radians(90.0f), vec3(1.0f, 0.0f, 0.0f));
-					Model->rotate(glm::radians(-90.0f), vec3(0.0f, 1.0f, 0.0f));
-					Model->scale(2.0f);
+			// std::cout << "key position " << key.position.x << " " << key.position.y << " " << key.position.z << " " << std::endl;
+
+			// --- Set up transformations ---
+			Model->pushMatrix(); {
+				Model->loadIdentity();
+				Model->translate(currentDrawPosition); //last enemy pos
+				Model->rotate(Rotx, vec3(1.0f, 0.0f, 0.0f));
+				Model->rotate(Roty, vec3(0.0f, 1.0f, 0.0f));
+				Model->rotate(Rotz, vec3(0.0f, 0.0f, 1.0f));
+				Model->translate(secondPos); // Optional second position
+				Model->scale(currentScale);
 
 
-					// --- Set Material & Draw ---
-					SetMaterial(shader, Material::gold); //gold
-					setModel(shader, Model);
-					key.model->Draw(shader);
-				} Model->popMatrix();
-			} // End drawing loop
-		}
+				// --- Set Material & Draw ---
+				SetMaterial(shader, Material::gold); //gold
+				setModel(shader, Model);
+				key.model->Draw(shader);
+			} Model->popMatrix();
+		} // End drawing loop
 		shader->unbind();
 	}
 
@@ -5129,6 +5278,8 @@ public:
 
 		drawBossRoom(prog, Model, CULL, 0.0); // Draw the boss room
 
+		drawLock(prog, Model, (float)glfwGetTime());
+
 		drawDoor(prog, Model, CULL, 0.0);
 		#endif
 
@@ -5153,12 +5304,13 @@ public:
 		//drawCat(assimptexProg, Model);
 
 		//testing drawing lock and key
-		if (unlock) {
-			updateLock(prog, Model);
-		}
-		else {
-			drawLock(prog, Model);
-		}
+		// if (unlock) {
+		// 	updateLock(prog, Model);
+		// }
+		// else {
+		// 	drawLock(prog, Model);
+		// }
+
 
 		// orbCollectibles.emplace_back(sphere, orbSpawnPos, book.orbScale, book.orbColor);
 		// drawKey(prog2, Model);
@@ -5183,6 +5335,8 @@ public:
 		drawLibrary(prog, Model, true);
 
 		drawBossRoom(prog, Model, true, animTime); // Draw the boss room
+
+		drawLock(prog, Model, (float)glfwGetTime());
 
 		drawDoor(prog, Model, true, animTime);
 		#endif
@@ -5230,12 +5384,13 @@ public:
 		//drawCat(assimptexProg, Model);
 
 		//testing drawing lock and key
-		if (unlock) {
-			updateLock(prog, Model);
-		}
-		else {
-			drawLock(prog, Model);
-		}
+		// if (unlock) {
+		// 	updateLock(prog, Model);
+		// }
+		// else {
+		// 	drawLock(prog, Model);
+		// }
+
 		//drawKey(prog2, Model);
 
 
@@ -5375,6 +5530,77 @@ public:
 
 	}
 
+	void initLocks() {
+		lockOnDoors.clear();
+		int numLocks = keysneededToCollect;
+		for (int i = 0; i < numLocks; ++i) {
+			float height = bossEntrancetransforms.position.y + 0.5f + i * 1.0f; // Adjust height for each lock
+			glm::vec3 lockPos = glm::vec3(bossEntrancetransforms.position.x, height, bossEntrancetransforms.position.z);
+			LocksOnDoor lock;
+			lock.position = lockPos;
+			lock.RotY = bossEntrancetransforms.rotation + 180.0f;
+			lock.isLocked = true;
+			lockOnDoors.push_back(lock);
+		}
+
+		door_animator->resetAnimation();
+		doorOpened = false; // Reset door opened state
+	}
+
+	void interactWithLocks() {
+		if (lockOnDoors.empty()) return; // No locks to interact with
+		if (interactedwithBook) return; // If book is already interacted with, no need to check locks
+
+		float gridInteractionRadius = 1.5f;
+		float interactionRadius = 5.0f;
+		std::vector<const QuadElement*> objectElements;
+		bossRoomQuadTree->query(glm::vec2(player->getPosition().x, player->getPosition().z), glm::vec2(gridInteractionRadius), objectElements);
+		for (int i = 0; i < objectElements.size(); ++i) {
+			const QuadElement* e = objectElements[i];
+			BossRoomGen::Cell cell = bossGrid[e->grid_position];
+			if (cell.borderType == BossRoomGen::BorderType::ENTRANCE_MIDDLE) {
+				for (int j = 0; j < lockOnDoors.size(); ++j) {
+					LocksOnDoor& lock = lockOnDoors[j];
+					if (lock.interacted) continue; // Skip if lock is already interacted with
+					if (checkSphereCollision(player->getPosition(), interactionRadius, e->aabb_min, e->aabb_max)) {
+						if (j < keyCollectibles.size() && j < keysneededToCollect && keyCollectibles[j].collected) {
+							std::cout << "Interacting with lock " << j + 1 << std::endl;
+						} else {
+							std::cout << "No key collected for lock " << j + 1 << std::endl;
+							std::cout << "Collect keys to unlock the door!" << std::endl;
+							continue; // Skip to next lock if no key is collected
+						}
+
+							// If the lock is locked and the key is collected, unlock it
+						if (lock.isLocked && keyCollectibles[j].collected) {
+							lock.interacted = true; // Mark as interacted
+							lock.isLocked = false; // Unlock the lock
+							keyCollectibles[j].collected = false; // Remove the key from collectibles
+							keyCollectibles[j].keyUsed = true; // Mark the key as used
+							lock.unlockStartTime = (float)glfwGetTime(); // Start the unlock animation
+							std::cout << "Lock " << j + 1 << " unlocked!" << std::endl;
+						} else {
+							std::cout << "Lock " << j + 1 << " is already unlocked." << std::endl;
+						}
+					}
+				}
+			}
+		}
+	}
+
+	void checkLocks() {
+		if (lockOnDoors.empty()) return; // No locks to check
+		if (doorOpened) return; // If door is already opened, no need to check locks
+		allLocksUnlocked = true; // Assume all locks are unlocked unless we find a locked one
+
+		for (auto& lock : lockOnDoors) {
+			if (lock.isLocked) {
+				allLocksUnlocked = false; // Found a locked lock
+				return; // No need to check further
+			}
+		}
+	}
+
 	void render(float frametime, float animTime) {
 		// Get current frame buffer size
 		int width, height;
@@ -5393,10 +5619,11 @@ public:
 		updateProjectiles(frametime);
 		updateFTimeout(frametime);
 		particleSystem->update(frametime); // Update particles
-		checkAllEnemies();
+		// checkAllEnemies();
 		checkBossfight();
 		BossEnemyAttacks(frametime);
 		restartGeneration();
+		checkLocks();
 		//debugMessages();
 
 		// Create the matrix stacks
@@ -5798,10 +6025,11 @@ public:
 			//F Time out to avoid pointer crash
 			if (fTimeout <= 0) {
 				interactWithBooks();
+				interactWithLocks();
 				fTimeout = 3.0f;
 			}
 		}
-		if (key == GLFW_KEY_U && action == GLFW_PRESS && (keysCollectedCount == keysneededToCollect || debugCamera)) {
+		if (key == GLFW_KEY_U && action == GLFW_PRESS && (allLocksUnlocked || debugCamera)) {
 			unlock = true;
 			canFightboss = true;
 		}
@@ -5922,7 +6150,7 @@ int main(int argc, char* argv[]) {
 	application->initQuadTree();
 	application->initSkyboxCube();
 	application->initSkyboxTex(resourceDir);
-	application->initCircularBorder();
+	// application->initCircularBorder();
 	application->initAABBWireframe();
 
 	#if USE_INSTANCING

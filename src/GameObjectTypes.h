@@ -311,6 +311,7 @@ public:
     float levitationHeight = 0.6f;
     float levitationStartTime = 0.0f;
     float levitationDuration = 0.75f;
+    bool keyUsed = false; // For keys, to track if they have been used
 
     Collectible(AssimpModel* mdl, const glm::vec3& spawnPos, float scl, Material clrIn, SpellType type = SpellType::FIRE)
         : model(mdl), position(spawnPos), scale(scl), collected(false),
@@ -367,4 +368,15 @@ public:
 enum class GameState {
     TITLE_SCREEN,
     IN_GAME,
+};
+
+struct LocksOnDoor {
+    glm::vec3 position = glm::vec3(0.0f); // Position of the lock on the door
+    float RotX = 0.0f; // Rotation around X-axis
+    float RotY = 0.0f; // Rotation around Y-axis
+    float RotZ = 0.0f; // Rotation around Z-axis
+    bool isLocked = true;
+    bool interacted = false; // Whether the lock has been interacted with
+    float unlockStartTime = -1.0f; // Start time of the unlock animation
+    bool animDone = false; // Whether the unlock animation is done
 };
