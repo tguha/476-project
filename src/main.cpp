@@ -918,7 +918,7 @@ public:
 					case CT::ONLY_CHEST: addInstance(chestMatrices); break;
 					case CT::ONLY_TABLE:
 						addInstance(table_chairs1Matrices);
-						addLibGrnd(5.0f, 5.0f, 1.0f, vec3(i, libraryCenter.y + 0.1f, j), carpetTex);
+						addLibGrnd(5.0f, 5.0f, 1.0f, vec3(i, libraryCenter.y +0.01f, j), carpetTex);
 						break;
 					case CT::ONLY_CLOCK: addInstance(clockMatrices); break;
 					case CT::ONLY_BOOKSTAND: addInstance(bookstandMatrices); break;
@@ -930,7 +930,7 @@ public:
 							case OT::TABLE_AND_CHAIR1:
 							case OT::TABLE_AND_CHAIR2:
 								addInstance(table_chairs1Matrices);
-								addLibGrnd(5.0f, 5.0f, 1.0f, vec3(i, libraryCenter.y + 0.1f, j), carpetTex);
+								addLibGrnd(5.0f, 5.0f, 1.0f, vec3(i, libraryCenter.y +0.01f, j), carpetTex);
 								break;
 							case OT::CHEST: addInstance(chestMatrices); break;
 							case OT::CANDELABRA: addInstance(candelabraMatrices); break;
@@ -1261,7 +1261,7 @@ public:
 		book_shelf2->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/glowing_bookshelf_bake_diffuse.png");
 
 		candelabra = new AssimpModel(resourceDirectory + "/cluster_assets/candelabrum/Candelabrum.obj");
-		candelabra->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/candelabrum/textures/defaultobject_gloss.png");
+		candelabra->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/candelabrum/textures/defaultobject_gold.jpg");
 		candelabra->assignTexture("texture_specular", resourceDirectory + "/cluster_assets/candelabrum/textures/defaultobject_specular.png");
 		candelabra->assignTexture("texture_normal", resourceDirectory + "/cluster_assets/candelabrum/textures/defaultobject_normal.png");
 
@@ -2796,7 +2796,7 @@ public:
 							table_chairs1->Draw(shader);
 							Model->popMatrix();
 
-							addLibGrnd(5.0f, 5.0f, 1.0f, vec3(i, libraryCenter.y + 0.1f, j), carpetTex);
+							addLibGrnd(5.0f, 5.0f, 1.0f, vec3(i, libraryCenter.y +0.01f, j), carpetTex);
 						}
 						else if (grid[gridPos].clusterType == LibraryGen::ClusterType::ONLY_CLOCK) {
 							Model->pushMatrix();
@@ -2836,7 +2836,7 @@ public:
 								table_chairs1->Draw(shader);
 								Model->popMatrix();
 
-								addLibGrnd(5.0f, 5.0f, 1.0f, vec3(i, libraryCenter.y + 0.1f, j), carpetTex);
+								addLibGrnd(5.0f, 5.0f, 1.0f, vec3(i, libraryCenter.y +0.01f, j), carpetTex);
 
 							}
 							else if (grid[gridPos].objectType == LibraryGen::CellObjType::TABLE_AND_CHAIR1) {
@@ -2848,7 +2848,7 @@ public:
 								table_chairs1->Draw(shader);
 								Model->popMatrix();
 
-								addLibGrnd(5.0f, 5.0f, 1.0f, vec3(i, libraryCenter.y + 0.1f, j), carpetTex);
+								addLibGrnd(5.0f, 5.0f, 1.0f, vec3(i, libraryCenter.y +0.01f, j), carpetTex);
 							}
 							else if (grid[gridPos].objectType == LibraryGen::CellObjType::CANDELABRA) {
 								Model->pushMatrix();
