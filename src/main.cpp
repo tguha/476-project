@@ -4579,7 +4579,7 @@ public:
 		glUniform3f(curS->getUniform("MatDif"), 0.95f, 0.78f, 0.14f);
 		glUniform3f(curS->getUniform("MatSpec"), 0.3f, 0.3f, 0.3f);
 		glUniform1f(curS->getUniform("MatShine"), 8.0f);*/
-		SetMaterial(curS, Material::gold);
+		SetMaterial(curS, Material::player_green);
 		setModel(curS, Model);
 		//player_rig->Draw(curS);
 		sphere->Draw(curS);
