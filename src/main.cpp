@@ -55,6 +55,9 @@ using namespace glm;
 ma_engine engine;
 ma_sound sound;
 ma_sound spell_sound; 
+ma_sound key_drop;
+ma_sound key_pickup;
+
 
 class Application : public EventCallbacks {
 public:
@@ -5971,6 +5974,13 @@ int main(int argc, char* argv[]) {
 		ma_engine_uninit(&engine);
 		return -1;
 	}
+
+	// Load key dropped sound effect
+
+	// Load key pick up sound effect
+
+	// Load door locked sound effect
+
 
 	// This is the code that will likely change program to program as you
 	// may need to initialize or set up different data and state
