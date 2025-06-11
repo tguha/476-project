@@ -2226,12 +2226,23 @@ public:
 				orb.collected = true;
 				// orb.state = OrbState::COLLECTED; // Optionally set state
 
-				// for (int i = 0; i < 4; i++) {
-				// 	if (orb.spellType == spellSlots[i]) {
-				// 		currentSpellSlotIndex = i;
-				// 		break;
-				// 	}
-				// }
+				bool allSpellsEmpty = true;
+				for (int i = 0; i < 4; i++) {
+					if (spellCounts[spellSlots[i]] != 0) {
+						allSpellsEmpty = false;
+						break;
+					}
+				}
+				if (allSpellsEmpty) {
+					currentPlayerSpellType = orb.spellType; // Equip the collected spell type
+
+					for (int i = 0; i < 4; i++) {
+						if (spellSlots[i] == currentPlayerSpellType) {
+							currentSpellSlotIndex = i; // Set the current spell slot index
+							break;
+						}
+					}
+				}
 
 				// currentPlayerSpellType = spellSlots[currentSpellSlotIndex]; // Equip the collected spell type
 				// orbsCollectedCount++; // This might now just mean "spell charges" or be repurposed
