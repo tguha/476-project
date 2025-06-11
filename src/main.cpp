@@ -1510,7 +1510,7 @@ public:
 				glUniform1f(shader->getUniform("MatMetal"), 1.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
 				break;
-			case Material:: player_green:
+			case Material:: player_green: //add this to main
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.35f, 0.914f, 0.4f);
 				glUniform1f(shader->getUniform("MatRough"), 0.8f);
 				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
