@@ -74,7 +74,7 @@ enum class Material {
     yellow_body,
     gold,
     player_green,
-    key_color
+    key_color,
     orb_highlight_blue,
     orb_highlight_red,
     orb_highlight_yellow,
