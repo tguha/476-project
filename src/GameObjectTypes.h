@@ -73,7 +73,8 @@ enum class Material {
     red_body,
     yellow_body,
     gold,
-    key_color,
+    player_green,
+    key_color
     orb_highlight_blue,
     orb_highlight_red,
     orb_highlight_yellow,
@@ -106,6 +107,7 @@ inline glm::vec3 materialToColor(Material m) {
     case Material::red_body:          return glm::vec3(0.914f, 0.0f, 0.0f);
     case Material::yellow_body:       return glm::vec3(0.0f, 0.914f, 0.0f);
     case Material::gold:              return glm::vec3(1.0f, 0.766f, 0.336f);
+    case Material::player_green:      return glm::vec3(0.35f, 0.914f, 0.4f);
     case Material::key_color:         return glm::vec3(0.9, 0.9, 0.9); // Example key color
     default:                          return glm::vec3(1.0f); // fallback white
     }

@@ -152,7 +152,9 @@ public:
 	AssimpModel *cube, *sphere;
 	AssimpModel *border, *lock, *lockHandle, *key;
 	AssimpModel *bookCover, *bookPaper;
+	AssimpModel *chandelier, *pillar;
 	AssimpModel *stoneGolem;
+
 
 	//key collectibles
 	std::vector<Collectible> keyCollectibles;
@@ -1322,11 +1324,13 @@ public:
 		//lock
 
 		key = new AssimpModel(resourceDirectory + "/Key_and_Lock/key.obj");
-
 		lock = new AssimpModel(resourceDirectory + "/Key_and_Lock/lockCopy.obj");
 		lockHandle = new AssimpModel(resourceDirectory + "/Key_and_Lock/lockHandle.obj");
 
 		cout << "[DEBUG] Stored Base Sphere Local AABB." << endl;
+
+		chandelier = new AssimpModel(resourceDirectory + "/chandelier.obj");
+		pillar = new AssimpModel(resourceDirectory + "/pillar.obj");
 
 		vec3 bossSpawnPos = bossRoom->getWorldOrigin();
 
@@ -1338,7 +1342,7 @@ public:
 		initTextQuad();
 	}
 
-	void SetMaterial(shared_ptr<Program> shader, Material color) {
+	void SetMaterial(shared_ptr<Program> shader, Material color) { // drawmini
 		/*
 		Albedo(Base Color) :
 		Never use pure black (0,0,0) or pure white (1,1,1)
@@ -1504,6 +1508,12 @@ public:
 				glUniform3f(shader->getUniform("MatAlbedo"), 1.0f, 0.766f, 0.336f);
 				glUniform1f(shader->getUniform("MatRough"), 0.2f);
 				glUniform1f(shader->getUniform("MatMetal"), 1.0f);
+				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				break;
+			case Material:: player_green:
+				glUniform3f(shader->getUniform("MatAlbedo"), 0.35f, 0.914f, 0.4f);
+				glUniform1f(shader->getUniform("MatRough"), 0.8f);
+				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
 				break;
 		}
@@ -4573,7 +4583,7 @@ public:
 		glUniform3f(curS->getUniform("MatDif"), 0.95f, 0.78f, 0.14f);
 		glUniform3f(curS->getUniform("MatSpec"), 0.3f, 0.3f, 0.3f);
 		glUniform1f(curS->getUniform("MatShine"), 8.0f);*/
-		SetMaterial(curS, Material::gold);
+		SetMaterial(curS, Material::player_green);
 		setModel(curS, Model);
 		//player_rig->Draw(curS);
 		sphere->Draw(curS);
@@ -5013,6 +5023,27 @@ public:
 
 	}
 
+
+	void drawDetails(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model){
+		shader->bind();
+
+		Model->pushMatrix();
+			Model->loadIdentity();
+			// Model->translate(vec3(0.0f, 2.5f, 38.5f));
+			//Model->translate(vec3(bossEntrancePos.x, bossEntrancePos.y + 2.5f, bossEntrancePos.z));  //doorPosition
+			Model->rotate(glm::radians(bossEntranceRot), vec3(0.0f, 1.0f, 0.0f));
+			// Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			Model->scale(0.1f);
+			SetMaterial(shader, Material::gold); //gold
+			setModel(shader, Model);
+			chandelier->Draw(shader);
+			pillar->Draw(shader);
+		Model->popMatrix();
+
+		shader->unbind();
+
+	}
+
 	void drawBossHealthBar(glm::mat4 viewMatrix, glm::mat4 projMatrix, float width, float height) {
 		float healthBarWidth = 500.0f;
 		float healthBarHeight = 20.0f;
@@ -5266,6 +5297,7 @@ public:
 		drawOrbs(prog, Model);
 
 		drawKey(prog, Model);
+		//drawDetails(prog, Model);
 
 		drawProjectiles(prog, Model);
 
