@@ -10,7 +10,7 @@ Animation::Animation(const std::string& animationPath, AssimpModel* model, int a
         std::cout << "Invalid animation index: " << animationIndex << std::endl;
         return;
     }
-    std::cout << "Animation name: " << animation->mName.C_Str() << std::endl;
+    
     m_Duration = animation->mDuration;
     m_TicksPerSecond = animation->mTicksPerSecond;
     aiMatrix4x4 globalTransformation = scene->mRootNode->mTransformation;
@@ -33,6 +33,12 @@ Animation::Animation(const std::string& animationPath, AssimpModel* model, int a
                 std::cout << globalTransformation[j][i] << " | ";
             }
             std::cout << std::endl;
+        }
+        //Name animation
+        std::cout << "Number of Animations:" << scene->mNumAnimations << std::endl;
+        for (int i = 0; i < scene->mNumAnimations; i++) {
+            auto animDebug = scene->mAnimations[i];
+            std::cout << "Animation | " << animDebug->mName.C_Str() << std::endl;
         }
 
     }
@@ -59,7 +65,7 @@ void Animation::ReadMissingBones(const aiAnimation* animation, AssimpModel& mode
     int& boneCount = model.GetBoneCounter();
 
     //Testing For Bone Offset Matricies
-    if (verbose_debug){
+    if (0){
         for (const auto& pair : boneInfoMap) {
             std::cout << pair.first << " offset:\n";
             for (int i = 0; i < 4; ++i) {
@@ -100,6 +106,8 @@ void Animation::ReadHierarchyData(AssimpNodeData& dest, const aiNode* src) {
         dest.children.push_back(newData);
     }
 }
+
+
 
 // void Animation::setAnimation(int animIndex, AssimpModel* model) {
 //     if (animIndex < 0 || animIndex >= m_AnimationData.size()) {

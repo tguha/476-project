@@ -20,6 +20,7 @@
 #include "WindowManager.h"
 #include "Texture.h"
 #include "Spline.h"
+#include "Bezier.h"
 #include "stb_image.h"
 #include "AssimpModel.h"
 #include "Animator.h"
@@ -53,9 +54,11 @@ using namespace glm;
 
 ma_engine engine;
 ma_sound sound;
+ma_sound spell_sound; 
 
 class Application : public EventCallbacks {
 public:
+
 	std::shared_ptr<Player> player;
 	WindowManager * windowManager = nullptr;
 
@@ -74,6 +77,17 @@ public:
 	shared_ptr<Program> SkyboxProg;
 	shared_ptr<Program> debugLineProg;
 	shared_ptr<Program> textProg;
+
+	std::vector<ColorFilter> colorFilters = {
+    { "Classic",   glm::vec4(1.0f, 1.0f, 1.0f, 0.0f) }, // No filter
+    { "Cool Blue", glm::vec4(0.5f, 0.6f, 1.0f, 0.3f) },
+    { "Warm Gold", glm::vec4(1.0f, 0.85f, 0.6f, 0.25f) },
+    { "Toxic Green", glm::vec4(0.7f, 1.0f, 0.7f, 0.3f) },
+    { "Shadow Purple", glm::vec4(0.8f, 0.6f, 1.0f, 0.3f) },
+    { "Blood Red", glm::vec4(1.0f, 0.4f, 0.4f, 0.3f) },
+	};
+
+	glm::vec4 currentColorFilter = colorFilters[0].tintColor; // Default to "Classic"
 
 	// ground data - Reused for all flat ground planes
 	GLuint GrndBuffObj = 0, GrndNorBuffObj = 0, GIndxBuffObj = 0; // Initialize to 0
@@ -139,6 +153,8 @@ public:
 	AssimpModel *border, *lock, *lockHandle, *key;
 	AssimpModel *bookCover, *bookPaper;
 	AssimpModel *chandelier, *pillar;
+	AssimpModel *stoneGolem;
+
 
 	//key collectibles
 	std::vector<Collectible> keyCollectibles;
@@ -149,7 +165,7 @@ public:
 	vector<Book> books; // vector of books to be drawn
 
 	AssimpModel* player_rig;
-	Animation *player_walk, *player_idle;
+	Animation *player_walk, *player_idle, *player_roll, *player_grab_book;
 	Animator *catwizard_animator;
 
 	AssimpModel *CatWizard;
@@ -201,6 +217,17 @@ public:
 	bool movingBackward = false;
 	bool movingLeft = false;
 	bool movingRight = false;
+	bool rolling = false;
+	bool grabbingBook = false;
+
+	float grabBookDuration;
+	float grabBookProgress = 0.0f;
+
+	vec3 rollDestination = vec3(0.0f); //Set when a roll is called
+	float rollDuration; //Defined in initGeom when pulling the animations from the FBX
+	float rollProgress = 0.0f;
+	float rollDistance = 5.0f; //Distance a roll takes you
+	float rotationAdjustment = 0.0f;
 
 	//unlock bool
 	bool unlock = false;
@@ -248,7 +275,6 @@ public:
 	float cameraVisibleCooldown = 0.0f; // Cooldown for camera visibility check
 	bool wasVisibleLastFrame = true;
 
-	SpellType currentPlayerSpellType = SpellType::FIRE; // Player starts with Fire spell by default
 	int nextSpellTypeIndex = 1; // Used to cycle spell types for new orbs: 1=FIRE, 2=ICE, 3=LIGHTNING
 
 	// Shadows
@@ -289,6 +315,16 @@ public:
 	std::vector<glm::mat4> vCircularBookShelfMatrices;
 	int activeEnemiesCount = 0; // Count of active enemies in the scene
 	int keysneededToCollect = 0; // Total number of keys to collect in the scene
+
+	SpellType spellSlots[4] = {
+		SpellType::LIGHTNING,
+		SpellType::FIRE,
+		SpellType::ICE,
+		SpellType::HEAL
+	};
+
+	int currentSpellSlotIndex = 0; // Current spell type in use
+	SpellType currentPlayerSpellType = spellSlots[currentSpellSlotIndex]; // Player starts with Fire spell by default
 
 	// --- Paw Prints ---
 	// CPU: record and upload a list of paw prints
@@ -533,7 +569,12 @@ public:
 			lookAt = playerPos;
 
 			// 5. Update player rotation
-			player->setRotY(-(theta + radians(-90.0f)));
+			float plrotation = -(theta + radians(-90.0f));
+			//Clamp plrotation between -2pi and 2pi
+			plrotation = fmodf(plrotation, glm::radians(360.0f));
+			plrotation -= rotationAdjustment;
+
+			player->setRotY(plrotation);
 			player->setRotX(phi);
 
 			manMoveDir = vec3(sin(player->getRotY()), 0, cos(player->getRotY()));
@@ -575,7 +616,10 @@ public:
 
 		if (action == GLFW_PRESS)
 		{
-			shootSpell(); // Changed from shootSpell
+			if (spellCounts[currentPlayerSpellType] > 0) {
+				shootSpell(); // Changed from shootSpell
+			}
+
 		}
 	}
 
@@ -709,6 +753,7 @@ public:
 		redFlashProg->addUniform("projection");
 		redFlashProg->addUniform("model");
 		redFlashProg->addUniform("alpha");
+		redFlashProg->addUniform("color");
 
 		SkyboxProg->addUniform("P");
 		SkyboxProg->addUniform("V");
@@ -1177,15 +1222,19 @@ public:
 		string errStr;
 
 		// load the walking character moded
-		player_rig = new AssimpModel(resourceDirectory + "/CatWizard/CatWizardAnimationRig2.fbx");
+		player_rig = new AssimpModel(resourceDirectory + "/CatWizard/CatWizardAnimation4.fbx");
 		player_rig->assignTexture("texture_diffuse", resourceDirectory + "/CatWizard/textures/ImphenziaPalette02-Albedo.png");
-		//PROBLEM GETTING ANIMATION FROM "Fixed" FBX
-		player_walk = new Animation(resourceDirectory + "/CatWizard/CatWizardAnimationRig2.fbx", player_rig, 1);
-		player_idle = new Animation(resourceDirectory + "/CatWizard/CatWizardAnimationRig2.fbx", player_rig, 2);
-		//player_idle = new Animation(resourceDirectory + "/Vanguard/Vanguard.fbx", player_rig, 1);
 
-		//TEST Load the cat
-		//CatWizard = new AssimpModel(resourceDirectory + "/CatWizard/BlendWalkFix.fbx");
+		//Getting Player animations
+		player_walk = new Animation(resourceDirectory + "/CatWizard/CatWizardAnimation4.fbx", player_rig, 4);
+		player_idle = new Animation(resourceDirectory + "/CatWizard/CatWizardAnimation4.fbx", player_rig, 3);
+		player_roll = new Animation(resourceDirectory + "/CatWizard/CatWizardAnimation4.fbx", player_rig, 1);
+		player_grab_book = new Animation(resourceDirectory + "/CatWizard/CatWizardAnimation4.fbx", player_rig, 2);
+		
+		rollDuration = player_roll->GetDuration();
+		grabBookDuration = player_grab_book->GetDuration();
+
+		//Player bounding box
 		playerBB = make_shared<AABB>();
 		playerBB->min = player_rig->getBoundingBoxMin() * manScale.x;
 		playerBB->max = player_rig->getBoundingBoxMax() * manScale.x;
@@ -1257,6 +1306,9 @@ public:
 		healthBar = new AssimpModel(resourceDirectory + "/Quad/hud_quad.obj");
 		healthBar->assignTexture("texture_diffuse", resourceDirectory + "/healthbar.bmp");
 
+		stoneGolem = new AssimpModel(resourceDirectory + "/StoneGolem/Stone.obj");
+		stoneGolem->assignTexture("texture_diffuse", resourceDirectory + "/StoneGolem/textures/diffuso.tif");
+
 		/*
 		* KEY COLLECTIBLE IS BROKEN. THIS IS THE COMMENTED OUT PROGRESS OF MADILINE SINCE PROJECT DOESN'T COMPILE WITH IT
 		//key
@@ -1282,8 +1334,10 @@ public:
 
 		vec3 bossSpawnPos = bossRoom->getWorldOrigin();
 
+
+
 		initEnemies();
-		bossEnemy = new BossEnemy(bossSpawnPos, BOSS_HP_MAX, sphere, vec3(4.0f), vec3(0, 1, 0), BOSS_SPECIAL_ATTACK_COOLDOWN, SpellType::ICE);
+		bossEnemy = new BossEnemy(bossSpawnPos, BOSS_HP_MAX, stoneGolem, vec3(1.3f, 0.8f, 1.0f), vec3(0, 1, 0), BOSS_SPECIAL_ATTACK_COOLDOWN, SpellType::ICE);
 
 		initTextQuad();
 	}
@@ -1377,6 +1431,36 @@ public:
 				glUniform1f(shader->getUniform("MatRough"), 1.0f);
 				glUniform1f(shader->getUniform("MatMetal"), 1.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.9f, 0.8f, 0.2f);
+				break;
+			case Material::orb_glowing_green:
+				glUniform3f(shader->getUniform("MatAlbedo"), 0.1f, 0.5f, 0.1f);
+				glUniform1f(shader->getUniform("MatRough"), 1.0f);
+				glUniform1f(shader->getUniform("MatMetal"), 1.0f);
+				glUniform3f(shader->getUniform("MatEmit"), 0.2f, 0.9f, 0.2f);
+				break;
+			case Material::orb_highlight_red:
+				glUniform3f(shader->getUniform("MatAlbedo"), 0.8f, 0.1f, 0.1f);
+				glUniform1f(shader->getUniform("MatRough"), 0.5f);
+				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
+				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				break;
+			case Material::orb_highlight_blue:
+				glUniform3f(shader->getUniform("MatAlbedo"), 0.1f, 0.1f, 0.8f);
+				glUniform1f(shader->getUniform("MatRough"), 0.5f);
+				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
+				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				break;
+			case Material::orb_highlight_yellow:
+				glUniform3f(shader->getUniform("MatAlbedo"), 0.8f, 0.8f, 0.1f);
+				glUniform1f(shader->getUniform("MatRough"), 0.5f);
+				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
+				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				break;
+			case Material::orb_highlight_green:
+				glUniform3f(shader->getUniform("MatAlbedo"), 0.1f, 0.8f, 0.1f);
+				glUniform1f(shader->getUniform("MatRough"), 0.5f);
+				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
+				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
 				break;
 			case Material::grey:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.8f, 0.8f, 0.8f);
@@ -1881,13 +1965,13 @@ public:
 				}
 
 				if (enemyType == 0) {
-					enemies.push_back(new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.z), Config::ICE_ELEMENTAL_HP_MAX, Config::ICE_ELEMENTAL_MOVE_SPEED, iceElemental, vec3(1.0f, 1.0f, 1.0f), vec3(0.0f)));
+					enemies.push_back(new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.z), Config::ICE_ELEMENTAL_HP_MAX, Config::ICE_ELEMENTAL_MOVE_SPEED, iceElemental, vec3(1.0f, 1.0f, 1.0f), vec3(glm::radians(90.0f), 0.0f, 0.0f)));
 				}
 				else if (enemyType == 1) {
-					enemies.push_back(new FireElemental(vec3(spawnPos.x, Config::FIRE_ELEMENTAL_TRANS_Y, spawnPos.z), Config::FIRE_ELEMENTAL_HP_MAX, Config::FIRE_ELEMENTAL_MOVE_SPEED, fireElemental, vec3(0.01f, 0.01f, 0.01f), vec3(0.0f)));
+					enemies.push_back(new FireElemental(vec3(spawnPos.x, Config::FIRE_ELEMENTAL_TRANS_Y, spawnPos.z), Config::FIRE_ELEMENTAL_HP_MAX, Config::FIRE_ELEMENTAL_MOVE_SPEED, fireElemental, vec3(0.01f, 0.01f, 0.01f), vec3(glm::radians(90.0f), 0.0f, 0.0f)));
 				}
 				else if (enemyType == 2) {
-					enemies.push_back(new LightningElemental(vec3(spawnPos.x, Config::LIGHTNING_ELEMENTAL_TRANS_Y, spawnPos.z), Config::LIGHTNING_ELEMENTAL_HP_MAX, Config::LIGHTNING_ELEMENTAL_MOVE_SPEED, lightningElemental, vec3(0.01f, 0.01f, 0.01f), vec3(0.0f)));
+					enemies.push_back(new LightningElemental(vec3(spawnPos.x, Config::LIGHTNING_ELEMENTAL_TRANS_Y, spawnPos.z), Config::LIGHTNING_ELEMENTAL_HP_MAX, Config::LIGHTNING_ELEMENTAL_MOVE_SPEED, lightningElemental, vec3(0.01f, 0.01f, 0.01f), vec3(glm::radians(90.0f), 0.0f, glm::radians(90.0f))));
 				}
 		}
 	}
@@ -1934,16 +2018,19 @@ public:
 		}
 		curS->bind();
 
-		if (movingBackward || movingForward || movingLeft || movingRight) {
+		if ((movingBackward || movingForward || movingLeft || movingRight) && !grabbingBook && !rolling) {
 			manState = Man_State::WALKING;
+		}
+		else if (grabbingBook) {
+			manState = Man_State::GRAB_BOOK;
+		}
+		else if (rolling) {
+			manState = Man_State::ROLL;
 		}
 		else {
 			manState = Man_State::IDLE;
 		}
 
-		if (animTime != 0.0) {
-			catwizard_animator->UpdateAnimation(1.5f * animTime);
-		}
 
 		// Animation update
 		if (manState == Man_State::WALKING) {
@@ -1952,9 +2039,19 @@ public:
 		else if (manState == Man_State::IDLE){
 			catwizard_animator->SetCurrentAnimation(player_idle);
 		}
+		else if (manState == Man_State::GRAB_BOOK) {
+			catwizard_animator->SetCurrentAnimation(player_grab_book);
+		}
+		else if (manState == Man_State::ROLL) {
+			catwizard_animator->SetCurrentAnimation(player_roll);
 
+		}
+		
+		if (animTime != 0.0) {
+			catwizard_animator->UpdateAnimation(1.5f * animTime);
+		}
+		
 		// Update bone matrices
-
 		vector<glm::mat4> transforms = catwizard_animator->GetFinalBoneMatrices();
 
 
@@ -1974,8 +2071,8 @@ public:
 		// *** USE CAMERA ROTATION FOR MODEL ***
 
 
+		Model->rotate(glm::radians(180.0f), vec3(0, 1, 0));
 		Model->rotate((player->getRotY()), vec3(0, 1, 0)); // <<-- FIXED ROTATION
-
 		Model->scale(0.01f);
 
 		// Update VISUAL bounding box (can be different from collision box if needed)
@@ -2139,7 +2236,25 @@ public:
 				orb.collected = true;
 				// orb.state = OrbState::COLLECTED; // Optionally set state
 
-				currentPlayerSpellType = orb.spellType; // Equip the collected spell type
+				bool allSpellsEmpty = true;
+				for (int i = 0; i < 4; i++) {
+					if (spellCounts[spellSlots[i]] != 0) {
+						allSpellsEmpty = false;
+						break;
+					}
+				}
+				if (allSpellsEmpty) {
+					currentPlayerSpellType = orb.spellType; // Equip the collected spell type
+
+					for (int i = 0; i < 4; i++) {
+						if (spellSlots[i] == currentPlayerSpellType) {
+							currentSpellSlotIndex = i; // Set the current spell slot index
+							break;
+						}
+					}
+				}
+
+				// currentPlayerSpellType = spellSlots[currentSpellSlotIndex]; // Equip the collected spell type
 				// orbsCollectedCount++; // This might now just mean "spell charges" or be repurposed
 				spellCounts[orb.spellType]++; // Increment the count for the specific spell type
 				orbsCollectedCount++; // Increment the total orbs collected count
@@ -2159,7 +2274,12 @@ public:
 		simpleShader->bind();
 
 		int collectedOrbDrawIndex = 0;
-
+		std::map<SpellType, float> upOffsets = {
+				{ SpellType::FIRE, 0.0f },
+				{ SpellType::ICE, 0.0f },
+				{ SpellType::LIGHTNING, 0.0f },
+				{ SpellType::HEAL, 0.0f } // No scale offset for HEAL
+		};
 		for (auto& orb : orbCollectibles) {
             // Particle emission for uncollected, idle orbs
             if (!orb.collected && orb.state == OrbState::IDLE && particleSystem) {
@@ -2227,21 +2347,37 @@ public:
 			glm::vec3 currentDrawPosition;
 			float currentDrawScale = orb.scale; // Use base scale
 
-			if (orb.collected) {
+			float fireSideOffset = 0.15f;
+			float iceSideOffset = 0.30f;
+			float lightningSideOffset = 0.0f;
+			float healSideOffset = 0.45f;
+
+			static std::map<SpellType, float> sideOffsets = {
+				{ SpellType::FIRE, fireSideOffset },
+				{ SpellType::ICE, iceSideOffset },
+				{ SpellType::LIGHTNING, lightningSideOffset },
+				{ SpellType::HEAL, healSideOffset} // No side offset for HEAL
+			};
+
+			if (orb.collected && spellCounts[orb.spellType] > 0) {
 				// Calculate position behind the player (same logic as before)
 				float backOffset = 0.4f;
 				float upOffsetBase = 0.6f;
-				float stackOffset = orb.scale * 2.5f;
-				float sideOffset = 0.15f;
+				float stackOffset = orb.scale * 1.5f;
+				float sideOffset = sideOffsets[orb.spellType];
 				glm::vec3 playerForward = normalize(manMoveDir);
 				glm::vec3 playerUp = glm::vec3(0.0f, 1.0f, 0.0f);
 				glm::vec3 playerRight = normalize(cross(playerForward, playerUp));
-				float currentUpOffset = upOffsetBase + (collectedOrbDrawIndex * stackOffset);
-				float currentSideOffset = (collectedOrbDrawIndex % 2 == 0 ? -sideOffset : sideOffset);
-				currentDrawPosition = charMove() - playerForward * backOffset
+				// float currentUpOffset = upOffsetBase + (collectedOrbDrawIndex * stackOffset);
+				float currentUpOffset = upOffsetBase + upOffsets[orb.spellType];
+				upOffsets[orb.spellType] += stackOffset; // Increment up offset for next orb of the same type
+				// float currentSideOffset = (collectedOrbDrawIndex % 2 == 0 ? -sideOffset : sideOffset);
+
+				currentDrawPosition = player->getPosition() - playerForward * backOffset
 					+ playerUp * currentUpOffset
-					+ playerRight * currentSideOffset;
+					+ playerRight * sideOffset;
 				collectedOrbDrawIndex++;
+
 			}
 			else {
 				currentDrawPosition = orb.position;
@@ -2252,7 +2388,31 @@ public:
 				Model->loadIdentity();
 				Model->translate(currentDrawPosition);
 				Model->scale(currentDrawScale); // Use current scale
-				SetMaterial(simpleShader, orb.color);
+
+				if (orb.spellType == currentPlayerSpellType && orb.collected) {
+					// SetMaterial(simpleShader, orb.color * 1.2f); // Highlight current spell type
+					
+					Material highlight = orb.color;
+					
+					switch (orb.spellType) {
+						case SpellType::ICE:
+							highlight = Material::orb_highlight_blue;
+							break;
+						case SpellType::FIRE:
+							highlight = Material::orb_highlight_red;
+							break;
+						case SpellType::LIGHTNING:
+							highlight = Material::orb_highlight_yellow;
+							break;
+						case SpellType::HEAL:
+							highlight = Material::orb_highlight_green;
+							break;
+					}
+
+					SetMaterial(simpleShader, highlight); // Highlight current spell type
+				} else {
+					SetMaterial(simpleShader, orb.color);
+				}
 				setModel(simpleShader, Model);
 				orb.model->Draw(simpleShader);
 			} Model->popMatrix();
@@ -2338,13 +2498,27 @@ public:
 			libraryQuadTree->cleanup(); // Clean up the quad tree
 			bossRoomQuadTree->cleanup(); // Clean up the boss room quad tree
 			initQuadTree(); // Reinitialize the quad tree
+			keysneededToCollect = 0; // Reset key count
+
+			// Increase number of enemies based on time elapsed
+			float timeElapsed = glfwGetTime();
+			int additionalEnemies = static_cast<int>(timeElapsed / 60.0f); // Add 1 enemy for every 60 seconds
+
+			library->setNumEnemies(library->getNumEnemies() + additionalEnemies + 1);
 			initEnemies(); // Reinitialize enemies
 			bossActiveSpells.clear();
 			bossEnemy->resetPhase();
+			bossEnemy->setPosition(bossRoom->getWorldOrigin()); // Reset boss position to the room origin to middle of the boss room
 			// enemies.push_back(new Enemy(libraryCenter + vec3(-5.0f, 0.8f, 8.0f), 50.0f, 2.0f, sphere, glm::vec3(0.5f, 1.28f, 0.5f), vec3(0.0f))); // <<-- Pass sphere and scale
 			activeSpells.clear(); // Clear active spells
 			unlock = false;
 			keyCollectibles.clear(); // Clear key collectibles
+			keysCollectedCount = 0;
+
+			// Generate random number between 1 and 7
+			int randomFilterIndex = rand() % (colorFilters.size()) + 1; // Random number between 1 and 5
+
+			currentColorFilter = colorFilters[randomFilterIndex].tintColor;
 			#if USE_INSTANCING
 			initInstancingMatrices();
 			#endif
@@ -2375,7 +2549,7 @@ public:
 
                 // if (!keyAlreadyExists ) { //&& !enemyLastPos
 
-				// 	//get enemy pos once, then don't change it until change pick it up?
+				// 	//get enemy pos once, then don't change it until change  it up?
 				// 	keyPos.y = keyPos.y - 1.5f;
 				// 	//std::cout << "key position " << keyPos.x << " " << keyPos.y << " " << keyPos.z << " " << std::endl;
 
@@ -2416,7 +2590,10 @@ public:
 				Model->translate(enemy->getPosition());
 				Model->scale(enemyScale); // Scale the enemy model
 				Model->rotate(enemy->getRotY(), glm::vec3(0, 1, 0));
-				Model->rotate(glm::radians(-90.0f), glm::vec3(1, 0, 0)); // rotate -90 degrees around x axis
+
+				if (dynamic_cast<const IceElemental*>(enemy)) {
+					Model->rotate(glm::radians(-90.0f), glm::vec3(1, 0, 0)); // Rotate Ice Elemental
+				}
 				SetMaterial(shader, enemyMaterial); // Set body material
 				if (shader->hasUniform("enemyAlpha")) glUniform1f(shader->getUniform("enemyAlpha"), enemy->getDamageTimer() / Config::ENEMY_HIT_DURATION);
 				setModel(shader, Model);
@@ -2875,7 +3052,7 @@ public:
 
 		if (bossEnemy->isAlive() && unlock) {
 			bossEnemy->lookAtPlayer(player->getPosition()); // Make the boss look at the player
-			glm::vec3 bossPos = bossEnemy->getPosition() + glm::vec3(0, 2.0f, 0); // Position the boss slightly above the ground
+			glm::vec3 bossPos = bossEnemy->getPosition() + glm::vec3(0, 0, 0); // Position the boss slightly above the ground
 			glm::vec3 bossRotation = bossEnemy->getRotation(); // Get rotation from the enemy object
 			float bossRotY = bossEnemy->getRotY();
 
@@ -2884,7 +3061,7 @@ public:
 				Model->loadIdentity(); // Reset the model matrix
 				Model->translate(bossPos);
 				Model->rotate(bossRotY, bossRotation); // Rotate the body to match the boss's rotation
-				Model->scale(bossEnemy->getScale());
+				Model->scale(vec3(0.8f, 0.8f, 0.8f));
 				// --- Draw Main Body (Pill Shape) ---
 				Model->pushMatrix();
 				{
@@ -2896,7 +3073,8 @@ public:
 					SetMaterial(shader, Material::purple);
 
 					setModel(shader, Model);
-					sphere->Draw(shader); // Draw the scaled sphere as the body
+					// sphere->Draw(shader); // Draw the scaled sphere as the body
+					stoneGolem->Draw(shader); // Use the stone golem model for the body
 				}
 				Model->popMatrix();
 
@@ -2907,70 +3085,70 @@ public:
 				// White Material Setup (done inside loop per part for clarity now)
 				// Black Material Setup (done inside loop per part for clarity now)
 
-				// Left Eye
-				Model->pushMatrix();
-				{
-					// Go to enemy center, then offset to eye position
-					// Model->translate(bossPos);
-					Model->translate(eyeOffsetBase + glm::vec3(-eyeSeparation, 0, 0));
+				// // Left Eye
+				// Model->pushMatrix();
+				// {
+				// 	// Go to enemy center, then offset to eye position
+				// 	// Model->translate(bossPos);
+				// 	Model->translate(eyeOffsetBase + glm::vec3(-eyeSeparation, 0, 0));
 
-					// White Part
-					Model->pushMatrix();
-					{
-						Model->scale(glm::vec3(whiteScale));
-						// Set white material
-						SetMaterial(shader, Material::eye_white);
-						setModel(shader, Model);
-						sphere->Draw(shader);
-					}
-					Model->popMatrix(); // Pop white scale
+				// 	// White Part
+				// 	Model->pushMatrix();
+				// 	{
+				// 		Model->scale(glm::vec3(whiteScale));
+				// 		// Set white material
+				// 		SetMaterial(shader, Material::eye_white);
+				// 		setModel(shader, Model);
+				// 		sphere->Draw(shader);
+				// 	}
+				// 	Model->popMatrix(); // Pop white scale
 
-					// Pupil Part
-					Model->pushMatrix();
-					{
-						// Move slightly forward from white surface and scale down
-						Model->translate(glm::vec3(0, 0, whiteScale * 0.5f + pupilOffsetForward)); // Offset relative to white scale
-						Model->scale(glm::vec3(pupilScale));
-						// Set black material
-						SetMaterial(shader, Material::black);
-						setModel(shader, Model);
-						sphere->Draw(shader);
-					}
-					Model->popMatrix(); // Pop pupil transform
-				}
-				Model->popMatrix(); // Pop left eye transform
+				// 	// Pupil Part
+				// 	Model->pushMatrix();
+				// 	{
+				// 		// Move slightly forward from white surface and scale down
+				// 		Model->translate(glm::vec3(0, 0, whiteScale * 0.5f + pupilOffsetForward)); // Offset relative to white scale
+				// 		Model->scale(glm::vec3(pupilScale));
+				// 		// Set black material
+				// 		SetMaterial(shader, Material::black);
+				// 		setModel(shader, Model);
+				// 		sphere->Draw(shader);
+				// 	}
+				// 	Model->popMatrix(); // Pop pupil transform
+				// }
+				// Model->popMatrix(); // Pop left eye transform
 
 
-				// Right Eye (Similar to Left)
-				Model->pushMatrix();
-				{
-					// Model->translate(bossPos);
-					Model->translate(eyeOffsetBase + glm::vec3(+eyeSeparation, 0, 0)); // Offset to the right
+				// // Right Eye (Similar to Left)
+				// Model->pushMatrix();
+				// {
+				// 	// Model->translate(bossPos);
+				// 	Model->translate(eyeOffsetBase + glm::vec3(+eyeSeparation, 0, 0)); // Offset to the right
 
-					// White Part
-					Model->pushMatrix();
-					{
-						Model->scale(glm::vec3(whiteScale));
-						// Set white material
-						SetMaterial(shader, Material::eye_white);
-						setModel(shader, Model);
-						sphere->Draw(shader);
-					}
-					Model->popMatrix();
+				// 	// White Part
+				// 	Model->pushMatrix();
+				// 	{
+				// 		Model->scale(glm::vec3(whiteScale));
+				// 		// Set white material
+				// 		SetMaterial(shader, Material::eye_white);
+				// 		setModel(shader, Model);
+				// 		sphere->Draw(shader);
+				// 	}
+				// 	Model->popMatrix();
 
-					// Pupil Part
-					Model->pushMatrix();
-					{
-						Model->translate(glm::vec3(0, 0, whiteScale * 0.5f + pupilOffsetForward));
-						Model->scale(glm::vec3(pupilScale));
-						// Set black material
-						SetMaterial(shader, Material::black);
-						setModel(shader, Model);
-						sphere->Draw(shader);
-					}
-					Model->popMatrix();
-				}
-				Model->popMatrix(); // Pop right eye transform
+				// 	// Pupil Part
+				// 	Model->pushMatrix();
+				// 	{
+				// 		Model->translate(glm::vec3(0, 0, whiteScale * 0.5f + pupilOffsetForward));
+				// 		Model->scale(glm::vec3(pupilScale));
+				// 		// Set black material
+				// 		SetMaterial(shader, Material::black);
+				// 		setModel(shader, Model);
+				// 		sphere->Draw(shader);
+				// 	}
+				// 	Model->popMatrix();
+				// }
+				// Model->popMatrix(); // Pop right eye transform
 			}
 			Model->popMatrix(); // Pop boss body transform
 		}
@@ -3033,6 +3211,10 @@ public:
 	}
 
 	void interactWithBooks() {
+		//Play Grab Book animation once
+		catwizard_animator->resetTime();
+		grabbingBook = true;
+		
 		float interactionRadius = 5.0f;
 		float interactionRadiusSq = interactionRadius * interactionRadius;
 
@@ -3489,7 +3671,11 @@ public:
 
 	// --- Modified charMove ---
 	vec3 charMove() {
-		float moveSpeed = 4.5f * AnimDeltaTime; // Use frame-rate independent speed
+		if (rolling) {
+			//Prevent moving during rolling
+			return player->getPosition();
+		}
+		float moveSpeed = 8.0f * AnimDeltaTime; // Use frame-rate independent speed
 		vec3 desiredMoveDelta = vec3(0.0f);
 
 		// Calculate desired movement direction based on input
@@ -3568,6 +3754,7 @@ public:
 
 	// --- Shooting Function ---
 	void shootSpell() {
+
 		cout << "[DEBUG] shootSpell() called. Orbs: " << orbsCollectedCount << endl;
 		if (orbsCollectedCount <= 0 && !debugCamera) { // Allow shooting in debug camera without orbs
 			cout << "[DEBUG] Cannot shoot: No orbs." << endl;
@@ -3576,12 +3763,24 @@ public:
 
 		// Consume an orb if not in debug mode
 		if (!debugCamera) {
-			orbsCollectedCount--;
 			// Remove visual orb logic... (find first collected orb and erase)
 			for (auto it = orbCollectibles.begin(); it != orbCollectibles.end(); ++it) {
-				if (it->collected) {
+				if (it->collected && it->spellType == currentPlayerSpellType) {
 					spellCounts[it->spellType]--; // Increment spell count for the type being shot
+					cout << "Spells remaining of this type: " << spellCounts[it->spellType] << endl;
+					orbsCollectedCount--;
 					orbCollectibles.erase(it);
+
+					if (spellCounts[currentPlayerSpellType] <= 0) {
+						for (int i = 0; i < 4; ++i) {
+							if (spellCounts[spellSlots[i]] > 0) {
+								currentPlayerSpellType = spellSlots[i];
+								currentSpellSlotIndex = i;
+								cout << "[DEBUG] Changed currentPlayerSpellType to " << static_cast<int>(currentPlayerSpellType) << endl;
+								break;
+							}
+						}
+					}
 					break;
 				}
 			}
@@ -3602,7 +3801,7 @@ public:
 		activeSpells.emplace_back(spawnPos, shootDir, (float)glfwGetTime());
 		SpellProjectile& newProj = activeSpells.back();
 
-		if (particleSystem) {
+		if (particleSystem && spellCounts[currentPlayerSpellType] > 0) {
 			float current_particle_system_time = particleSystem->getCurrentTime();
 			int particles_to_spawn = 10;
 
@@ -3675,10 +3874,14 @@ public:
 				p_scale_min, p_scale_max);
 		}
 
+		// Play spell sound effect
+		ma_sound_start(&spell_sound);
+
 		cout << "[DEBUG] Spell Fired! Start:(" << spawnPos.x << "," << spawnPos.y << "," << spawnPos.z
 			<< ") Dir: (" << shootDir.x << "," << shootDir.y << "," << shootDir.z
 			<< "). Active spells: " << activeSpells.size() << endl;
 	}
+
 
 	// --- updateProjectiles ---
 	void updateProjectiles(float deltaTime) {
@@ -3733,6 +3936,157 @@ public:
 					continue;
 				}
 			}
+		}
+	}
+
+	vec3 dodgeRoll() {
+		if (rolling || !(movingForward || movingBackward || movingLeft || movingRight )) {
+			//If we arent moving, or we are rolling do not continue
+			return player->getPosition();
+		}
+		//Reset animation to begining
+		catwizard_animator->resetTime();
+		rolling = true;
+		
+		vec3 desiredMoveDelta = vec3(0.0f);
+
+
+		// Calculate desired movement direction based on input
+		if (movingForward)  desiredMoveDelta += manMoveDir;
+		if (movingBackward) desiredMoveDelta -= manMoveDir;
+		if (movingLeft)     desiredMoveDelta -= right;
+		if (movingRight)    desiredMoveDelta += right;
+
+
+
+		// Normalize and scale movement delta
+		float moveLength = length(desiredMoveDelta);
+		if (moveLength > 0.0f) {
+			vec3 rollDir = desiredMoveDelta / moveLength;
+		}
+
+		if (moveLength > 0.0f) {
+			desiredMoveDelta = (desiredMoveDelta / moveLength) * rollDistance;
+		}
+
+		setDodgeRotation();
+
+		rollDestination = player->getPosition() + desiredMoveDelta;
+		return rollDestination;
+	}
+
+	void updateDodgeRoll(float dt) {
+		float tickRate = player_roll->GetTicksPerSecond();
+		if (tickRate <= 0) {
+			tickRate = 25.0f; // Default value if not specified
+		}
+		tickRate = tickRate * 1.5;
+		rollProgress += dt * tickRate;
+
+		if (rollProgress >= rollDuration) {
+			//cout << "done!" << endl;
+			rolling = false;
+			rollProgress = 0;
+			rotationAdjustment = 0;
+			return;
+		}
+
+		/*
+		cout << "Roll Duration: " << rollDuration << endl <<
+			"RollProg: " << rollProgress << endl << 
+			"Step Value: " << rollProgress/rollDuration << endl
+			<< "Roll Destination: x|" << rollDestination.x << " y: " << rollDestination.y << " z: " << rollDestination.z << endl;
+			*/
+		//Linear
+		//vec3 rollStep = Bezier::lErp(player->getPosition(), rollDestination, rollProgress/rollDuration);
+		//midstep.y = groundY;
+		vec3 rollStep = Bezier::quadErp(player->getPosition(), rollDestination, rollProgress / rollDuration);
+		
+		//Collision
+		glm::quat playerOrientation = glm::angleAxis(player->getRotY(), glm::vec3(0, 1, 0));
+		vec3 currentPos = player->getPosition();
+		vec3 allowedPos = player->getPosition(); // Start with current position
+
+		// Try moving along X only
+
+		vec3 nextPosX = vec3(rollStep.x, currentPos.y, currentPos.z);
+		if (!checkCollisionAt(nextPosX, playerOrientation)) {
+			allowedPos.x = rollStep.x; // Allow X movement
+		}
+		else {
+			cout << "[DEBUG] X-Collision prevented." << endl;
+			rollDestination.x = allowedPos.x;
+
+		}
+
+		// Try moving along Z only (starting from potentially updated X)
+		vec3 nextPosZ = vec3(allowedPos.x, currentPos.y, rollStep.z); 
+		if (!checkCollisionAt(nextPosZ, playerOrientation)) {
+			allowedPos.z = rollStep.z; // Allow Z movement
+		}
+		else {
+			cout << "[DEBUG] Z-Collision prevented." << endl;
+			rollDestination.z = allowedPos.z;
+		}
+
+		player->setPosition(vec3(allowedPos.x, groundY, allowedPos.z)); // Update player position
+	}
+
+	void setDodgeRotation() {
+		/*
+			rotationAdjustment = 0.0f;
+
+			vec3 viewDir = manMoveDir / length(manMoveDir);
+			viewDir.y = 0;
+
+			vec3 rollDir = desiredMoveDelta;
+			rollDir.y = 0;
+			rotationAdjustment = acos(dot(viewDir , rollDir));
+			//float rAdjustment = atan(desiredMoveDelta.z /desiredMoveDelta.x);
+			cout << "Player Rot: " << player->getRotY() << endl
+			<< "adjust: " << rotationAdjustment << endl
+			<< "x: " << desiredMoveDelta.x << endl
+			<< "z: " << desiredMoveDelta.z << endl;
+		*/
+
+		//Dot products arent working for some reason 
+		//Excuse my bad code :(
+		if (movingForward && movingRight) {
+			rotationAdjustment = glm::radians(45.0f);
+		}
+		else if (movingRight && !movingBackward) {
+			rotationAdjustment = glm::radians(90.0f);
+		}
+		else if (movingRight && movingBackward) {
+			rotationAdjustment = glm::radians(135.0f);
+		}
+		else if (movingBackward && !movingLeft && !movingRight) {
+			rotationAdjustment = glm::radians(180.0f);
+		}
+		else if (movingBackward && movingLeft) {
+			rotationAdjustment = glm::radians(225.0f);
+		}
+		else if (movingLeft && !movingForward) {
+			rotationAdjustment = glm::radians(270.0f);
+		}
+		else if (movingLeft && movingForward) {
+			rotationAdjustment = glm::radians(315.0f);
+		}
+	}
+
+	void updateGrabBook(float dt) {
+		float tickRate = player_roll->GetTicksPerSecond();
+		if (tickRate <= 0) {
+			tickRate = 25.0f; // Default value if not specified
+		}
+		tickRate = tickRate * 1.5;
+		grabBookProgress += dt * tickRate;
+
+		if (grabBookProgress >= grabBookDuration) {
+			//cout << "done!" << endl;
+			grabbingBook = false;
+			grabBookProgress = 0;
+			return;
 		}
 	}
 
@@ -3972,12 +4326,16 @@ public:
 	}
 
 	void shootBossSpell() {
-		vec3 shootDir = bossEnemy->getBossDirection();
+		// vec3 shootDir = bossEnemy->getBossDirection();
+		float upOffset = 7.0f;      // Height relative to player base (groundY)
+
+		// make projectile aim towards player
+		vec3 shootDir = normalize(player->getPosition() - vec3(bossEnemy->getPosition().x, bossEnemy->getPosition().y + upOffset, bossEnemy->getPosition().z));
 
 		vec3 bossRight = normalize(cross(shootDir, vec3(0.0f, 1.0f, 0.0f)));
 
 		float forwardOffset = 0.5f; // How far in front of player center
-		float upOffset = 0.8f;      // Height relative to player base (groundY)
+
 		float rightOffset = 0.0f;   // Offset to the side (e.g., right hand)
 
 		vec3 spawnPos = bossEnemy->getPosition()
@@ -4057,6 +4415,70 @@ public:
 			<< "). Active spells: " << bossActiveSpells.size() << endl;
 	}
 
+// Boss slam attack logic
+	struct slamState {
+		bool active = false;
+		float elapsed = 0.0f;
+		float duration = 2.0f;
+		float aoeRadius = 5.0f;
+		glm::vec3 startPos;
+		glm::vec3 targetPos;
+	};
+
+	struct slamState slamState; // Global state for the slam attack
+
+	void bossSlamAttack() {
+		if (!bossEnemy || !bossEnemy->isAlive()) return;
+
+		// Set slam state
+		slamState.active = true;
+		slamState.elapsed = 0.0f;
+		slamState.duration = 2.0f;
+		slamState.aoeRadius = 5.0f;
+
+		slamState.startPos = bossEnemy->getPosition();
+
+		// Reset slam logic
+		slamState.targetPos = player->getPosition();
+		bossEnemy->setSlamDuration(slamState.duration);
+		bossEnemy->setSlamCooldown(0.0f);
+		cout << "[DEBUG] Boss slam attack initiated." << endl;
+	}
+
+	void updateBossSlamAttack(float deltaTime) {
+	if (!slamState.active || !bossEnemy || !bossEnemy->isAlive()) return;
+
+	slamState.elapsed += deltaTime;
+
+	float t = glm::clamp(slamState.elapsed / slamState.duration, 0.0f, 1.0f);
+
+	// Parabolic trajectory
+	glm::vec3 horizontal = glm::mix(slamState.startPos, slamState.targetPos, t);
+	float peakHeight = 6.0f;
+	float heightOffset = peakHeight * sin(glm::pi<float>() * t);
+	glm::vec3 newPos = horizontal + glm::vec3(0.0f, heightOffset, 0.0f);
+	bossEnemy->setPosition(newPos);
+
+	// End of attack
+	if (slamState.elapsed >= slamState.duration) {
+		glm::vec3 playerPos = player->getPosition();
+		float dist = glm::distance(playerPos, slamState.targetPos);
+
+		if (dist < slamState.aoeRadius) {
+			player->takeDamage(Config::BOSS_SLAM_DAMAGE); // AOE damage to player
+			cout << "[DEBUG] Player hit by boss slam!" << endl;
+		} else {
+			cout << "[DEBUG] Player dodged boss slam." << endl;
+		}
+
+		// Reset slam state
+		slamState.active = false;
+		bossEnemy->setSlamCooldown(glfwGetTime());
+	}
+}
+
+
+
 	void BossEnemyAttacks(float deltaTime) {
 		if (bossEnemy && bossfightstarted && !bossfightended && bossEnemy->isAlive()) {
 			bossEnemy->changePhase(); // Update boss phase logic
@@ -4085,7 +4507,7 @@ public:
 					updateBossProjectiles(deltaTime);
 					break;
 				case BossEnemy::BossPhase::PHASE_3:
-					// Phase 3 logic, phase 1 and 2 combined but more aggressive
+					// Phase 3 logic, phase 1 and 2 combined but more aggressive, add slam attack
 					if (glfwGetTime() - bossEnemy->getSpecialAttackCooldown() > 1.0f) {
 						bossEnemy->setSpecialAttackCooldown(glfwGetTime());
 						shootBossSpell();
@@ -4098,7 +4520,12 @@ public:
 							enemies.push_back(new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.y), ENEMY_HP_MAX, 2.0f, iceElemental, vec3(0.65f), vec3(0.0f)));
 						}
 					}
+					if (!slamState.active && (glfwGetTime() - bossEnemy->getSlamCooldown() > Config::BOSS_SLAM_COOLDOWN)) {
+						bossSlamAttack();
+					}
+
 					updateBossProjectiles(deltaTime);
+					updateBossSlamAttack(deltaTime);
 					break;
 				default:
 					cout << "[DEBUG] Boss phase not recognized or unsupported." << endl;
@@ -4533,7 +4960,7 @@ public:
 					glm::vec3 playerRight = normalize(cross(playerForward, playerUp));
 					float currentUpOffset = upOffsetBase + (collectedKeyDrawIndex * stackOffset);
 					float currentSideOffset = (collectedKeyDrawIndex % 2 == 0 ? -sideOffset : sideOffset);
-					currentDrawPosition = charMove() - playerForward * backOffset
+					currentDrawPosition = player->getPosition() - playerForward * backOffset
 						+ playerUp * currentUpOffset
 						+ playerRight * currentSideOffset;
 					collectedKeyDrawIndex++;
@@ -4596,6 +5023,7 @@ public:
 
 	}
 
+
 	void drawDetails(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model){
 		shader->bind();
 
@@ -4616,10 +5044,12 @@ public:
 
 	}
 
-	void drawBossHealthBar(glm::mat4 viewMatrix, glm::mat4 projMatrix) {
-		float healthBarWidth = 200.0f;
+	void drawBossHealthBar(glm::mat4 viewMatrix, glm::mat4 projMatrix, float width, float height) {
+		float healthBarWidth = 500.0f;
 		float healthBarHeight = 20.0f;
 		float healthBarOffsetY = 25.0f;  // Offset above enemy head
+		float healthBarStartX = (width - 1)/ 2;
+		float healthBarStartY = height - 100.0f;
 
 		int screenWidth, screenHeight;
 		glfwGetFramebufferSize(windowManager->getHandle(), &screenWidth, &screenHeight);
@@ -4629,32 +5059,34 @@ public:
 		if (bossEnemy && bossEnemy->isAlive()) {
 			glm::vec3 enemyWorldPos = bossEnemy->getAABBMax(); // Top position in world coordinates
 
-			// Transform enemy position to clip space
-			glm::vec4 clipSpacePos = projMatrix * viewMatrix * glm::vec4(enemyWorldPos, 1.0f);
+			// // Transform enemy position to clip space
+			// glm::vec4 clipSpacePos = projMatrix * viewMatrix * glm::vec4(enemyWorldPos, 1.0f);
 
-			// If enemy is behind camera, skip
-			if (clipSpacePos.w <= 0) return;
+			// // If enemy is behind camera, skip
+			// if (clipSpacePos.w <= 0) return;
 
-			// Perspective divide (NDC)
-			glm::vec3 ndcPos = glm::vec3(clipSpacePos) / clipSpacePos.w;
+			// // Perspective divide (NDC)
+			// glm::vec3 ndcPos = glm::vec3(clipSpacePos) / clipSpacePos.w;
 
-			// Convert NDC (-1 to 1) to screen coordinates
-			glm::vec2 screenPos;
-			screenPos.x = (ndcPos.x * 0.5f + 0.5f) * screenWidth;
-			screenPos.y = (ndcPos.y * 0.5f + 0.5f) * screenHeight;
+			// // Convert NDC (-1 to 1) to screen coordinates
+			// glm::vec2 screenPos;
+			// screenPos.x = (ndcPos.x * 0.5f + 0.5f) * screenWidth;
+			// screenPos.y = (ndcPos.y * 0.5f + 0.5f) * screenHeight;
 
-			// Offset above enemy's head
-			screenPos.y += healthBarOffsetY;
+			// // Offset above enemy's head
+			// screenPos.y += healthBarOffsetY;
 
 			// Set HUD Model matrix
-			glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(screenPos.x - (healthBarWidth / 2.0f), screenPos.y, 0.0f));
+			// glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(screenPos.x - (healthBarWidth / 2.0f), screenPos.y, 0.0f));
+			glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(healthBarStartX, healthBarStartY, 0.0f));  // HUD position
 			model = glm::scale(model, glm::vec3(healthBarWidth, healthBarHeight, 1.0f));
 
 			hudProg->bind();
 			glUniformMatrix4fv(hudProg->getUniform("projection"), 1, GL_FALSE, glm::value_ptr(hudProjection));
 			glUniformMatrix4fv(hudProg->getUniform("model"), 1, GL_FALSE, glm::value_ptr(model));
 			glUniform1f(hudProg->getUniform("healthPercent"), bossEnemy->getHitpoints() / BOSS_HP_MAX);
-			glUniform1f(hudProg->getUniform("BarStartX"), screenPos.x - (healthBarWidth / 2.0f));
+			// glUniform1f(hudProg->getUniform("BarStartX"), screenPos.x - (healthBarWidth / 2.0f));
+			glUniform1f(hudProg->getUniform("BarStartX"), healthBarStartX); // Pass max health value
 			glUniform1f(hudProg->getUniform("BarWidth"), healthBarWidth);
 			healthBar->Draw(hudProg);
 			hudProg->unbind();
@@ -4675,7 +5107,28 @@ public:
 		model = glm::scale(model, glm::vec3(screenWidth, screenHeight, 1.0f));
 		glUniformMatrix4fv(redFlashProg->getUniform("projection"), 1, GL_FALSE, value_ptr(proj));
 		glUniformMatrix4fv(redFlashProg->getUniform("model"), 1, GL_FALSE, value_ptr(model));
+		glUniform4fv(redFlashProg->getUniform("color"), 1, value_ptr(vec4(0.7f, 0.1f, 0.1f, alpha))); // Red color
 		glUniform1f(redFlashProg->getUniform("alpha"), alpha); // Red color with alpha
+
+		healthBar->Draw(redFlashProg);
+		redFlashProg->unbind();
+	}
+
+	void drawColorFilter() {
+		int screenWidth, screenHeight;
+		glfwGetFramebufferSize(windowManager->getHandle(), &screenWidth, &screenHeight);
+
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		// glDisable(GL_DEPTH_TEST);
+		redFlashProg->bind();
+
+		glm::mat4 proj = glm::ortho(0.0f, (float)screenWidth, 0.0f, (float)screenHeight, -1.0f, 1.0f);
+		glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(0, 0, 0));
+		model = glm::scale(model, glm::vec3(screenWidth, screenHeight, 1.0f));
+		glUniformMatrix4fv(redFlashProg->getUniform("projection"), 1, GL_FALSE, value_ptr(proj));
+		glUniformMatrix4fv(redFlashProg->getUniform("model"), 1, GL_FALSE, value_ptr(model));
+		glUniform4fv(redFlashProg->getUniform("color"), 1, value_ptr(currentColorFilter)); // Red color
 
 		healthBar->Draw(redFlashProg);
 		redFlashProg->unbind();
@@ -5008,6 +5461,8 @@ public:
 		updateOrbs((float)glfwGetTime());
 		updateKeys((float)glfwGetTime());
 		if (enemyActive) { updateEnemies(frametime); }
+		if (rolling) { updateDodgeRoll(frametime); }
+		if (grabbingBook) { updateGrabBook(frametime); }
 		updateProjectiles(frametime);
 		updateFTimeout(frametime);
 		particleSystem->update(frametime); // Update particles
@@ -5157,16 +5612,8 @@ public:
 			particleAlphaTex->unbind();
 			particleProg->unbind();
 		}
-
-		if (Config::DRAW_HEALTHBAR) { // Draw the health bar
-			//cout << "Drawing healthbar" << endl;
-			drawHealthBar();
-			drawEnemyHealthBars(View->topMatrix(), Projection->topMatrix());
-
-			if (bossfightstarted && !bossfightended) {
-				drawBossHealthBar(View->topMatrix(), Projection->topMatrix());
-			}
-		}
+		glDisable(GL_DEPTH_TEST);
+		drawColorFilter();
 
 		if (Config::DRAW_PLAYER_DAMAGE && player->getDamageTimer() > 0.0f) {
 			player->setDamageTimer(player->getDamageTimer() - frametime);
@@ -5177,6 +5624,7 @@ public:
 
 			drawDamageIndicator(alpha);
 		}
+
 		else if (Config::DRAW_PLAYER_DAMAGE && !player->isAlive() && !debugCamera) {
 			// If player is dead, show red flash
 			movingForward = false;
@@ -5186,15 +5634,32 @@ public:
 			drawDamageIndicator(1.0f);
 		}
 
+		glEnable(GL_DEPTH_TEST);
+
+		if (Config::DRAW_HEALTHBAR) { // Draw the health bar
+			//cout << "Drawing healthbar" << endl;
+			drawHealthBar();
+			drawEnemyHealthBars(View->topMatrix(), Projection->topMatrix());
+
+			if (bossfightstarted && !bossfightended) {
+				drawBossHealthBar(View->topMatrix(), Projection->topMatrix(), static_cast<float>(width), static_cast<float>(height));
+			}
+		}
+
 		// Needs to be before MiniMap rendering
 		glEnable(GL_BLEND); // Enable blending for text rendering
 		// RenderText(textProg, "Cats are ok.  Cur time: " + to_string(glfwGetTime()), 10.0f, 265.0f, 1.0f, glm::vec3(1.0f, 1.0f, 0.9f),
 		// 		window_width, window_height);
-		RenderText(textProg, "Cats are ok.  Cur time: " + to_string(glfwGetTime()), 25.0f, 25.0f, 1.0f, glm::vec3(1.0f, 1.0f, 0.9f),
+		RenderText(textProg, "Keys collected: x" + to_string(keysCollectedCount), 25.0f, 25.0f, 1.0f, glm::vec3(1.0f, 1.0f, 0.9f),
 				width, height);
 		float formattedfps = floor(getFPS() * 100) / 100; // Format FPS to 2 decimal places
 		RenderText(textProg, "FPS: " + to_string(formattedfps), width - 100.0f, height - 50.0f, 1.0f, glm::vec3(1.0f, 1.0f, 0.9f),
 				width, height);
+
+		if (bossfightstarted && !bossfightended) {
+				RenderText(textProg, "BOSS HP", width / 2.0f, height - 70.0f, 1.0f, glm::vec3(1.0f, 0.0f, 0.0f),
+				width, height);
+			}
 		glDisable(GL_BLEND); // Disable blending after text rendering
 
 		if (Config::DRAW_MINIMAP) { // Draw the mini map
@@ -5248,14 +5713,40 @@ public:
 	void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
 		if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) glfwSetWindowShouldClose(window, GL_TRUE);
 
-		// Lighting / Shader settings
-		if (key == GLFW_KEY_1 && action == GLFW_PRESS) Config::SATURATION -= 0.1f;
-		if (key == GLFW_KEY_2 && action == GLFW_PRESS) Config::SATURATION += 0.1f;
-		if (key == GLFW_KEY_3 && action == GLFW_PRESS) Config::EXPOSURE += 0.1f;
-		if (key == GLFW_KEY_4 && action == GLFW_PRESS) Config::EXPOSURE -= 0.1f;
-		if (key == GLFW_KEY_9 && action == GLFW_PRESS) Config::DEBUG_LIGHTING = !Config::DEBUG_LIGHTING;
-		if (key == GLFW_KEY_0 && action == GLFW_PRESS) Config::DEBUG_GEOM = !Config::DEBUG_GEOM;
-		if (key == GLFW_KEY_B && action == GLFW_PRESS) Config::DEBUG_AABBS = !Config::DEBUG_AABBS;
+		//Debug
+		if (key == GLFW_KEY_K && action == GLFW_PRESS) {
+			//Debug Camera
+			debugCamera = !debugCamera;
+
+			if (debugCamera) {
+				if (key == GLFW_KEY_L && action == GLFW_PRESS) {
+					cursor_visable = !cursor_visable;
+					if (cursor_visable) {
+						glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+					}
+					else {
+						glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+					}
+				}
+			}
+			if (debugCamera && key == GLFW_KEY_N && action == GLFW_PRESS) {
+				//Debug Enemy Movement
+				enemyActive = !enemyActive;
+			}
+			if (debugCamera && key == GLFW_KEY_M && action == GLFW_PRESS) {
+				//Debug Player Movement Toggle
+				playerActive = !playerActive;
+			}
+			// Lighting / Shader settings
+			if (key == GLFW_KEY_1 && action == GLFW_PRESS) Config::SATURATION -= 0.1f;
+			if (key == GLFW_KEY_2 && action == GLFW_PRESS) Config::SATURATION += 0.1f;
+			if (key == GLFW_KEY_3 && action == GLFW_PRESS) Config::EXPOSURE += 0.1f;
+			if (key == GLFW_KEY_4 && action == GLFW_PRESS) Config::EXPOSURE -= 0.1f;
+			if (key == GLFW_KEY_9 && action == GLFW_PRESS) Config::DEBUG_LIGHTING = !Config::DEBUG_LIGHTING;
+			if (key == GLFW_KEY_0 && action == GLFW_PRESS) Config::DEBUG_GEOM = !Config::DEBUG_GEOM;
+			if (key == GLFW_KEY_B && action == GLFW_PRESS) Config::DEBUG_AABBS = !Config::DEBUG_AABBS;
+
+		}
 
 		if (key == GLFW_KEY_GRAVE_ACCENT && action == GLFW_PRESS)
 		{
@@ -5333,6 +5824,45 @@ public:
 				//Movement Variable
 				movingRight = false;
 			}
+			else if (key == GLFW_KEY_Q && action == GLFW_PRESS) {
+				currentSpellSlotIndex = (currentSpellSlotIndex - 1 + 4) % 4;
+
+				string spellName = "";
+
+				if (currentSpellSlotIndex == 0) {
+					spellName = "Lightning Bolt";
+				}
+				else if (currentSpellSlotIndex == 1) {
+					spellName = "Fireball";
+				}
+				else if (currentSpellSlotIndex == 2) {
+					spellName = "Ice Shard";
+				}
+				else if (currentSpellSlotIndex == 3) {
+					spellName = "Heal Pulse";
+				}
+
+				cout << "Current Spell: " << spellName <<  " Index: " << currentSpellSlotIndex << endl;
+				currentPlayerSpellType = spellSlots[currentSpellSlotIndex];
+			}
+			else if (key == GLFW_KEY_E && action == GLFW_PRESS) {
+				currentSpellSlotIndex = (currentSpellSlotIndex + 1) % 4;
+				string spellName = "";
+				if (currentSpellSlotIndex == 0) {
+					spellName = "Lightning Bolt";
+				}
+				else if (currentSpellSlotIndex == 1) {
+					spellName = "Fireball";
+				}
+				else if (currentSpellSlotIndex == 2) {
+					spellName = "Ice Shard";
+				}
+				else if (currentSpellSlotIndex == 3) {
+					spellName = "Heal Pulse";
+				}
+				cout << "Current Spell: " << spellName <<  " Index: " << currentSpellSlotIndex << endl;
+				currentPlayerSpellType = spellSlots[currentSpellSlotIndex];
+			}
 		}
 		if (key == GLFW_KEY_Z && action == GLFW_PRESS) {
 			glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
@@ -5347,40 +5877,28 @@ public:
 				fTimeout = 3.0f;
 			}
 		}
-		if (key == GLFW_KEY_L && action == GLFW_PRESS) {
-			cursor_visable = !cursor_visable;
-			if (cursor_visable) {
-				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-			}
-			else {
-				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-			}
-		}
-		if (key == GLFW_KEY_U && action == GLFW_PRESS && keysCollectedCount == keysneededToCollect) {
+		if (key == GLFW_KEY_U && action == GLFW_PRESS && (keysCollectedCount == keysneededToCollect || debugCamera)) {
 			unlock = true;
 			canFightboss = true;
 		}
-		if (key == GLFW_KEY_K && action == GLFW_PRESS) {
-			//Debug Camera
-			debugCamera = !debugCamera;
-		}
-		if (debugCamera && key == GLFW_KEY_N && action == GLFW_PRESS) {
-			//Debug Enemy Movement
-			enemyActive = !enemyActive;
-		}
-		if (debugCamera && key == GLFW_KEY_M && action == GLFW_PRESS) {
-			//Debug Player Movement Toggle
-			playerActive = !playerActive;
+
+		if (key == GLFW_KEY_P && action == GLFW_PRESS) {
+			unlock = true;
+			canFightboss = true;
 		}
 
-		// Shoot fireball with SPACEBAR
+		if (key == GLFW_KEY_V && action == GLFW_PRESS) {
+			// unlock = true;
+			// canFightboss = true;
+			restartGen = true; // Restart the generation
+		}
+		// DodgeRoll with Spacebar
 		if (key == GLFW_KEY_SPACE && action == GLFW_PRESS) {
-			if (player->isAlive()) { // Only shoot if alive
-				shootSpell();
-			}
+			dodgeRoll();
 		}
 
-		if (!player->isAlive() && key == GLFW_KEY_R && action == GLFW_PRESS) restartGen = true; // Changed restart to R
+		//Restart key R
+		if ((debugCamera || !player->isAlive()) && key == GLFW_KEY_R && action == GLFW_PRESS) restartGen = true; 
 	}
 
 	void scrollCallback(GLFWwindow* window, double deltaX, double deltaY) {
@@ -5472,6 +5990,14 @@ int main(int argc, char* argv[]) {
 		return -1;
 	}
 
+	// Load spell sound effect
+	if (ma_sound_init_from_file(&engine, "../resources/firespellsound.mp3", 0, NULL, NULL, &spell_sound) != MA_SUCCESS) {
+		printf("Failed to load spell sound\n");
+		ma_sound_uninit(&sound); // Uninitialize background sound if spell sound fails
+		ma_engine_uninit(&engine);
+		return -1;
+	}
+
 	// This is the code that will likely change program to program as you
 	// may need to initialize or set up different data and state
 
@@ -5498,7 +6024,7 @@ int main(int argc, char* argv[]) {
 	glfwSetInputMode(windowManager->getHandle(), GLFW_STICKY_KEYS, GLFW_TRUE);
 
 	cout << "Controls: " << endl << "WASD: Move" << endl << "Mouse: Look around" << endl
-		<< "'F': Interact with book" << endl<< "'~' Fullscreen" << endl << "'L': Toggle cursor mode" << endl
+		<< "'F': Interact with book" << endl << "'Q and E': Switch spell slot" << endl << "'~' Fullscreen" << endl << "'L': Toggle cursor mode" << endl
 		<< "[DEBUG] Press K To Enter Debug Camera Mode." << endl << "+/- Change Brightness, 1/2 Change Saturation"
 		<< endl << "While in Debug Camera mode, M toggles player movement and N toggles enemy movement" << endl;
 
@@ -5526,6 +6052,8 @@ int main(int argc, char* argv[]) {
 
 	// Quit program
 	windowManager->shutdown();
-	ma_engine_uninit(&engine); // Uninitialize miniaudio
+	ma_sound_uninit(&sound);
+	ma_sound_uninit(&spell_sound); 
+	ma_engine_uninit(&engine); 
 	return 0;
 }

@@ -71,3 +71,5 @@ glm::vec3 Bezier::cubeBez(glm::vec3 (*interpolation)(glm::vec3, glm::vec3, float
     // these points form the curve.
     return (*interpolation)(r0, r1, t);
 }
+
+//Smooth Step

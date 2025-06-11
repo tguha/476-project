@@ -155,6 +155,9 @@ class LibraryGen {
             return LibraryworldOrigin.z + localZ;
         }
 
+        void setNumEnemies(int numEnemies);
+        int getNumEnemies() const { return numEnemies; }
+
     private:
         Grid<Cell> grid; // Grid of CellType
         std::vector<glm::vec2> clusterCenters;
@@ -166,6 +169,7 @@ class LibraryGen {
         std::vector<glm::vec2> avoidPoints;
         glm::ivec2 gridSize;
         glm::vec3 LibraryworldOrigin = glm::vec3(0, 0, 0); // World origin for the grid
+        int numEnemies = Config::NUM_ENEMIES; // Default number of enemies
 
         // struct Layout {
         //     std::vector<glm::ivec2> relativePositions;
