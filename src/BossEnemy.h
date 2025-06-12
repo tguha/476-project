@@ -16,6 +16,8 @@ class BossEnemy : public Enemy {
         SpellType BossSpellType = SpellType::NONE;
         float slamCooldown = Config::BOSS_SLAM_COOLDOWN;
         float slamDuration = Config::BOSS_SLAM_DURATION;
+        float bossDeathTimer = 0.0f; // Timer for boss death animation
+        float bossDeathDuration = 3.0f; // Duration of the death animation
 
     public:
         BossEnemy(const glm::vec3& position, float hitpoints, AssimpModel* model, const glm::vec3& scale, const glm::vec3& rotation, float specialAttackCooldown, SpellType spellType);
@@ -48,4 +50,9 @@ class BossEnemy : public Enemy {
             specialAttackCooldown = BOSS_SPECIAL_ATTACK_COOLDOWN;
             attack1Cooldown = 0.0f;
         }
+        void setBossDeathTimer(float timer) { bossDeathTimer = timer; }
+        float getBossDeathTimer() const { return bossDeathTimer; }
+        void setBossDeathDuration(float duration) { bossDeathDuration = duration; }
+        float getBossDeathDuration() const { return bossDeathDuration; }
+        void setBossSpellType(SpellType spellType) { BossSpellType = spellType; }
 };

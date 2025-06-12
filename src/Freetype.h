@@ -16,9 +16,18 @@ struct Character {
     glm::ivec2 Bearing;      // Offset from baseline to left/top of glyph
     unsigned int Advance;     // Horizontal offset to advance to next glyph
 };
+
+struct FontData {
+    FT_Library ft;           // FreeType library handle
+    FT_Face face;            // FreeType font face handle
+    std::map<GLchar, Character> Characters; // Map of characters to their glyph data
+};
+
+std::vector<FontData> AllFonts;
+
 // Free type data
-FT_Library ft;
-FT_Face face;
+// FT_Library ft;
+// FT_Face face;
 std::map<GLchar, Character> Characters;
 unsigned int TextVAO, TextVBO;
 
@@ -34,7 +43,8 @@ void initTextQuad() {
     glBindVertexArray(0);
 }
 
-int initFont(const std::string& resourceDirectory) {
+int initFont(const std::string fontPath) {
+    FT_Library ft;
     if (FT_Init_FreeType(&ft)) {
         std::cout << "ERROR::FREETYPE: Could not init FreeType Library" << std::endl;
         return -1;
@@ -42,8 +52,8 @@ int initFont(const std::string& resourceDirectory) {
 
     FT_Face face;
 
-    std::string fontPath = resourceDirectory + "/arial.ttf";
-    std::cout << "Font path: " << fontPath << std::endl;
+    // std::string fontPath = resourceDirectory + "/arial.ttf";
+    // std::cout << "Font path: " << fontPath << std::endl;
     if (FT_New_Face(ft, fontPath.c_str(), 0, &face)) {
         std::cout << "ERROR::FREETYPE: Failed to load font" << std::endl;
         return -1;
@@ -94,6 +104,12 @@ int initFont(const std::string& resourceDirectory) {
         glBindTexture(GL_TEXTURE_2D, 0);
     }
 
+    FontData fontData;
+    fontData.ft = ft;
+    fontData.face = face;
+    fontData.Characters = Characters;
+    AllFonts.push_back(fontData);
+
     return glGetError(); // return error code if any
 }
 
@@ -104,7 +120,7 @@ glm::mat4 setTextProj(std::shared_ptr<Program> curShade, int width, int height) 
 }
 
 void RenderText(std::shared_ptr<Program> textProg, std::string text, float x, float y, float scale, glm::vec3 color,
-                int width, int height) {
+                int width, int height, int fontIndex = 0) {
     textProg->bind();
 
     setTextProj(textProg, width, height);
@@ -116,7 +132,7 @@ void RenderText(std::shared_ptr<Program> textProg, std::string text, float x, fl
 
     std::string::const_iterator c;
     for (c = text.begin(); c != text.end(); c++) {
-        Character ch = Characters[*c];
+        Character ch = AllFonts[fontIndex].Characters[*c];
 
         float xpos = x + ch.Bearing.x * scale;
         float ypos = y - (ch.Size.y - ch.Bearing.y) * scale;
