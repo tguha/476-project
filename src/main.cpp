@@ -5100,19 +5100,19 @@ public:
 							SpellType spellType = bossEnemy->getBossSpellType();
 
 							if (spellType == SpellType::FIRE) {
-								FireElemental* fireMinion = new FireElemental(vec3(spawnPos.x, Config::FIRE_ELEMENTAL_TRANS_Y, spawnPos.z), Config::FIRE_ELEMENTAL_HP_MAX, Config::FIRE_ELEMENTAL_MOVE_SPEED, fireElemental, vec3(0.01f, 0.01f, 0.01f), vec3(glm::radians(90.0f), 0.0f, 0.0f));
+								FireElemental* fireMinion = new FireElemental(vec3(spawnPos.x, Config::FIRE_ELEMENTAL_TRANS_Y, spawnPos.y), Config::FIRE_ELEMENTAL_HP_MAX, Config::FIRE_ELEMENTAL_MOVE_SPEED, fireElemental, vec3(0.01f, 0.01f, 0.01f), vec3(glm::radians(90.0f), 0.0f, 0.0f));
 								fireMinion->setAggro(true);
 								fireMinion->setSightRange(50.0f);
 								enemies.push_back(fireMinion);
 
 							} else if (spellType == SpellType::ICE) {
-								IceElemental* iceMinion = new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.z), Config::ICE_ELEMENTAL_HP_MAX, Config::ICE_ELEMENTAL_MOVE_SPEED, iceElemental, vec3(1.0f, 1.0f, 1.0f), vec3(glm::radians(90.0f), 0.0f, 0.0f));
+								IceElemental* iceMinion = new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.y), Config::ICE_ELEMENTAL_HP_MAX, Config::ICE_ELEMENTAL_MOVE_SPEED, iceElemental, vec3(1.0f, 1.0f, 1.0f), vec3(glm::radians(90.0f), 0.0f, 0.0f));
 								iceMinion->setAggro(true);
 								iceMinion->setSightRange(50.0f);
 								enemies.push_back(iceMinion);
 
 							} else if (spellType == SpellType::LIGHTNING) {
-								LightningElemental* lightningMinion = new LightningElemental(vec3(spawnPos.x, Config::LIGHTNING_ELEMENTAL_TRANS_Y, spawnPos.z), Config::LIGHTNING_ELEMENTAL_HP_MAX, Config::LIGHTNING_ELEMENTAL_MOVE_SPEED, lightningElemental, vec3(0.01f, 0.01f, 0.01f), vec3(glm::radians(90.0f), 0.0f, glm::radians(90.0f)));
+								LightningElemental* lightningMinion = new LightningElemental(vec3(spawnPos.x, Config::LIGHTNING_ELEMENTAL_TRANS_Y, spawnPos.y), Config::LIGHTNING_ELEMENTAL_HP_MAX, Config::LIGHTNING_ELEMENTAL_MOVE_SPEED, lightningElemental, vec3(0.01f, 0.01f, 0.01f), vec3(glm::radians(90.0f), 0.0f, glm::radians(90.0f)));
 								lightningMinion->setAggro(true);
 								lightningMinion->setSightRange(50.0f);
 								enemies.push_back(lightningMinion);
