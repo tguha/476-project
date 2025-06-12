@@ -2213,7 +2213,10 @@ public:
 	//TODO: Add particle effects to orbs
 	void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		// --- Collision Check Logic ---
+
 		for (auto& orb : orbCollectibles) {
+			
+			
 			// Perform collision check ONLY if not collected AND in the IDLE state
 			if (!orb.collected && orb.state == OrbState::IDLE && // <<<--- ADD STATE CHECK
 				checkAABBCollision(playerBB->min, playerBB->max, orb.AABBmin, orb.AABBmax)) {
@@ -2246,6 +2249,7 @@ public:
 				// orbsCollectedCount++; // This might now just mean "spell charges" or be repurposed
 				spellCounts[orb.spellType]++; // Increment the count for the specific spell type
 				orbsCollectedCount++; // Increment the total orbs collected count
+
 
 				// Debug output for spell type equipped
 				std::string spellTypeName = "NONE";
@@ -2350,7 +2354,7 @@ public:
 			if (orb.collected && spellCounts[orb.spellType] > 0) {
 				// Calculate position behind the player (same logic as before)
 				float backOffset = 0.4f;
-				float upOffsetBase = 0.6f;
+				float upOffsetBase = 0.6f; 
 				float stackOffset = orb.scale * 1.5f;
 				float sideOffset = sideOffsets[orb.spellType];
 				glm::vec3 playerForward = normalize(manMoveDir);
@@ -5170,6 +5174,7 @@ public:
 		}
 		else {
 			drawLock(prog, Model);
+		}
 
 
 		drawBossEnemy(prog, Model);
