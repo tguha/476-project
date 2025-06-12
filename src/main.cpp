@@ -213,7 +213,7 @@ public:
 	float wasd_sens = 0.5f;
 
 	/*MINI MAP*/
-	glm::vec3 eye = glm::vec3(-6, 1.03, 0); 
+	glm::vec3 eye = glm::vec3(-6, 1.03, 0);
 	glm::vec3 lookAt = glm::vec3(0, 0, 0);
 	glm::vec3 up = glm::vec3(0, 1, 0);
 	bool CULL = false;
@@ -470,7 +470,7 @@ public:
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT5, GL_TEXTURE_2D, gLSPosition, 0);
-	
+
 		// Depth buffer
 	    //glGenRenderbuffers(1, &depthBuf);
 		glBindRenderbuffer(GL_RENDERBUFFER, depthBuf);
@@ -481,7 +481,7 @@ public:
 		glBindTexture(GL_TEXTURE_2D, 0);
 		glBindRenderbuffer(GL_RENDERBUFFER, 0);
 	}
-  
+
 	std::vector<LocksOnDoor> lockOnDoors;
 
 
@@ -1004,7 +1004,7 @@ public:
 		GLint buffUnits[6] = { 0,1,2,3,4,5 };
 		glUniform1iv(buffLoc, 6, buffUnits);
 		buffProg->unbind();
-		
+
 		buffProg->addUniform("hasBones");
 		buffProg->addAttribute("boneIds");
 		buffProg->addAttribute("weights");
@@ -1035,7 +1035,7 @@ public:
 		lightProg->addUniform("numLights");
 		lightProg->addUniform("lightPos");
 		lightProg->addUniform("lightCol");
-		
+
 		lightProg->addUniform("exposure");
 		lightProg->addUniform("saturation");
 
@@ -1054,7 +1054,7 @@ public:
 		lightProg->addUniform("effect");
 		lightProg->addUniform("warpTime");
 		// --- END Lighting shader setup ---
-		
+
 		updateCameraVectors();
 
 		// --- Textures ---
@@ -1641,7 +1641,7 @@ public:
 		bossEnemy = new BossEnemy(bossSpawnPos, BOSS_HP_MAX, stoneGolem, vec3(1.3f, 0.8f, 1.0f), vec3(0, 1, 0), BOSS_SPECIAL_ATTACK_COOLDOWN, SpellType::ICE);
 
 		initTextQuad();
-    
+
     initCircularBorder();
 		initLocks();
 
@@ -5100,19 +5100,19 @@ public:
 							SpellType spellType = bossEnemy->getBossSpellType();
 
 							if (spellType == SpellType::FIRE) {
-								FireElemental* fireMinion = new FireElemental(vec3(spawnPos.x, Config::FIRE_ELEMENTAL_TRANS_Y, spawnPos.y), ENEMY_HP_MAX, 2.0f, fireElemental, vec3(0.65f), vec3(0.0f));
+								FireElemental* fireMinion = new FireElemental(vec3(spawnPos.x, Config::FIRE_ELEMENTAL_TRANS_Y, spawnPos.z), Config::FIRE_ELEMENTAL_HP_MAX, Config::FIRE_ELEMENTAL_MOVE_SPEED, fireElemental, vec3(0.01f, 0.01f, 0.01f), vec3(glm::radians(90.0f), 0.0f, 0.0f));
 								fireMinion->setAggro(true);
 								fireMinion->setSightRange(50.0f);
 								enemies.push_back(fireMinion);
 
 							} else if (spellType == SpellType::ICE) {
-								IceElemental* iceMinion = new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.y), ENEMY_HP_MAX, 2.0f, iceElemental, vec3(0.65f), vec3(0.0f));
+								IceElemental* iceMinion = new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.z), Config::ICE_ELEMENTAL_HP_MAX, Config::ICE_ELEMENTAL_MOVE_SPEED, iceElemental, vec3(1.0f, 1.0f, 1.0f), vec3(glm::radians(90.0f), 0.0f, 0.0f));
 								iceMinion->setAggro(true);
 								iceMinion->setSightRange(50.0f);
 								enemies.push_back(iceMinion);
 
 							} else if (spellType == SpellType::LIGHTNING) {
-								LightningElemental* lightningMinion = new LightningElemental(vec3(spawnPos.x, Config::LIGHTNING_ELEMENTAL_TRANS_Y, spawnPos.y), ENEMY_HP_MAX, 2.0f, lightningElemental, vec3(0.65f), vec3(0.0f));
+								LightningElemental* lightningMinion = new LightningElemental(vec3(spawnPos.x, Config::LIGHTNING_ELEMENTAL_TRANS_Y, spawnPos.z), Config::LIGHTNING_ELEMENTAL_HP_MAX, Config::LIGHTNING_ELEMENTAL_MOVE_SPEED, lightningElemental, vec3(0.01f, 0.01f, 0.01f), vec3(glm::radians(90.0f), 0.0f, glm::radians(90.0f)));
 								lightningMinion->setAggro(true);
 								lightningMinion->setSightRange(50.0f);
 								enemies.push_back(lightningMinion);
@@ -6717,7 +6717,7 @@ public:
 		if (resetting) {
 			double sinceDefeat = now - bossDeathTime;
 			if (sinceDefeat < effectDur) {
-				// **still in post-boss state**  
+				// **still in post-boss state**
 				// e.g. enable your warp effect uniform:
 				lightProg->bind();
 				glUniform1i(lightProg->getUniform("warpOn"), GL_TRUE);
@@ -6726,7 +6726,7 @@ public:
 				// then continue to render with that effect
 			}
 			else {
-				// **post-effect period is over**  
+				// **post-effect period is over**
 				resetting = false;
 				// clear the warp flag so you go back to normal rendering
 				lightProg->bind();
@@ -6865,7 +6865,7 @@ public:
 			glDepthMask(GL_FALSE);
 
 			lightProg->bind();
-				
+
 				glActiveTexture(GL_TEXTURE0 + 20);
 				glBindTexture(GL_TEXTURE_2D, gPosition);
 
@@ -7053,40 +7053,40 @@ public:
 				RenderText(textProg, "BOSS HP", width / 2.0f, height - 70.0f, 1.0f, glm::vec3(1.0f, 0.0f, 0.0f),
 					width, height);
 			}
-			glDisable(GL_BLEND); // Disable blending after text rendering
+			// glDisable(GL_BLEND); // Disable blending after text rendering
 
-			if (Config::DRAW_MINIMAP) { // Draw the mini map
-				ShadowProg->bind();
-				//cout << "Drawing minimap" << endl;
-				glClear(GL_DEPTH_BUFFER_BIT);
-				glViewport(0, height - 350, 350, 350);
-				SetOrthoMatrix(ShadowProg);
-				SetTopView(ShadowProg); /*MINI MAP*/
-				SetMaterial(ShadowProg, Material::brown);
-				//drawScene(prog2, CULL);
-				/* draws */
-				// drawBorder(prog2, Model);
-				// drawDoor(prog2, Model);
-				// drawBooks(prog2, Model);
-				// drawEnemies(prog2, Model);
-#if USE_INSTANCING
-				drawLibInstancing(ShadowProg, false); // Draw the library shelves without culling
-#else
-				drawCircularBorder(ShadowProg, false); // Draw the circular library shelves
-				drawLibrary(ShadowProg, Model, false);
-				drawBossRoom(ShadowProg, Model, false, animTime);
-#endif
-				// drawLibInstancing(ShadowProg, false); // Draw the library shelves without culling
-				drawBossEnemy(ShadowProg, Model);
-				// drawOrbs(prog2, Model);
-				drawMiniPlayer(ShadowProg, Model);
-				drawBorderWalls(ShadowProg, Model);
-				// SetMaterialMan(prog2,6 );
-				drawLibGrnd(ShadowProg, Model);
-				// drawBossRoom(ShadowProg, Model, false); //boss room not drawing
-				drawEnemies(ShadowProg, Model, frametime); // IS THIS SUPPOSED TO BE ANIMTIME OR FRAMETIME?
-				ShadowProg->unbind();
-			}
+// 			if (Config::DRAW_MINIMAP) { // Draw the mini map
+// 				ShadowProg->bind();
+// 				//cout << "Drawing minimap" << endl;
+// 				glClear(GL_DEPTH_BUFFER_BIT);
+// 				glViewport(0, height - 350, 350, 350);
+// 				SetOrthoMatrix(ShadowProg);
+// 				SetTopView(ShadowProg); /*MINI MAP*/
+// 				SetMaterial(ShadowProg, Material::brown);
+// 				//drawScene(prog2, CULL);
+// 				/* draws */
+// 				// drawBorder(prog2, Model);
+// 				// drawDoor(prog2, Model);
+// 				// drawBooks(prog2, Model);
+// 				// drawEnemies(prog2, Model);
+// #if USE_INSTANCING
+// 				drawLibInstancing(ShadowProg, false); // Draw the library shelves without culling
+// #else
+// 				drawCircularBorder(ShadowProg, false); // Draw the circular library shelves
+// 				drawLibrary(ShadowProg, Model, false);
+// 				drawBossRoom(ShadowProg, Model, false, animTime);
+// #endif
+// 				// drawLibInstancing(ShadowProg, false); // Draw the library shelves without culling
+// 				drawBossEnemy(ShadowProg, Model);
+// 				// drawOrbs(prog2, Model);
+// 				drawMiniPlayer(ShadowProg, Model);
+// 				drawBorderWalls(ShadowProg, Model);
+// 				// SetMaterialMan(prog2,6 );
+// 				drawLibGrnd(ShadowProg, Model);
+// 				// drawBossRoom(ShadowProg, Model, false); //boss room not drawing
+// 				drawEnemies(ShadowProg, Model, frametime); // IS THIS SUPPOSED TO BE ANIMTIME OR FRAMETIME?
+// 				ShadowProg->unbind();
+// 			}
 
 			if (!player->isAlive() && !debugCamera) {
 				RenderText(textProg, "You Died!", width / 2.0f - 150.0f, height / 2.0f + 100.0f, 3.0f, glm::vec3(1.0f, 1.0f, 1.0f),
