@@ -3917,7 +3917,7 @@ public:
 					orbsCollectedCount--;
 					orbCollectibles.erase(it);
 
-					if (spellCounts[currentPlayerSpellType] < 0) {
+					if (spellCounts[currentPlayerSpellType] <= 0) {
 						for (int i = 0; i < 4; ++i) {
 							if (spellCounts[spellSlots[i]] > 0) {
 								currentPlayerSpellType = spellSlots[i];
