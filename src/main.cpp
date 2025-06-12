@@ -6121,7 +6121,6 @@ public:
 			glUniformMatrix4fv(particleProg->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
 			glUniformMatrix4fv(particleProg->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
 			particleAlphaTex->bind(particleProg->getUniform("alphaTexture"));
-			glBlendFunc(GL_SRC_ALPHA, GL_ONE);
 			drawParticles(particleSystem, particleProg, Model); // draw particles if full scene render
 			particleAlphaTex->unbind();
 			particleProg->unbind();
@@ -6175,9 +6174,21 @@ public:
 				width, height);
 			}
 
+		if (!player->isAlive() && !debugCamera) {
+			RenderText(textProg, "You Died!", width / 2.0f - 150.0f, height / 2.0f + 100.0f, 3.0f, glm::vec3(1.0f, 1.0f, 1.0f),
+				width, height);
+			RenderText(textProg, "Press R to Restart", width / 2.0f - 250.0f, height / 2.0f, 3.0f, glm::vec3(1.0f, 1.0f, 1.0f),
+				width, height);
+		}
+
 		// glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); // Set blending function for text rendering
 		DrawKeyHUD(keyHUDshader, keyScreenTexture->getID(), width, height, keysCollectedCount, glm::vec2(100.0f, 50.0f), glm::vec2(100.0f, 100.0f));
+
+		if (!player->isAlive() && !debugCamera) {
+			DrawTextoScreen(keyHUDshader, catSadScreenTexture->getID(), width, height, glm::vec2(900.0f, 200.0f), glm::vec2(500.0f, 500.0f));
+		}
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); // Reset blending function for other rendering
 
 		glDisable(GL_BLEND); // Disable blending after text rendering
 
