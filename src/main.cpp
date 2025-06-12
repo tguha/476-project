@@ -2233,6 +2233,10 @@ public:
 			if (!orb.collected && orb.state == OrbState::IDLE && // <<<--- ADD STATE CHECK
 				checkAABBCollision(playerBB->min, playerBB->max, orb.AABBmin, orb.AABBmax)) {
 				orb.collected = true;
+
+				/* possible sound effect */
+
+				
 				// orb.state = OrbState::COLLECTED; // Optionally set state
 
 				bool allSpellsEmpty = true;
@@ -2562,6 +2566,9 @@ public:
 					keyPos.y -= 1.5f; // Adjust height for key position
 					keyCollectibles.emplace_back(key, keyPos, 0.1f, Material::gold, SpellType::NONE);
 					enemy->setDropSpawned(true); // Mark that the key has been spawned
+
+					/* play key drop sound effect */
+					ma_sound_start(&key_drop);
 				}
 
 				continue; // Skip null or dead enemies
@@ -3288,6 +3295,8 @@ public:
 
 						interacted = true;
 
+						/* possible sound effect */
+
 					}
 				}
 			}
@@ -3346,6 +3355,8 @@ public:
 						newBook.startFalling(groundY, player->getPosition());
 
 						interacted = true;
+
+						/* possible sound effect */
 
 					}
 				}
@@ -4938,6 +4949,9 @@ public:
 				key.collected = true;
 				// key.state = OrbState::COLLECTED; // Optionally set state
 				keysCollectedCount++;
+				 
+				// play key collected sound effect
+				ma_sound_start(&key_pickup);
 				std::cout << "Collected a key! (" << keysCollectedCount << ")\n";
 			}
 		}
@@ -5976,8 +5990,20 @@ int main(int argc, char* argv[]) {
 	}
 
 	// Load key dropped sound effect
+	if (ma_sound_init_from_file(&engine, "../resources/SoundEffects/tada-fanfare.mp3", 0, NULL, NULL, &key_drop) != MA_SUCCESS) {
+		printf("Failed to load key dropped sound\n");
+		ma_sound_uninit(&sound); // Uninitialize background sound if spell sound fails
+		ma_engine_uninit(&engine);
+		return -1;
+	}
 
 	// Load key pick up sound effect
+	if (ma_sound_init_from_file(&engine, "../resources/SoundEffects/item-pick-up.mp3", 0, NULL, NULL, &key_pickup) != MA_SUCCESS) {
+		printf("Failed to load key pickup sound\n");
+		ma_sound_uninit(&sound); // Uninitialize background sound if spell sound fails
+		ma_engine_uninit(&engine);
+		return -1;
+	}
 
 	// Load door locked sound effect
 
@@ -6038,6 +6064,7 @@ int main(int argc, char* argv[]) {
 	windowManager->shutdown();
 	ma_sound_uninit(&sound);
 	ma_sound_uninit(&spell_sound); 
+	ma_sound_uninit(&key_drop);
 	ma_engine_uninit(&engine); 
 	return 0;
 }
