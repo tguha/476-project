@@ -55,7 +55,9 @@ using namespace glm;
 
 ma_engine engine;
 ma_sound sound;
-ma_sound spell_sound;
+ma_sound fire_spell_sound;
+ma_sound ice_spell_sound;
+ma_sound lightning_spell_sound;
 ma_sound door_sound;
 ma_sound boss_music;
 ma_sound key_unlock_sound;
@@ -3867,12 +3869,12 @@ public:
 			return;
 		}
 
-		// Consume an orb if not in debug mode
+		bool spell_shot_successfully = false;
 		if (!debugCamera) {
-			// Remove visual orb logic... (find first collected orb and erase)
 			for (auto it = orbCollectibles.begin(); it != orbCollectibles.end(); ++it) {
 				if (it->collected && it->spellType == currentPlayerSpellType) {
-					spellCounts[it->spellType]--; // Increment spell count for the type being shot
+					spell_shot_successfully = true;
+					spellCounts[it->spellType]--; // Decrement spell count for the type being shot
 					cout << "Spells remaining of this type: " << spellCounts[it->spellType] << endl;
 					orbsCollectedCount--;
 					orbCollectibles.erase(it);
@@ -3890,6 +3892,13 @@ public:
 					break;
 				}
 			}
+		} else {
+			spell_shot_successfully = true; // In debug mode, we can always shoot.
+		}
+
+		if (!spell_shot_successfully) {
+			cout << "[DEBUG] Cannot shoot: No orbs of current type." << endl;
+			return;
 		}
 
 		vec3 shootDir = manMoveDir;
@@ -3907,7 +3916,7 @@ public:
 		activeSpells.emplace_back(spawnPos, shootDir, (float)glfwGetTime());
 		SpellProjectile& newProj = activeSpells.back();
 
-		if (particleSystem && spellCounts[currentPlayerSpellType] > 0) {
+		if (particleSystem) {
 			float current_particle_system_time = particleSystem->getCurrentTime();
 			int particles_to_spawn = 10;
 
@@ -3931,6 +3940,8 @@ public:
 				p_color_end = glm::vec4(0.9f, 0.2f, 0.0f, 0.5f);
 				p_scale_min = 0.45f; // Increased size
 				p_scale_max = 0.85f;
+				ma_sound_seek_to_pcm_frame(&fire_spell_sound, 0);
+				ma_sound_start(&fire_spell_sound);
 				break;
 			case SpellType::ICE:
 				spellTypeName = "ICE";
@@ -3940,6 +3951,8 @@ public:
 				p_scale_min = 0.4f; // Increased size
 				p_scale_max = 0.75f;
 				newProj.speed = 12.0f; // Slower ice projectile
+				ma_sound_seek_to_pcm_frame(&ice_spell_sound, 0);
+				ma_sound_start(&ice_spell_sound);
 				break;
 			case SpellType::LIGHTNING:
 				spellTypeName = "LIGHTNING";
@@ -3949,6 +3962,8 @@ public:
 				p_scale_min = 0.35f; // Slightly smaller but more numerous for lightning
 				p_scale_max = 0.6f;
 				newProj.speed = 20.0f; // Faster lightning projectile
+				ma_sound_seek_to_pcm_frame(&lightning_spell_sound, 0);
+				ma_sound_start(&lightning_spell_sound);
 				break;
 			case SpellType::HEAL:
 				spellTypeName = "HEAL";
@@ -3981,7 +3996,7 @@ public:
 		}
 
 		// Play spell sound effect
-		ma_sound_start(&spell_sound);
+		// ma_sound_start(&spell_sound);
 
 		cout << "[DEBUG] Spell Fired! Start:(" << spawnPos.x << "," << spawnPos.y << "," << spawnPos.z
 			<< ") Dir: (" << shootDir.x << "," << shootDir.y << "," << shootDir.z
@@ -5419,7 +5434,7 @@ public:
 		glUniformMatrix4fv(shader->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
 		glUniformMatrix4fv(shader->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
 
-		// build model: translate to center, then scale to half‐size
+		// build model: translate to center, then scale to half-size
 		vec3 center = (min + max) * 0.5f;
 		vec3 half = (max - min) * 0.5f;
 		mat4 M = translate(mat4(1.0f), center) * scale(mat4(1.0f), half);
@@ -6519,12 +6534,31 @@ int main(int argc, char* argv[]) {
 	ma_sound_set_volume(&sound, 0.25f);
 
 	// Load spell sound effect
-	if (ma_sound_init_from_file(&engine, "../resources/firespellsound.mp3", 0, NULL, NULL, &spell_sound) != MA_SUCCESS) {
+	if (ma_sound_init_from_file(&engine, "../resources/firespellsound.mp3", 0, NULL, NULL, &fire_spell_sound) != MA_SUCCESS) {
 		printf("Failed to load spell sound\n");
-		ma_sound_uninit(&sound); // Uninitialize background sound if spell sound fails
 		ma_engine_uninit(&engine);
 		return -1;
 	}
+	ma_sound_set_volume(&fire_spell_sound, 0.5f);
+
+	if (ma_sound_init_from_file(&engine, "../resources/icespellsound.mp3", 0, NULL, NULL, &ice_spell_sound) != MA_SUCCESS) {
+		printf("Failed to load ice spell sound\n");
+		ma_sound_uninit(&sound); 
+		ma_sound_uninit(&fire_spell_sound);
+		ma_engine_uninit(&engine);
+		return -1;
+	}
+	ma_sound_set_volume(&ice_spell_sound, 0.5f);
+
+	if (ma_sound_init_from_file(&engine, "../resources/lightningspellsound.mp3", 0, NULL, NULL, &lightning_spell_sound) != MA_SUCCESS) {
+		printf("Failed to load lightning spell sound\n");
+		ma_sound_uninit(&sound);
+		ma_sound_uninit(&fire_spell_sound);
+		ma_sound_uninit(&ice_spell_sound);
+		ma_engine_uninit(&engine);
+		return -1;
+	}
+	ma_sound_set_volume(&lightning_spell_sound, 0.5f);
 
 	if (ma_sound_init_from_file(&engine, "../resources/audio/door_open.mp3", 0, NULL, NULL, &door_sound) != MA_SUCCESS) {
 		printf("Failed to load title screen sound\n");
@@ -6632,7 +6666,9 @@ int main(int argc, char* argv[]) {
 	ma_sound_uninit(&boss_music);
 	ma_sound_uninit(&door_sound);
 	ma_sound_uninit(&sound);
-	ma_sound_uninit(&spell_sound);
+	ma_sound_uninit(&fire_spell_sound);
+	ma_sound_uninit(&ice_spell_sound);
+	ma_sound_uninit(&lightning_spell_sound);
 	ma_engine_uninit(&engine);
 	return 0;
 }
