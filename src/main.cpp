@@ -2615,46 +2615,40 @@ public:
 			ma_sound_seek_to_pcm_frame(&sound, 0); // Reset normal music to start
 			ma_sound_start(&sound); // Restart normal music
 			playGameOverSound = false; // Reset game over sound flag
+			playBossMusic = false;
 		}
 	}
 
-	void drawEnemies(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
+	void drawEnemies(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model, float frameTime) {
 		for (auto* enemy : enemies) {
-
-			if (!enemy || !enemy->isAlive()) {
+			if (!enemy) continue; // Skip null enemies
+			if (!enemy->isAlive()) {
 				// Ensure a key is added only once per dead enemy if not already present
                 // This simple check assumes positions are unique enough for dead enemies.
                 // A more robust way would be to tag enemies that have already dropped a key.
+				if (enemy->deathTimer < enemy->deathDuration && frameTime != 0.0f) {
+					enemy->deathTimer += frameTime; // Increment death timer
+					drawEnemyDeathParticles(enemy->getModel(), enemy->getPosition());
+				}
 
-
-
-                // bool keyAlreadyExists = false; //some local bools and need some global bools
-				// bool enemyLastPos = false;
-                // for (const auto& key : keyCollectibles) {
-                //     // Approximate check, ideally use a unique ID from the enemy
-                //     if (glm::distance(key.position, enemy->getPosition()) < 0.1f) {
-                //         keyAlreadyExists = true;
-                //         break;
-                //     }
-                // }
-				// 	glm:: vec3 keyPos = enemy->getPosition();
-
-                // if (!keyAlreadyExists ) { //&& !enemyLastPos
-
-				// 	//get enemy pos once, then don't change it until change  it up?
-				// 	keyPos.y = keyPos.y - 1.5f;
-				// 	//std::cout << "key position " << keyPos.x << " " << keyPos.y << " " << keyPos.z << " " << std::endl;
-
-                //     keyCollectibles.emplace_back(key, keyPos, 0.1f, Material::key_color, SpellType::NONE);
-				// 	drawKey(shader, Model );
-				// 	//enemyLastPos = true;
-                // }
 
 				if (!enemy->isDropSpawned() && (keyCollectibles.size() < keysneededToCollect)) {
-					glm::vec3 keyPos = enemy->getPosition();
-					keyPos.y -= 1.5f; // Adjust height for key position
-					keyCollectibles.emplace_back(key, keyPos, 0.1f, Material::gold, SpellType::NONE);
-					enemy->setDropSpawned(true); // Mark that the key has been spawned
+					int remainingKeys = keysneededToCollect - keyCollectibles.size();
+					int remainingEnemies = 0;
+
+					// Count remaining enemies that are alive and not spawned a key
+					for (const auto* e : enemies) {
+						if (e && e->isAlive() && !e->isDropSpawned()) {
+							remainingEnemies++;
+						}
+					}
+
+					if (remainingEnemies <= remainingKeys || rand() % 100 < 50) { // 50% chance to spawn a key if enough enemies left
+						glm::vec3 keyPos = enemy->getPosition();
+						keyPos.y -= 1.5f; // Adjust height for key position
+						keyCollectibles.emplace_back(key, keyPos, 0.1f, Material::gold, SpellType::NONE);
+						enemy->setDropSpawned(true); // Mark that the key has been spawned
+					}
 				}
 
 				continue; // Skip null or dead enemies
@@ -3391,7 +3385,7 @@ public:
 				// glm::ivec2 gridPos(gridx, gridZ);
 				// if (!grid.inBounds(gridPos)) continue; // Skip out-of-bounds cells
 				LibraryGen::Cell cell = grid[e->grid_position];
-				std::cout << "Checking cell at (" << e->grid_position.x << ", " << e->grid_position.y << ") with object type: " << static_cast<int>(cell.objectType) << std::endl;
+				// std::cout << "Checking cell at (" << e->grid_position.x << ", " << e->grid_position.y << ") with object type: " << static_cast<int>(cell.objectType) << std::endl;
 				if (cell.objectType == LibraryGen::CellObjType::SHELF_WITH_ABILITY || cell.objectType == LibraryGen::CellObjType::SHELF_WITH_ABILITY_ROTATED) {
 					// float shelfWorldX = libraryCenter.x - gridWorldWidth * 0.5f + (x + 0.5f) * cellWidth;
 					// float shelfWorldZ = libraryCenter.z - gridWorldDepth * 0.5f + (z + 0.5f) * cellDepth;
@@ -3909,30 +3903,59 @@ public:
 			return;
 		}
 
-		// Consume an orb if not in debug mode
-		if (!debugCamera) {
-			// Remove visual orb logic... (find first collected orb and erase)
-			for (auto it = orbCollectibles.begin(); it != orbCollectibles.end(); ++it) {
-				if (it->collected && it->spellType == currentPlayerSpellType) {
-					orbsCollectedCount--;
-					orbCollectibles.erase(it);
+		// // Consume an orb if not in debug mode
+		// if (!debugCamera) {
+		// 	// Remove visual orb logic... (find first collected orb and erase)
+		// 	for (auto it = orbCollectibles.begin(); it != orbCollectibles.end(); ++it) {
+		// 		if (it->collected && it->spellType == currentPlayerSpellType) {
+		// 			spellCounts[it->spellType]--; // Increment spell count for the type being shot
+		// 			cout << "Spells remaining of this type: " << spellCounts[it->spellType] << endl;
+		// 			orbsCollectedCount--;
+		// 			orbCollectibles.erase(it);
 
-					if (spellCounts[currentPlayerSpellType] <= 0) {
-						for (int i = 0; i < 4; ++i) {
-							if (spellCounts[spellSlots[i]] > 0) {
-								currentPlayerSpellType = spellSlots[i];
-								currentSpellSlotIndex = i;
-								cout << "[DEBUG] Changed currentPlayerSpellType to " << static_cast<int>(currentPlayerSpellType) << endl;
-								break;
-							}
-						}
-					}
-					spellCounts[it->spellType]--; // Increment spell count for the type being shot
-					cout << "Spells remaining of this type: " << spellCounts[it->spellType] << endl;
+		// 			if (spellCounts[currentPlayerSpellType] <= 0) {
+		// 				for (int i = 0; i < 4; ++i) {
+		// 					if (spellCounts[spellSlots[i]] > 0) {
+		// 						currentPlayerSpellType = spellSlots[i];
+		// 						currentSpellSlotIndex = i;
+		// 						cout << "[DEBUG] Changed currentPlayerSpellType to " << static_cast<int>(currentPlayerSpellType) << endl;
+		// 						break;
+		// 					}
+		// 				}
+		// 			}
+		// 			break;
+		// 		}
+		// 	}
+		// }
+
+		// atempt to find a matching orb to shoot
+		auto it = std::find_if(orbCollectibles.begin(), orbCollectibles.end(), [&](const Collectible& orb) {
+			return orb.collected && orb.spellType == currentPlayerSpellType;
+		});
+
+		// if no orb of current type is found, check if there are any orbs at all
+		if (it == orbCollectibles.end() && !debugCamera) {
+			bool foundAlternate = false;
+			for (int i = 0; i < 4; ++i) {
+				SpellType altType = spellSlots[i];
+				auto altIt = std::find_if(orbCollectibles.begin(), orbCollectibles.end(), [&](const Collectible& orb) {
+					return orb.collected && orb.spellType == altType;
+				});
+				if (altIt != orbCollectibles.end()) {
+					currentPlayerSpellType = altType; // Switch to the first available spell type
+					currentSpellSlotIndex = i;
+					foundAlternate = true;
+					cout << "[DEBUG] Changed currentPlayerSpellType to " << static_cast<int>(currentPlayerSpellType) << endl;
 					break;
 				}
 			}
+
+			if (!foundAlternate) {
+			cout << "[DEBUG] Cannot shoot: No valid orb of current spell type." << endl;
+			return; // No valid orb to shoot
+			}
 		}
+
 
 		vec3 shootDir = manMoveDir;
 		vec3 playerRight = normalize(cross(manMoveDir, vec3(0.0f, 1.0f, 0.0f)));
@@ -3948,6 +3971,7 @@ public:
 
 		activeSpells.emplace_back(spawnPos, shootDir, (float)glfwGetTime());
 		SpellProjectile& newProj = activeSpells.back();
+		newProj.spellType = currentPlayerSpellType; // Set the spell type for the projectile
 
 		if (particleSystem && spellCounts[currentPlayerSpellType] > 0) {
 			float current_particle_system_time = particleSystem->getCurrentTime();
@@ -4022,6 +4046,25 @@ public:
 				p_scale_min, p_scale_max);
 		}
 
+		// Commit orb consumption only after successful projectile setup
+		if (!debugCamera && it != orbCollectibles.end()) {
+			spellCounts[it->spellType]--;
+			orbsCollectedCount--;
+			orbCollectibles.erase(it);
+
+			// Switch again if spell count became 0 after firing
+			if (spellCounts[currentPlayerSpellType] <= 0) {
+				for (int i = 0; i < 4; ++i) {
+					if (spellCounts[spellSlots[i]] > 0) {
+						currentPlayerSpellType = spellSlots[i];
+						currentSpellSlotIndex = i;
+						cout << "[DEBUG] Changed currentPlayerSpellType to " << static_cast<int>(currentPlayerSpellType) << endl;
+						break;
+					}
+				}
+			}
+		}
+
 		// Play spell sound effect
 		ma_sound_start(&spell_sound);
 
@@ -4044,13 +4087,14 @@ public:
 
 			SpellProjectile& proj = activeSpells[i];
 
-			if (glfwGetTime() - proj.spawnTime > proj.lifetime || proj.spellType == SpellType::HEAL) {
+			if (glfwGetTime() - proj.spawnTime > proj.lifetime) {
 				proj.active = false;
 				activeSpells.erase(activeSpells.begin() + i);
 				continue;
 			}
 			if (proj.spellType == SpellType::HEAL) {
 				// Healing spell does not move, just visual effect
+				proj.lifetime = 0.5f; // Short lifetime for visual effect
 				continue;
 			}
 
@@ -4257,6 +4301,7 @@ public:
 
 		for (auto& proj : activeSpells) {
 			if (!proj.active) continue;
+			SpellType type = proj.spellType;
 			float current_particle_system_time = particleSystem->getCurrentTime();
 
 			float p_speed_min = 0.05f;
@@ -4271,11 +4316,13 @@ public:
 			glm::vec4 p_color_end;
 			float p_scale_min = 0.1f;
 			float p_scale_max = 0.25f;
-
 			int current_particles_to_spawn = 2; // Set a fixed number of particles for all orbs
+
+			glm::vec3 projPos = proj.position;
+			glm::vec3 emitDir = glm::vec3(0, 1, 0); // Emit upwards slowly or randomly
 			bool isHealSpell = false;
 			// Customize particle aura based on spell type
-			switch (currentPlayerSpellType) {
+			switch (type) {
 				case SpellType::FIRE:
 					// current_particles_to_spawn = 15; // Increased for density with short life
 					p_color_start = glm::vec4(1.0f, 0.6f, 0.1f, 1.0f);
@@ -4285,19 +4332,45 @@ public:
 					break;
 				case SpellType::ICE:
 					// current_particles_to_spawn = 15; // Increased for density
+					projPos += glm::vec3(Config::randFloat(-0.05f, 0.05f), Config::randFloat(-0.02f, 0.02f), Config::randFloat(-0.05f, 0.05f));
+					emitDir = glm::normalize(proj.direction + glm::vec3(
+                    Config::randFloat(-0.1f, 0.1f),
+                    Config::randFloat(0.0f, 0.05f),
+                    Config::randFloat(-0.1f, 0.1f)
+					));
 					p_color_start = glm::vec4(0.5f, 0.8f, 1.0f, 1.0f);
 					p_color_end = glm::vec4(0.2f, 0.5f, 0.8f, 0.3f);
-					p_scale_min = 0.4f; // Increased size
-					p_scale_max = 0.75f;
+					p_scale_min = 0.35f; // Increased size
+					p_scale_max = 0.55f;
+					p_lifespan_min = 0.3f;
+					p_lifespan_max = 0.7f;
+					current_particles_to_spawn = 4;
 					break;
 				case SpellType::LIGHTNING:
-					// current_particles_to_spawn = 15; // Increased for density
+					 // Zigzag: jitter particle spawn position each frame
+					projPos += glm::vec3(
+						Config::randFloat(-0.15f, 0.15f),
+						Config::randFloat(-0.05f, 0.05f),
+						Config::randFloat(-0.15f, 0.15f)
+					);
+					emitDir = glm::normalize(proj.direction + glm::vec3(
+						Config::randFloat(-0.3f, 0.3f),
+						Config::randFloat(-0.2f, 0.2f),
+						Config::randFloat(-0.3f, 0.3f)
+					));
 					p_color_start = glm::vec4(1.0f, 1.0f, 0.5f, 1.0f);
 					p_color_end = glm::vec4(0.8f, 0.8f, 0.2f, 0.3f);
-					p_scale_min = 0.35f; // Slightly smaller but more numerous for lightning
-					p_scale_max = 0.6f;
+					p_scale_min = 0.2f; // Slightly smaller but more numerous for lightning
+					p_scale_max = 0.4f;
+					p_spread = 0.8f; // Smaller spread for lightning effect
+					p_lifespan_min = 0.1f; // Shorter lifespan for lightning effect
+					p_lifespan_max = 0.25f; // Shorter lifespan for lightning effect
+					p_speed_min = 0.3f;
+					p_speed_max = 0.6f;
+					current_particles_to_spawn = 6; // More particles for lightning
 					break;
 				case SpellType::HEAL:
+					projPos = player->getPosition() + vec3(Config::randFloat(-0.5f, 0.5f), Config::randFloat(0.8f, 0.0f), Config::randFloat(-0.5f, 0.5f)); // Randomize position around player for heal
 					p_color_start = glm::vec4(0.2f, 1.0f, 0.2f, 1.0f);
 					p_color_end = glm::vec4(0.2, 1.0f, 0.2f, 1.0f);
 					p_scale_min = 0.35f; // Slightly smaller but more numerous for lightning
@@ -4308,14 +4381,9 @@ public:
 					break;
 				case SpellType::NONE:
 				default:
-					return; // No valid spell type selected, skip drawing
+					continue; // Skip drawing if no valid spell type
 			}
-			glm::vec3 projPosition = proj.position;
-			if (isHealSpell) {
-				projPosition = player->getPosition() + vec3(Config::randFloat(-0.5f, 0.5f), Config::randFloat(0.8f, 0.0f), Config::randFloat(-0.5f, 0.5f)); // Randomize position around player for heal
-				current_particles_to_spawn = 5; // More particles for healing effect
-			}
-			particleSystem->spawnParticleBurst(projPosition, // Emit from orb center
+			particleSystem->spawnParticleBurst(projPos, // Emit from orb center
 												glm::vec3(0,1,0), // Emit upwards slowly or randomly
 												current_particles_to_spawn,
 												current_particle_system_time,
@@ -5550,7 +5618,7 @@ public:
 		drawBooks(prog, Model);
 
 		// 5. Draw Enemies
-		drawEnemies(prog, Model);
+		drawEnemies(prog, Model, 0.0);
 
 		// 6. Draw Collectible Orbs
 		drawOrbs(prog, Model);
@@ -5633,7 +5701,7 @@ public:
 		drawBooks(prog, Model);
 
 		// 5. Draw Enemies
-		drawEnemies(prog, Model);
+		drawEnemies(prog, Model, (float)glfwGetTime());
 
 		// 6. Draw Collectible Orbs
 		drawOrbs(prog, Model);
@@ -5838,7 +5906,7 @@ public:
 			const QuadElement* e = objectElements[i];
 			BossRoomGen::Cell cell = bossGrid[e->grid_position];
 			if (cell.borderType == BossRoomGen::BorderType::ENTRANCE_MIDDLE) {
-				int locksCount = 0;
+				bool hasInteracted = false;
 				for (int j = 0; j < lockOnDoors.size(); ++j) {
 					LocksOnDoor& lock = lockOnDoors[j];
 					if (lock.interacted) continue; // Skip if lock is already interacted with
@@ -5859,14 +5927,24 @@ public:
 							keyCollectibles[j].keyUsed = true; // Mark the key as used
 							lock.unlockStartTime = (float)glfwGetTime(); // Start the unlock animation
 							keysCollectedCount--;
-							locksCount++;
 							std::cout << "Lock " << j + 1 << " unlocked!" << std::endl;
+							hasInteracted = true; // Mark that we have interacted with a lock
 						} else {
 							std::cout << "Lock " << j + 1 << " is already unlocked." << std::endl;
 						}
 					}
 				}
-				currentStringOutput = "Unlocked: " + std::to_string(locksCount) + "Locks. You need " + std::to_string(lockOnDoors.size() - locksCount) + " more keys to open the door.";
+				int totalUnlocked = 0;
+				for (const auto& lock : lockOnDoors) {
+					if (!lock.isLocked) {
+						totalUnlocked++;
+					}
+				}
+				if (totalUnlocked == lockOnDoors.size()) {
+					currentStringOutput = "You found all the keys!";
+				} else if (hasInteracted) {
+					currentStringOutput = "Unlocked " + std::to_string(totalUnlocked) + " out of " + std::to_string(lockOnDoors.size()) + " locks.";
+				}
 			}
 		}
 	}
@@ -6050,6 +6128,64 @@ public:
 		Model->popMatrix();
 		}
 		shader->unbind();
+	}
+
+	void drawEnemyDeathParticles(AssimpModel* enemyModel, glm::vec3 enemyPos) {
+		if (!particleSystem) return;
+
+		float t = particleSystem->getCurrentTime();
+		glm::vec3 emitDir = glm::vec3(0, 1, 0); // Direction: upward by default
+
+		// Default values
+		int count = 30;
+		float speedMin = 1.0f;
+		float speedMax = 3.0f;
+		float spread = 0.6f;
+		float lifeMin = 0.4f;
+		float lifeMax = 0.8f;
+		float scaleMin = 0.2f;
+		float scaleMax = 0.4f;
+		glm::vec4 colorStart = glm::vec4(1.0f);
+		glm::vec4 colorEnd = glm::vec4(1.0f, 1.0f, 1.0f, 0.0f);
+
+		if (enemyModel == fireElemental) {
+			count = 40;
+			colorStart = glm::vec4(1.0f, 0.6f, 0.1f, 1.0f);
+			colorEnd = glm::vec4(0.9f, 0.2f, 0.0f, 0.5f);
+			scaleMin = 0.45f; scaleMax = 0.85f;
+		}
+		else if (enemyModel == iceElemental) {
+			count = 40;
+			colorStart = glm::vec4(0.5f, 0.8f, 1.0f, 1.0f);
+			colorEnd = glm::vec4(0.2f, 0.5f, 0.8f, 0.3f);
+			scaleMin = 0.4f; scaleMax = 0.75f;
+		}
+		else if (enemyModel == lightningElemental) {
+			count = 50;
+			colorStart = glm::vec4(1.0f, 1.0f, 0.5f, 1.0f);
+			colorEnd = glm::vec4(0.8f, 0.8f, 0.2f, 0.3f);
+			scaleMin = 0.35f; scaleMax = 0.6f;
+			speedMin = 2.0f; speedMax = 4.0f;
+		}
+		else {
+			// fallback white puff
+			count = 20;
+			colorStart = glm::vec4(1.0f);
+			colorEnd = glm::vec4(1.0f, 1.0f, 1.0f, 0.0f);
+			scaleMin = 0.2f; scaleMax = 0.4f;
+		}
+
+		particleSystem->spawnParticleBurst(
+			enemyPos,
+			emitDir,
+			count,
+			t,
+			speedMin, speedMax,
+			spread,
+			lifeMin, lifeMax,
+			colorStart, colorEnd,
+			scaleMin, scaleMax
+		);
 	}
 
 	void render(float frametime, float animTime) {
@@ -6261,16 +6397,20 @@ public:
 		RenderText(textProg, "FPS: " + to_string(formattedfps), width - 100.0f, height - 50.0f, 1.0f, glm::vec3(1.0f, 1.0f, 0.9f),
 				width, height);
 		if (currentStringOutput != "") {
-			if (currentStringOutput != prevStringOutput) {
-				stringOutputTimer = 0.0f; // Reset timer if the string output changes
-				prevStringOutput = currentStringOutput; // Update previous string output
+			if (bossfightstarted) {
+				currentStringOutput = ""; // Clear the output if boss fight has started
 			} else {
-				stringOutputTimer += frametime; // Increment timer if the string output is the same
-			}
-			if (stringOutputTimer < stringOutputDuration) {
-				RenderText(textProg, currentStringOutput, width / 2.0f - 400.0f, height / 2.0f + 300.0f, 1.5f, glm::vec3(1.0f, 1.0f, 0.9f), width, height);
-			} else {
-				currentStringOutput = ""; // Clear the output after duration
+				if (currentStringOutput != prevStringOutput) {
+					stringOutputTimer = 0.0f; // Reset timer if the string output changes
+					prevStringOutput = currentStringOutput; // Update previous string output
+				} else {
+					stringOutputTimer += frametime; // Increment timer if the string output is the same
+				}
+				if (stringOutputTimer < stringOutputDuration) {
+					RenderText(textProg, currentStringOutput, width / 2.0f - 400.0f, height / 2.0f + 300.0f, 1.5f, glm::vec3(1.0f, 1.0f, 0.9f), width, height);
+				} else {
+					currentStringOutput = ""; // Clear the output after duration
+				}
 			}
 		}
 
@@ -6335,7 +6475,7 @@ public:
 			// SetMaterialMan(prog2,6 );
 			drawLibGrnd(ShadowProg, Model);
 			// drawBossRoom(ShadowProg, Model, false); //boss room not drawing
-			drawEnemies(ShadowProg, Model);
+			drawEnemies(ShadowProg, Model, 0.0f);
 			ShadowProg->unbind();
 		}
 
