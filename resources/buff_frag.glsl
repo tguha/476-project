@@ -38,6 +38,8 @@ uniform vec4 paws[MAX_PRINTS]; // .xy = world (x, z), .z = angle, .w = spawnTime
 uniform float curTime;
 uniform sampler2D pawTex;
 
+uniform bool texOnly;
+
 void main() {
     gPosition = info.fragPos; // store the fragment position vector in the first gbuffer texture
 	gLSPosition = info.fragPosLS; // store the light space fragment position in its buffer
@@ -48,6 +50,7 @@ void main() {
 	if (any(lessThan(sampleA, vec3(0.999)))) {
         albedo = sampleA;
     }
+	else if (texOnly) albedo = sampleA;
 
 	// enemy tint
     if (enemyAlpha != 1.0) {
@@ -99,16 +102,19 @@ void main() {
 	float rough = hasMaterial ? MatRough : 1.0;
 	float sampleR = texture(uMaps[2], info.texCoords).r;
 	if (sampleR < 0.999) rough = sampleR;
+	else if (texOnly) rough = sampleR;
 
 	// Metalness
 	float metal = hasMaterial ? MatMetal : 0.0;
 	float sampleM = texture(uMaps[3], info.texCoords).r;
 	if (sampleM < 0.999) rough = sampleR;
+	else if (texOnly) metal = sampleM;
 	
 	// AO
 	float ao = hasMaterial ? MatAO : 1.0;
 	float sampleO = texture(uMaps[4], info.texCoords).r;
 	if (sampleO < 0.999) ao = sampleO;
+	//else if (texOnly) ao = sampleO;
 	
 	gMRA = vec3(metal, rough, ao); // store rough, metal, ao in one gbuffer
 
@@ -118,5 +124,6 @@ void main() {
 	if (any(greaterThan(sampleE, vec3(0.001)))) {
 		emission = sampleE;
 	}
+	//else if (texOnly) emission = sampleE;
 	gEmission = emission;
 } 
