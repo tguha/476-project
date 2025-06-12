@@ -4920,7 +4920,7 @@ public:
 
 	void shootBossSpell() {
 		// vec3 shootDir = bossEnemy->getBossDirection();
-		float upOffset = 7.0f;      // Height relative to player base (groundY)
+		float upOffset = 4.5f;      // Height relative to player base (groundY)
 
 		// make projectile aim towards player
 		vec3 shootDir = normalize(player->getPosition() - vec3(bossEnemy->getPosition().x, bossEnemy->getPosition().y + upOffset, bossEnemy->getPosition().z));
