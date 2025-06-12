@@ -54,4 +54,5 @@ class BossEnemy : public Enemy {
         float getBossDeathTimer() const { return bossDeathTimer; }
         void setBossDeathDuration(float duration) { bossDeathDuration = duration; }
         float getBossDeathDuration() const { return bossDeathDuration; }
+        void setBossSpellType(SpellType spellType) { BossSpellType = spellType; }
 };

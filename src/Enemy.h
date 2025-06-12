@@ -18,7 +18,7 @@ class Enemy : public Entity {
         float damageTimer = 0.0f;
         glm::vec3 spawnPos;
         bool dropSpawned = false;
-        
+
     protected:
         float meleeSpeed = 1.0f;
         float meleeDamage = 10.0f;
@@ -46,9 +46,11 @@ class Enemy : public Entity {
         glm::vec3 getSpawnPos() const;
         void setSpawnPos(const glm::vec3& pos);
         AssimpModel* getModel() const;
-        
+
         void setDropSpawned(const bool spawned);
         bool isDropSpawned() const;
+        float deathTimer = 0.0f; // Timer for death animation
+        float deathDuration = 2.0f; // Duration of the death animation
 
     // --- Override virtual functions if needed ---
     // virtual void move(const glm::vec3& direction) override; // Example override
