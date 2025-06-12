@@ -61,6 +61,8 @@ using namespace glm;
 ma_engine engine;
 ma_sound sound;
 ma_sound spell_sound;
+ma_sound key_drop;
+ma_sound key_pickup;
 ma_sound door_sound;
 ma_sound boss_music;
 ma_sound key_unlock_sound;
@@ -210,8 +212,9 @@ public:
 
 	float wasd_sens = 0.5f;
 
-	glm::vec3 eye = glm::vec3(-6, 1.03, 0); /*MINI MAP*/
-	glm::vec3 lookAt = glm::vec3(0, 0, 0); /*MINI MAP*/
+	/*MINI MAP*/
+	glm::vec3 eye = glm::vec3(-6, 1.03, 0); 
+	glm::vec3 lookAt = glm::vec3(0, 0, 0);
 	glm::vec3 up = glm::vec3(0, 1, 0);
 	bool CULL = false;
 
@@ -2939,6 +2942,9 @@ public:
 						keyPos.y -= 1.5f; // Adjust height for key position
 						keyCollectibles.emplace_back(key, keyPos, 0.1f, Material::gold, SpellType::NONE);
 						enemy->setDropSpawned(true); // Mark that the key has been spawned
+
+						// Play key drop sound effect
+						ma_sound_start(&key_drop);
 					}
 				}
 
@@ -5657,6 +5663,10 @@ public:
 				key.collected = true;
 				// key.state = OrbState::COLLECTED; // Optionally set state
 				keysCollectedCount++;
+
+				// play key collected sound effect
+				ma_sound_start(&key_pickup);
+
 				lockOnDoors[i].keyIndex = i;
 				std::cout << "Collected a key! (" << keysCollectedCount << ")\n";
 			}
@@ -7388,6 +7398,20 @@ int main(int argc, char* argv[]) {
 
 	ma_sound_set_volume(&sound, 0.25f);
 
+	// Load key dropped sound effect
+	if (ma_sound_init_from_file(&engine, "../resources/SoundEffects/tada-fanfare.mp3", 0, NULL, NULL, &key_drop) != MA_SUCCESS) {
+		printf("Failed to load sound\n");
+		ma_engine_uninit(&engine);
+		return -1;
+	}
+
+	// Load key pick up sound effect
+	if (ma_sound_init_from_file(&engine, "../resources/SoundEffects/item-pick-up.mp3", 0, NULL, NULL, &key_pickup) != MA_SUCCESS) {
+		printf("Failed to load sound\n");
+		ma_engine_uninit(&engine);
+		return -1;
+	}
+
 	// Load spell sound effect
 	if (ma_sound_init_from_file(&engine, "../resources/firespellsound.mp3", 0, NULL, NULL, &spell_sound) != MA_SUCCESS) {
 		printf("Failed to load spell sound\n");
@@ -7547,6 +7571,8 @@ int main(int argc, char* argv[]) {
 	ma_sound_uninit(&sound);
 	ma_sound_uninit(&spell_sound);
 	ma_engine_uninit(&engine);
+	ma_sound_uninit(&key_drop);
+	ma_sound_uninit(&key_pickup);
 	ma_sound_uninit(&boss_death_sound);
 	ma_sound_uninit(&firework_sound);
 	ma_sound_uninit(&victory_sound);

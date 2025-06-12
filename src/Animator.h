@@ -22,7 +22,7 @@ class Animator
         std::vector<glm::mat4> GetFinalBoneMatrices() { return m_FinalBoneMatrices; }
         bool IsAnimationFinished() const { return m_CurrentTime >= m_CurrentAnimation->GetDuration(); }
         float GetCurrentTime() const { return m_CurrentTime; }
-        void Animator::UpdateAnimationOnce(float dt);
+        void UpdateAnimationOnce(float dt);
         void resetAnimation() {
             m_CurrentTime = 0.0f;
             m_IsFinished = false;
