@@ -7349,12 +7349,6 @@ public:
 			Config::targetOrbitCenter = Config::BOSS_CENTER;
 			canFightboss = true;
 		}
-
-		if (key == GLFW_KEY_V && action == GLFW_PRESS) {
-			// unlock = true;
-			// canFightboss = true;
-			restartGen = true; // Restart the generation
-		}
 		// DodgeRoll with Spacebar
 		if (key == GLFW_KEY_SPACE && action == GLFW_PRESS) {
 			dodgeRoll();
