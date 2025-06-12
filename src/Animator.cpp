@@ -22,9 +22,9 @@ void Animator::UpdateAnimation(float dt)
     }
     m_CurrentTime += dt * tickRate; // Update current time based on delta time and ticks per second
      m_CurrentTime = fmod(m_CurrentTime, m_CurrentAnimation->GetDuration()); // Loop the animation
-    
+
     CalculateBoneTransform(&m_CurrentAnimation->GetRootNode(), m_CurrentAnimation->GetGlobalInverseTransform());
-    
+
 }
 
 void Animator::PlayAnimation(Animation* pAnimation) {
@@ -36,9 +36,9 @@ void Animator::PlayAnimation(Animation* pAnimation) {
         tickRate = 25.0f; // Default value if not specified
     }
 
-    
+
     while (m_CurrentTime < pAnimation->GetDuration()) {
-        
+
         m_CurrentTime += 0.1;
     }
     //m_CurrentTime += dt * tickRate; // Update current time based on delta time and ticks per second
@@ -75,4 +75,25 @@ void Animator::CalculateBoneTransform(const AssimpNodeData* node, glm::mat4 pare
         CalculateBoneTransform(&node->children[i], globalTransformation);
     }
 
+}
+
+void Animator::UpdateAnimationOnce(float dt) {
+    if (!m_CurrentAnimation || m_IsFinished) {
+        return;
+    }
+
+    float tickRate = m_CurrentAnimation->GetTicksPerSecond();
+    if (tickRate <= 0) {
+        tickRate = 25.0f; // Default value if not specified
+    }
+
+    m_CurrentTime += dt * tickRate; // Update current time based on delta time and ticks per second
+
+    float duration = m_CurrentAnimation->GetDuration();
+    if (m_CurrentTime >= duration) {
+        m_CurrentTime = duration;
+        m_IsFinished = true; // Mark as finished if current time exceeds duration
+    }
+
+    CalculateBoneTransform(&m_CurrentAnimation->GetRootNode(), m_CurrentAnimation->GetGlobalInverseTransform());
 }

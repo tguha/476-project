@@ -13,7 +13,6 @@ uniform mat4 V;
 // transforms vertpos by PVM, passes vertcolor to frag shader, uses vertScale to adjust gl point size , render as points, control size on screen
 out vec4 partCol;
 
-
 void main()
 {
 	// Billboarding: set the upper 3x3 to be the identity matrix

@@ -6,6 +6,10 @@
 
 #pragma comment(lib, "winmm.lib")
 
+#include "GLTextureWriter.h"
+//#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
+
 #include <iostream>
 #include <glad/glad.h>
 #include <chrono>
@@ -13,6 +17,7 @@
 #include <set>
 #include <algorithm>
 #include <limits>
+#include <cassert>
 
 #include "GLSL.h"
 #include "Program.h"
@@ -41,6 +46,7 @@
 #include "TextureManager.h"
 #include "Quadtree.h"
 #include "Freetype.h"
+#include "Titlescreen.h"
 
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -54,9 +60,17 @@ using namespace glm;
 
 ma_engine engine;
 ma_sound sound;
-ma_sound spell_sound; 
+ma_sound spell_sound;
 ma_sound key_drop;
 ma_sound key_pickup;
+ma_sound door_sound;
+ma_sound boss_music;
+ma_sound key_unlock_sound;
+ma_sound boss_death_sound;
+ma_sound firework_sound;
+ma_sound victory_sound;
+ma_sound game_over_sound;
+ma_sound boss_slam_sound;
 
 
 class Application : public EventCallbacks {
@@ -80,6 +94,9 @@ public:
 	shared_ptr<Program> SkyboxProg;
 	shared_ptr<Program> debugLineProg;
 	shared_ptr<Program> textProg;
+	shared_ptr<Program> sunProg;
+	shared_ptr<Program> buffProg;
+	shared_ptr<Program> lightProg;
 
 	std::vector<ColorFilter> colorFilters = {
     { "Classic",   glm::vec4(1.0f, 1.0f, 1.0f, 0.0f) }, // No filter
@@ -112,8 +129,9 @@ public:
 	shared_ptr<Texture> particleAlphaTex;
 	shared_ptr<Texture> pawTex;
 
-	// Skybox texture and VAO/VBO
-	GLuint skyboxCubemap;
+	// Skybox textures and VAO/VBO
+	unordered_map<string, GLuint> skyboxTextures;
+	GLuint currentSkyboxTex;
 	GLuint skyboxCubeVAO = 0;
 	GLuint skyboxCubeVBO = 0;
 
@@ -156,6 +174,9 @@ public:
 	AssimpModel *border, *lock, *lockHandle, *key;
 	AssimpModel *bookCover, *bookPaper;
 	AssimpModel *stoneGolem;
+	AssimpModel *door_rig, *exit_door_rig;
+	Animation *door_open, *door_close, *exit_door_open;
+	Animator *door_animator, *exit_door_animator;
 
 	//key collectibles
 	std::vector<Collectible> keyCollectibles;
@@ -185,10 +206,6 @@ public:
 	// vec3 characterMovement = vec3(0, 0, 0);
 	glm::vec3 manScale = glm::vec3(0.01f, 0.01f, 0.01f);
 	glm::vec3 manMoveDir = glm::vec3(sin(radians(0.0f)), 0, cos(radians(0.0f)));
-
-	// initial position of light cycles
-	glm::vec3 start_lightcycle1_pos = glm::vec3(-384, -11, 31);
-	glm::vec3 start_lightcycle2_pos = glm::vec3(-365, -11, 9.1);
 
 	float theta = glm::radians(Config::CAMERA_DEFAULT_THETA_DEGREES); // controls yaw
 	float phi = glm::radians(Config::CAMERA_DEFAULT_PHI_DEGREES); // controls pitch
@@ -264,6 +281,24 @@ public:
 	bool restartGen = false;
 	bool bossfightstarted = false;
 	bool bossfightended = false;
+	bool doorOpened = false;
+	float doorOpenProgress = 0.0f; // Progress of the door opening animation
+	bool allLocksUnlocked = false;
+	bool interactedwithBook = false; // Flag to check if the player has interacted with a book
+	bool bossDeathEffectTriggered = false; // Flag to check if the boss death effect has been triggered
+	bool doorExitOpened = false; // Flag to check if the exit door has been opened
+
+	bool playDoorSound = false; // Flag to control door sound playback
+	bool playExitDoorSound = false; // Flag to control exit door sound playback
+	bool playBossMusic = false; // Flag to control boss music playback
+	bool playBossDeathSound = false; // Flag to control boss death sound playback
+	bool playVictorySound = false; // Flag to control victory sound playback
+	bool playGameOverSound = false; // Flag to control game over sound playback
+
+	std::string currentStringOutput = ""; // Current string output for text rendering
+	std::string prevStringOutput = ""; // Previous string output for text rendering
+	float stringOutputTimer = 0.0f; // Timer for string output display duration
+	float stringOutputDuration = 4.0f; // Duration to display the string output
 
 	// -- Camera Occlusion Query --
 	GLuint occlusionQueryID = 0; // Occlusion query ID
@@ -280,7 +315,7 @@ public:
 
 	// Shadows
 	GLuint depthMapFBO;
-	const GLuint S_WIDTH = 2048, S_HEIGHT = 2048;
+	const GLuint S_WIDTH = 8192, S_HEIGHT = 8192;
 	GLuint depthMap;
 
 	// Geometry for texture render
@@ -312,10 +347,12 @@ public:
 	std::vector<glm::mat4> circularBookShelfMatrices;
 	glm::vec3 bossEntrancePos;
 	float bossEntranceRot;
+	BossRoomGen::transform bossEntrancetransforms;
+	BossRoomGen::transform bossExittransforms;
 
 	std::vector<glm::mat4> vCircularBookShelfMatrices;
 	int activeEnemiesCount = 0; // Count of active enemies in the scene
-	int keysneededToCollect = 0; // Total number of keys to collect in the scene
+	int keysneededToCollect = 3; // Total number of keys to collect in the scene
 
 	SpellType spellSlots[4] = {
 		SpellType::LIGHTNING,
@@ -324,8 +361,124 @@ public:
 		SpellType::HEAL
 	};
 
+	GameState gameState = GameState::TITLE_SCREEN;
+
 	int currentSpellSlotIndex = 0; // Current spell type in use
 	SpellType currentPlayerSpellType = spellSlots[currentSpellSlotIndex]; // Player starts with Fire spell by default
+
+	std::vector<vec3> sceneLightPos;
+	std::vector<vec3> sceneLightCol;
+
+	GLuint gBuffer;
+	GLuint gPosition, gNormal, gTangent, gBitangent, gAlbedo, gMRA, gEmission, gLSPosition;
+	GLuint depthBuf;
+	void initBuffers() {
+		// create the FBO + textures + rbo exactly once
+		glGenFramebuffers(1, &gBuffer);
+		glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
+
+		glGenTextures(1, &gPosition);
+		glGenTextures(1, &gNormal);
+		glGenTextures(1, &gAlbedo);
+		glGenTextures(1, &gMRA);
+		glGenTextures(1, &gEmission);
+		glGenTextures(1, &gLSPosition);
+
+		glGenRenderbuffers(1, &depthBuf);
+
+		// set up draw‐buffers array
+		GLenum DrawBuffers[6] = {
+			GL_COLOR_ATTACHMENT0,
+			GL_COLOR_ATTACHMENT1,
+			GL_COLOR_ATTACHMENT2,
+			GL_COLOR_ATTACHMENT3,
+			GL_COLOR_ATTACHMENT4,
+			GL_COLOR_ATTACHMENT5
+		};
+		glDrawBuffers(6, DrawBuffers);
+
+		// now immediately size them to the current window
+		int w, h;
+		glfwGetFramebufferSize(windowManager->getHandle(), &w, &h);
+
+		// attach all the textures + rbo
+		resizeGBuffer(w, h);
+
+		// hook them up to the FBO
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, gPosition, 0);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, gNormal, 0);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, gAlbedo, 0);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT3, GL_TEXTURE_2D, gMRA, 0);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT4, GL_TEXTURE_2D, gEmission, 0);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT5, GL_TEXTURE_2D, gLSPosition, 0);
+		glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depthBuf);
+
+		// finally unbind
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	}
+
+	void resizeGBuffer(int width, int height) {
+		//	// Position buffer (RGB16F for world-space position)
+		//glGenTextures(1, &gPosition);
+		glBindTexture(GL_TEXTURE_2D, gPosition);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, width, height, 0, GL_RGB, GL_FLOAT, NULL);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, gPosition, 0);
+
+	//	// Normal buffer (RGB16F for high-precision normals)
+	//	glGenTextures(1, &gNormal);
+		glBindTexture(GL_TEXTURE_2D, gNormal);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, width, height, 0, GL_RGB, GL_FLOAT, NULL);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, gNormal, 0);
+
+	//	// Albedo buffer (RGB8)
+	//	glGenTextures(1, &gAlbedo);
+		glBindTexture(GL_TEXTURE_2D, gAlbedo);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, gAlbedo, 0);
+
+	//	// Metalness, Roughness, AO buffer (RGB8)
+	//	glGenTextures(1, &gMRA);
+		glBindTexture(GL_TEXTURE_2D, gMRA);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT3, GL_TEXTURE_2D, gMRA, 0);
+
+		// Emission buffer (RGB8)
+		//glGenTextures(1, &gEmission);
+		glBindTexture(GL_TEXTURE_2D, gEmission);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT4, GL_TEXTURE_2D, gEmission, 0);
+
+		// Light Space Position buffer (RGB16)
+	    //glGenTextures(1, &gLSPosition);
+		glBindTexture(GL_TEXTURE_2D, gLSPosition);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT5, GL_TEXTURE_2D, gLSPosition, 0);
+	
+		// Depth buffer
+	    //glGenRenderbuffers(1, &depthBuf);
+		glBindRenderbuffer(GL_RENDERBUFFER, depthBuf);
+		glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, width, height);
+		glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depthBuf);
+
+		// cleanup binds
+		glBindTexture(GL_TEXTURE_2D, 0);
+		glBindRenderbuffer(GL_RENDERBUFFER, 0);
+	}
+  
+	std::vector<LocksOnDoor> lockOnDoors;
+
 
 	// --- Paw Prints ---
 	// CPU: record and upload a list of paw prints
@@ -460,29 +613,19 @@ public:
 		glBindVertexArray(0);
 	}
 
-	void initSkyboxTex(string resourceDirectory) {
-		glGenTextures(1, &skyboxCubemap);
-		glBindTexture(GL_TEXTURE_CUBE_MAP, skyboxCubemap);
+	GLuint initSkyboxTex(const vector<string>& faces) {
+		GLuint texID;
+		glGenTextures(1, &texID);
+		glBindTexture(GL_TEXTURE_CUBE_MAP, texID);
 
-		vector<string> faces = {
-			resourceDirectory + "/skyboxTex/px.png",
-			resourceDirectory + "/skyboxTex/nx.png",
-			resourceDirectory + "/skyboxTex/py.png",
-			resourceDirectory + "/skyboxTex/ny.png",
-			resourceDirectory + "/skyboxTex/pz.png",
-			resourceDirectory + "/skyboxTex/nz.png"
-		};
+		stbi_set_flip_vertically_on_load(false);
 
 		for (GLuint i = 0; i < faces.size(); i++) {
 			int w, h, n;
 			unsigned char* data = stbi_load(faces[i].c_str(), &w, &h, &n, 0);
 			if (data) {
 				GLenum format = (n == 4 ? GL_RGBA : GL_RGB);
-				glTexImage2D(
-					GL_TEXTURE_CUBE_MAP_POSITIVE_X + i,
-					0, format, w, h, 0,
-					format, GL_UNSIGNED_BYTE, data
-				);
+				glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, format, w, h, 0, format, GL_UNSIGNED_BYTE, data);
 				stbi_image_free(data);
 			}
 			else {
@@ -499,6 +642,50 @@ public:
 		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
 
 		glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
+
+		stbi_set_flip_vertically_on_load(true);
+
+		return texID;
+	}
+
+	void initSkyboxes(const string& resourceDir) {
+		initSkyboxCube();
+		skyboxTextures["day"] = initSkyboxTex({
+			resourceDir + "/skyboxTex/day/px.png",
+			resourceDir + "/skyboxTex/day/nx.png",
+			resourceDir + "/skyboxTex/day/py.png",
+			resourceDir + "/skyboxTex/day/ny.png",
+			resourceDir + "/skyboxTex/day/pz.png",
+			resourceDir + "/skyboxTex/day/nz.png"
+		});
+		skyboxTextures["noon"] = initSkyboxTex({
+			resourceDir + "/skyboxTex/noon/px.png",
+			resourceDir + "/skyboxTex/noon/nx.png",
+			resourceDir + "/skyboxTex/noon/py.png",
+			resourceDir + "/skyboxTex/noon/ny.png",
+			resourceDir + "/skyboxTex/noon/pz.png",
+			resourceDir + "/skyboxTex/noon/nz.png"
+		});
+		skyboxTextures["night"] = initSkyboxTex({
+			resourceDir + "/skyboxTex/night/px.png",
+			resourceDir + "/skyboxTex/night/nx.png",
+			resourceDir + "/skyboxTex/night/py.png",
+			resourceDir + "/skyboxTex/night/ny.png",
+			resourceDir + "/skyboxTex/night/pz.png",
+			resourceDir + "/skyboxTex/night/nz.png"
+		});
+		skyboxTextures["mystic"] = initSkyboxTex({
+			resourceDir + "/skyboxTex/mystic/px.png",
+			resourceDir + "/skyboxTex/mystic/nx.png",
+			resourceDir + "/skyboxTex/mystic/py.png",
+			resourceDir + "/skyboxTex/mystic/ny.png",
+			resourceDir + "/skyboxTex/mystic/pz.png",
+			resourceDir + "/skyboxTex/mystic/nz.png"
+		});
+	}
+
+	void setSkybox(const string& name) {
+		currentSkyboxTex = skyboxTextures[name];
 	}
 
 	void updateCameraVectors() {
@@ -635,7 +822,8 @@ public:
 		GLSL::checkVersion();
 
 		// Set background color and enable z-buffer test
-		glClearColor(.12f, .34f, .56f, 1.0f);
+		//glClearColor(.12f, .34f, .56f, 1.0f);
+		glClearColor(0.01, 0.01, 0.01, 1.0f);
 		glEnable(GL_DEPTH_TEST);
 
 		glEnable(GL_BLEND);
@@ -672,6 +860,21 @@ public:
 		debugLineProg->setShaderNames(resourceDirectory + "/line_vert.glsl", resourceDirectory + "/line_frag.glsl");
 		debugLineProg->init();
 
+		sunProg = make_shared<Program>();
+		sunProg->setVerbose(Config::DEBUG_SHADER);
+		sunProg->setShaderNames(resourceDirectory + "/sun_vert.glsl", resourceDirectory + "/sun_frag.glsl");
+		sunProg->init();
+
+		buffProg = make_shared<Program>();
+		buffProg->setVerbose(Config::DEBUG_SHADER);
+		buffProg->setShaderNames(resourceDirectory + "/buff_vert.glsl", resourceDirectory + "/buff_frag.glsl");
+		buffProg->init();
+
+		lightProg = make_shared<Program>();
+		lightProg->setVerbose(Config::DEBUG_SHADER);
+		lightProg->setShaderNames(resourceDirectory + "/pass_vert.glsl", resourceDirectory + "/light_frag.glsl");
+		lightProg->init();
+
 		// Add unfigorm and attrubutes to each of the programs
 		DepthProg->addUniform("LP");
 		DepthProg->addUniform("LV");
@@ -704,6 +907,7 @@ public:
 		ShadowProg->addUniform("MatRough");
 		ShadowProg->addUniform("MatMetal");
 		ShadowProg->addUniform("MatEmit");
+		ShadowProg->addUniform("MatAO");
 		ShadowProg->addUniform("enemyAlpha");
 		ShadowProg->addUniform("texOnly");
 		ShadowProg->addUniform("exposure");
@@ -713,13 +917,10 @@ public:
 		ShadowProg->addUniform("pawData");
 		ShadowProg->addUniform("pawTex");
 		ShadowProg->addUniform("curTime");
-		ShadowProg->addAttribute("vertPos");
-		ShadowProg->addAttribute("vertNor");
-		ShadowProg->addAttribute("vertTex");
 		ShadowProg->bind();
 		GLint loc = ShadowProg->getUniform("uMaps");
-		GLint units[6] = { 0,1,2,3,4,5 };
-		glUniform1iv(loc, 6, units);
+		GLint units[5] = { 0,1,2,3,4 };
+		glUniform1iv(loc, 5, units);
 		ShadowProg->unbind();
 
 		initShadow();
@@ -774,7 +975,79 @@ public:
 		textProg->addUniform("textTex");
 		textProg->addUniform("textColor");
 
+		sunProg->addUniform("P");
+		sunProg->addUniform("V");
+		sunProg->addUniform("M");
+		sunProg->addUniform("glowColor");
+		sunProg->addAttribute("vertPos");
+
+		// --- FBO shader setup ---
+		buffProg->addUniform("P");
+		buffProg->addUniform("V");
+		buffProg->addUniform("M");
+		buffProg->addUniform("LV");
+		buffProg->addAttribute("vertPos");
+		buffProg->addAttribute("vertNor");
+		buffProg->addAttribute("vertTex");
+		buffProg->addAttribute("vertTan");
+		//buffProg->addAttribute("vertBitan");
+		buffProg->addAttribute("InstancedOffset");
+
+		buffProg->addUniform("uMaps");
+		buffProg->bind();
+		GLint buffLoc = buffProg->getUniform("uMaps");
+		GLint buffUnits[6] = { 0,1,2,3,4,5 };
+		glUniform1iv(buffLoc, 6, buffUnits);
+		buffProg->unbind();
+		
+		buffProg->addUniform("hasBones");
+		buffProg->addAttribute("boneIds");
+		buffProg->addAttribute("weights");
+		for (int i = 0; i < Config::MAX_BONES; i++) buffProg->addUniform("finalBonesMatrices[" + to_string(i) + "]");
+
+		buffProg->addUniform("hasInstancing");
+
+		buffProg->addUniform("hasMaterial");
+		buffProg->addUniform("MatAlbedo");
+		buffProg->addUniform("MatRough");
+		buffProg->addUniform("MatMetal");
+		buffProg->addUniform("MatAO");
+		buffProg->addUniform("MatEmit");
+
+		buffProg->addUniform("enemyAlpha");
+		buffProg->addUniform("pawTex");
+		buffProg->addUniform("numPaws");
+		buffProg->addUniform("paws");
+		buffProg->addUniform("curTime");
+		// --- END FBO shader setup ---
+
+		// --- Lighting shader setup ---
+		lightProg->addAttribute("vertPos");
+
+		lightProg->addUniform("viewPos");
+		lightProg->addUniform("shadowLightDir");
+		lightProg->addUniform("numLights");
+		lightProg->addUniform("lightPos");
+		lightProg->addUniform("lightCol");
+		
+		lightProg->addUniform("exposure");
+		lightProg->addUniform("saturation");
+
+		lightProg->addUniform("positionBuf");
+		lightProg->addUniform("normalBuf");
+		lightProg->addUniform("albedoBuf");
+		lightProg->addUniform("mraBuf");
+		lightProg->addUniform("emissionBuf");
+		lightProg->addUniform("positionLSBuf");
+		lightProg->addUniform("shadowDepth");
+
+		lightProg->addUniform("sunPos");
+		lightProg->addUniform("sunCol");
+		// --- END Lighting shader setup ---
+		
 		updateCameraVectors();
+
+		// --- Textures ---
 
 		pawTex = make_shared<Texture>();
 		pawTex->setFilename(resourceDirectory + "/paw_print.png");
@@ -820,8 +1093,11 @@ public:
 
 		TextureManager::initFallbacks(whiteTex, normalTex, blackTex);
 
-		int fError = initFont(resourceDirectory);
+		std::string fontPath = resourceDirectory + "/fonts/arial.ttf";
+		int fError = initFont(fontPath);
 		cout << "Font error? " << fError << endl;
+
+		initBuffers();
 	}
 
 	GLuint genSolidTexture(const unsigned char* pixel, GLenum format) {
@@ -840,32 +1116,32 @@ public:
 		grid = library->getGrid();
 
 		if (bossEntranceDir.y > 0) {
-			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(0)), vec3(-1, 0, 0), 10.0f, borderWallTex);
-			addWall(gridSize.x - 3, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 10.0f, borderWallTex);
-			addWall(gridSize.x - 1, vec3(library->mapGridXtoWorldX((gridSize.x - 1) / 2), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 10.0f, borderWallTex);
-			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(0), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
-			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
+			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(0)), vec3(-1, 0, 0), 7.0f, borderWallTex);
+			addWall(gridSize.x - 3, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 7.0f, borderWallTex);
+			addWall(gridSize.x - 1, vec3(library->mapGridXtoWorldX((gridSize.x - 1) / 2), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 7.0f, borderWallTex);
+			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(0), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 7.0f, borderWallTex);
+			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 7.0f, borderWallTex);
 		}
 		else if (bossEntranceDir.y < 0) {
-			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 10.0f, borderWallTex);
-			addWall(gridSize.x - 3, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(0)), vec3(-1, 0, 0), 10.0f, borderWallTex);
-			addWall(gridSize.x - 1, vec3(library->mapGridXtoWorldX((gridSize.x - 1) / 2), 0, library->mapGridYtoWorldZ(0)), vec3(-1, 0, 0), 10.0f, borderWallTex);
-			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(0), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
-			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
+			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 7.0f, borderWallTex);
+			addWall(gridSize.x - 3, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(0)), vec3(-1, 0, 0), 7.0f, borderWallTex);
+			addWall(gridSize.x - 1, vec3(library->mapGridXtoWorldX((gridSize.x - 1) / 2), 0, library->mapGridYtoWorldZ(0)), vec3(-1, 0, 0), 7.0f, borderWallTex);
+			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(0), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 7.0f, borderWallTex);
+			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 7.0f, borderWallTex);
 		}
 		else if (bossEntranceDir.x > 0) {
-			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 10.0f, borderWallTex);
-			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(0)), vec3(-1, 0, 0), 10.0f, borderWallTex);
-			addWall(gridSize.y - 3, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
-			addWall(gridSize.y - 1, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ((gridSize.y - 1) / 2)), vec3(0, 0, -1), 10.0f, borderWallTex);
-			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(0) , 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
+			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 7.0f, borderWallTex);
+			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(0)), vec3(-1, 0, 0), 7.0f, borderWallTex);
+			addWall(gridSize.y - 3, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 7.0f, borderWallTex);
+			addWall(gridSize.y - 1, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ((gridSize.y - 1) / 2)), vec3(0, 0, -1), 7.0f, borderWallTex);
+			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(0) , 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 7.0f, borderWallTex);
 		}
 		else if (bossEntranceDir.x < 0) {
-			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 10.0f, borderWallTex);
-			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(0)), vec3(-1, 0, 0), 10.0f, borderWallTex);
-			addWall(gridSize.y - 3, vec3(library->mapGridXtoWorldX(0), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
-			addWall(gridSize.y - 1, vec3(library->mapGridXtoWorldX(0), 0, library->mapGridYtoWorldZ((gridSize.y - 1) / 2)), vec3(0, 0, -1), 10.0f, borderWallTex);
-			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
+			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 7.0f, borderWallTex);
+			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(0)), vec3(-1, 0, 0), 7.0f, borderWallTex);
+			addWall(gridSize.y - 3, vec3(library->mapGridXtoWorldX(0), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 7.0f, borderWallTex);
+			addWall(gridSize.y - 1, vec3(library->mapGridXtoWorldX(0), 0, library->mapGridYtoWorldZ((gridSize.y - 1) / 2)), vec3(0, 0, -1), 7.0f, borderWallTex);
+			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 7.0f, borderWallTex);
 		}
 
 		addLibGrnd(gridSize.x * 2, gridSize.y * 2, 0.0f, vec3(0, 0, 0), libraryGroundTex);
@@ -873,6 +1149,10 @@ public:
 		bossRoom->generate(bossGridSize, gridSize, glm::vec3(0, 0, 0), bossEntranceDir);
 		bossGrid = bossRoom->getGrid();
 		addLibGrnd(bossGridSize.x * 2, bossGridSize.y * 2, 0.0f, bossRoom->getWorldOrigin(), libraryGroundTex);
+
+		sceneLightPos.clear();
+		sceneLightCol.clear();
+		genLibLights();
 	}
 
 	void initInstancingMatrices() {
@@ -886,7 +1166,6 @@ public:
 		candelabraMatrices.clear();
 		clockMatrices.clear();
 		doorMatrices.clear();
-
 
 		for (int z = 0; z < grid.getSize().y; ++z) {
 			for (int x = 0; x < grid.getSize().x; ++x) {
@@ -1224,14 +1503,14 @@ public:
 
 		// load the walking character moded
 		player_rig = new AssimpModel(resourceDirectory + "/CatWizard/CatWizardAnimation4.fbx");
-		player_rig->assignTexture("texture_diffuse", resourceDirectory + "/CatWizard/textures/ImphenziaPalette02-Albedo.png");
+		player_rig->assignTexture("texAlbedo", resourceDirectory + "/CatWizard/textures/ImphenziaPalette02-Albedo.png");
 
 		//Getting Player animations
 		player_walk = new Animation(resourceDirectory + "/CatWizard/CatWizardAnimation4.fbx", player_rig, 4);
 		player_idle = new Animation(resourceDirectory + "/CatWizard/CatWizardAnimation4.fbx", player_rig, 3);
 		player_roll = new Animation(resourceDirectory + "/CatWizard/CatWizardAnimation4.fbx", player_rig, 1);
 		player_grab_book = new Animation(resourceDirectory + "/CatWizard/CatWizardAnimation4.fbx", player_rig, 2);
-		
+
 		rollDuration = player_roll->GetDuration();
 		grabBookDuration = player_grab_book->GetDuration();
 
@@ -1246,54 +1525,54 @@ public:
 		cube = new AssimpModel(resourceDirectory + "/cube.obj");
 
 		bookCover = new AssimpModel(resourceDirectory + "/cornerCube/sideCube.fbx");
-		bookCover->assignTexture("texture_diffuse", resourceDirectory + "/cornerCube/brown-leather-tex/brown-leather_albedo.png");
-		bookCover->assignTexture("texture_roughness", resourceDirectory + "/cornerCube/brown-leather-tex/brown-leather_roughness.png");
-		bookCover->assignTexture("texture_metalness", resourceDirectory + "/cornerCube/brown-leather-tex/brown-leather_metallic.png");
-		bookCover->assignTexture("texture_normal", resourceDirectory + "/cornerCube/brown-leather-tex/brown-leather_normal-ogl.png");
+		bookCover->assignTexture("texAlbedo", resourceDirectory + "/cornerCube/brown-leather-tex/brown-leather_albedo.png");
+		bookCover->assignTexture("texRoughness", resourceDirectory + "/cornerCube/brown-leather-tex/brown-leather_roughness.png");
+		bookCover->assignTexture("texMetalness", resourceDirectory + "/cornerCube/brown-leather-tex/brown-leather_metallic.png");
+		bookCover->assignTexture("texNormal", resourceDirectory + "/cornerCube/brown-leather-tex/brown-leather_normal-ogl.png");
 
 		bookPaper = new AssimpModel(resourceDirectory + "/cornerCube/sideCube.fbx");
-		bookPaper->assignTexture("texture_diffuse", resourceDirectory + "/cornerCube/wrinkled-paper-tex/wrinkled-paper-albedo.png");
-		bookPaper->assignTexture("texture_roughness", resourceDirectory + "/cornerCube/wrinkled-paper-tex/wrinkled-paper-roughness.png");
-		bookPaper->assignTexture("texture_metalness", resourceDirectory + "/cornerCube/wrinkled-paper-tex/wrinkled-paper-metalness.png");
-		bookPaper->assignTexture("texture_normal", resourceDirectory + "/cornerCube/wrinkled-paper-tex/wrinkled-paper-normal-ogl.png");
+		bookPaper->assignTexture("texAlbedo", resourceDirectory + "/cornerCube/wrinkled-paper-tex/wrinkled-paper-albedo.png");
+		bookPaper->assignTexture("texRoughness", resourceDirectory + "/cornerCube/wrinkled-paper-tex/wrinkled-paper-roughness.png");
+		bookPaper->assignTexture("texMetalness", resourceDirectory + "/cornerCube/wrinkled-paper-tex/wrinkled-paper-metalness.png");
+		bookPaper->assignTexture("texNormal", resourceDirectory + "/cornerCube/wrinkled-paper-tex/wrinkled-paper-normal-ogl.png");
 
 		book_shelf1 = new AssimpModel(resourceDirectory + "/cluster_assets/bookshelf_texture2.obj");
-		book_shelf1->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/darker_bookshelf_diffuse.png");
+		book_shelf1->assignTexture("texAlbedo", resourceDirectory + "/cluster_assets/darker_bookshelf_diffuse.png");
 
 		book_shelf2 = new AssimpModel(resourceDirectory + "/cluster_assets/bookshelf_texture2.obj");
-		book_shelf2->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/glowing_bookshelf_bake_diffuse.png");
+		book_shelf2->assignTexture("texAlbedo", resourceDirectory + "/cluster_assets/glowing_bookshelf_bake_diffuse.png");
 
 		candelabra = new AssimpModel(resourceDirectory + "/cluster_assets/candelabrum/Candelabrum.obj");
-		candelabra->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/candelabrum/textures/defaultobject_gold.jpg");
-		candelabra->assignTexture("texture_specular", resourceDirectory + "/cluster_assets/candelabrum/textures/defaultobject_specular.png");
-		candelabra->assignTexture("texture_normal", resourceDirectory + "/cluster_assets/candelabrum/textures/defaultobject_normal.png");
+		candelabra->assignTexture("texAlbedo", resourceDirectory + "/cluster_assets/candelabrum/textures/defaultobject_gold.jpg");
+		//candelabra->assignTexture("texture_specular", resourceDirectory + "/cluster_assets/candelabrum/textures/defaultobject_specular.png");
+		candelabra->assignTexture("texNormal", resourceDirectory + "/cluster_assets/candelabrum/textures/defaultobject_normal.png");
 
 		chest = new AssimpModel(resourceDirectory + "/cluster_assets/chest/Chest.obj");
-		chest->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/chest/textures/TreasureChestDiffuse_2.png");
-		chest->assignTexture("texture_roughness", resourceDirectory + "/cluster_assets/chest/textures/TreasureChestRoughness_2.png");
-		chest->assignTexture("texture_metalness", resourceDirectory + "/cluster_assets/chest/textures/TreasureChestMetal_2.png");
-		chest->assignTexture("texture_normal", resourceDirectory + "/cluster_assets/chest/textures/TreasureChestNormal_2.png");
+		chest->assignTexture("texAlbedo", resourceDirectory + "/cluster_assets/chest/textures/TreasureChestDiffuse_2.png");
+		chest->assignTexture("texRoughness", resourceDirectory + "/cluster_assets/chest/textures/TreasureChestRoughness_2.png");
+		chest->assignTexture("texMetalness", resourceDirectory + "/cluster_assets/chest/textures/TreasureChestMetal_2.png");
+		chest->assignTexture("texNormal", resourceDirectory + "/cluster_assets/chest/textures/TreasureChestNormal_2.png");
 
 		library_bench = new AssimpModel(resourceDirectory + "/cluster_assets/library_bench/library_bench.obj");
-		library_bench->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/library_bench/textures/bench_diffuse.png");
+		library_bench->assignTexture("texAlbedo", resourceDirectory + "/cluster_assets/library_bench/textures/bench_diffuse.png");
 
 		table_chairs1 = new AssimpModel(resourceDirectory + "/cluster_assets/table_chairs/table_chairs_3.obj");
-		table_chairs1->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/table_chairs/textures/table_chairs_3_diffuse.png");
+		table_chairs1->assignTexture("texAlbedo", resourceDirectory + "/cluster_assets/table_chairs/textures/table_chairs_3_diffuse.png");
 
 		table_chairs2 = new AssimpModel(resourceDirectory + "/cluster_assets/table_chairs/table_chairs_4.obj");
-		table_chairs2->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/table_chairs/textures/table_chairs_4_diffuse.png");
+		table_chairs2->assignTexture("texAlbedo", resourceDirectory + "/cluster_assets/table_chairs/textures/table_chairs_4_diffuse.png");
 
 		grandfather_clock = new AssimpModel(resourceDirectory + "/cluster_assets/grandfather_clock/grandfather_clock.obj");
-		grandfather_clock->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/grandfather_clock/textures/Clock_L_lambert1_BaseColor.tga.png");
-		grandfather_clock->assignTexture("texture_metalness", resourceDirectory + "/cluster_assets/grandfather_clock/textures/Clock_L_lambert1_Metallic.tga.png");
-		grandfather_clock->assignTexture("texture_roughness", resourceDirectory + "/cluster_assets/grandfather_clock/textures/Clock_L_lambert1_Roughness.tga.png");
-		grandfather_clock->assignTexture("texture_normal", resourceDirectory + "/cluster_assets/grandfather_clock/textures/Clock_L_lambert1_Normal.tga.jpg");
+		grandfather_clock->assignTexture("texAlbedo", resourceDirectory + "/cluster_assets/grandfather_clock/textures/Clock_L_lambert1_BaseColor.tga.png");
+		grandfather_clock->assignTexture("texMetalness", resourceDirectory + "/cluster_assets/grandfather_clock/textures/Clock_L_lambert1_Metallic.tga.png");
+		grandfather_clock->assignTexture("texRoughness", resourceDirectory + "/cluster_assets/grandfather_clock/textures/Clock_L_lambert1_Roughness.tga.png");
+		grandfather_clock->assignTexture("texNormal", resourceDirectory + "/cluster_assets/grandfather_clock/textures/Clock_L_lambert1_Normal.tga.jpg");
 
 		bookstand = new AssimpModel(resourceDirectory + "/cluster_assets/bookstand/bookstand.obj");
-		bookstand->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/bookstand/textures/bookstand_diffuse.png");
+		bookstand->assignTexture("texAlbedo", resourceDirectory + "/cluster_assets/bookstand/textures/bookstand_diffuse.png");
 
 		door = new AssimpModel(resourceDirectory + "/cluster_assets/door/door.obj");
-		door->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/door/Door_diffuse.png");
+		door->assignTexture("texAlbedo", resourceDirectory + "/cluster_assets/door/Door_diffuse.png");
 
 		sphere = new AssimpModel(resourceDirectory + "/SmoothSphere.obj");
 		sphereBB = make_shared<AABB>();
@@ -1305,10 +1584,25 @@ public:
 		lightningElemental = new AssimpModel(resourceDirectory + "/LightningElemental/LightningElem.fbx");
 
 		healthBar = new AssimpModel(resourceDirectory + "/Quad/hud_quad.obj");
-		healthBar->assignTexture("texture_diffuse", resourceDirectory + "/healthbar.bmp");
+		healthBar->assignTexture("texAlbedo", resourceDirectory + "/healthbar.bmp");
 
 		stoneGolem = new AssimpModel(resourceDirectory + "/StoneGolem/Stone.obj");
-		stoneGolem->assignTexture("texture_diffuse", resourceDirectory + "/StoneGolem/textures/diffuso.tif");
+		stoneGolem->assignTexture("texAlbedo", resourceDirectory + "/StoneGolem/textures/diffuso.tif");
+
+		door_rig = new AssimpModel(resourceDirectory + "/cluster_assets/door/door_anim.dae");
+		door_rig->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/door/Door_diffuse.png");
+
+		//Getting Player animations
+		door_open = new Animation(resourceDirectory + "/cluster_assets/door/door_anim.dae", door_rig, 0);
+		door_close = new Animation(resourceDirectory + "/cluster_assets/door/door_anim.dae", door_rig, 1);
+		door_animator = new Animator(door_open);
+
+		exit_door_rig = new AssimpModel(resourceDirectory + "/cluster_assets/door/door_anim.dae");
+		exit_door_rig->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/door/Door_diffuse.png");
+
+		//Getting Player animations
+		exit_door_open = new Animation(resourceDirectory + "/cluster_assets/door/door_anim.dae", exit_door_rig, 0);
+		exit_door_animator = new Animator(exit_door_open);
 
 		key = new AssimpModel(resourceDirectory + "/Key_and_Lock/key.obj");
 		lock = new AssimpModel(resourceDirectory + "/Key_and_Lock/lockCopy.obj");
@@ -1318,12 +1612,39 @@ public:
 
 		vec3 bossSpawnPos = bossRoom->getWorldOrigin();
 
-
-
 		initEnemies();
 		bossEnemy = new BossEnemy(bossSpawnPos, BOSS_HP_MAX, stoneGolem, vec3(1.3f, 0.8f, 1.0f), vec3(0, 1, 0), BOSS_SPECIAL_ATTACK_COOLDOWN, SpellType::ICE);
 
 		initTextQuad();
+    
+    initCircularBorder();
+		initLocks();
+
+		initQuad2();
+	}
+
+	void initQuad2() {
+		glGenVertexArrays(1, &quad_VertexArrayID);
+		glBindVertexArray(quad_VertexArrayID); // bind VAO first
+
+		static const GLfloat g_quad_vertex_buffer_data[] = {
+			-1.0f, -1.0f, 0.0f,
+			 1.0f, -1.0f, 0.0f,
+			-1.0f,  1.0f, 0.0f,
+			-1.0f,  1.0f, 0.0f,
+			 1.0f, -1.0f, 0.0f,
+			 1.0f,  1.0f, 0.0f,
+		};
+
+		glGenBuffers(1, &quad_vertexbuffer);
+		glBindBuffer(GL_ARRAY_BUFFER, quad_vertexbuffer);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(g_quad_vertex_buffer_data), g_quad_vertex_buffer_data, GL_STATIC_DRAW);
+
+		// This is the critical part missing in your version:
+		glEnableVertexAttribArray(0); // enable attribute index 0
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (void*)0); // tell OpenGL how to interpret buffer
+
+		glBindVertexArray(0); // unbind VAO
 	}
 
 	void SetMaterial(shared_ptr<Program> shader, Material color) {
@@ -1361,138 +1682,168 @@ public:
 				glUniform1f(shader->getUniform("MatRough"), 0.7f);
 				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				glUniform1f(shader->getUniform("MatAO"), 0.5f);
 				break;
 			case Material::black:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.04f, 0.04f, 0.04f);
 				glUniform1f(shader->getUniform("MatRough"), 0.8f);
 				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				glUniform1f(shader->getUniform("MatAO"), 0.5f);
 				break;
 			case Material::eye_white:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.95f, 0.95f, 0.95f);
 				glUniform1f(shader->getUniform("MatRough"), 0.2f);
 				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				glUniform1f(shader->getUniform("MatAO"), 0.5f);
 				break;
 			case Material::pupil_white:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.85f, 0.85f, 0.9f);
 				glUniform1f(shader->getUniform("MatRough"), 0.1f);
 				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				glUniform1f(shader->getUniform("MatAO"), 0.5f);
 				break;
 			case Material::bronze:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.714f, 0.4284f, 0.181f);
 				glUniform1f(shader->getUniform("MatRough"), 0.4f);
 				glUniform1f(shader->getUniform("MatMetal"), 1.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				glUniform1f(shader->getUniform("MatAO"), 0.5f);
 				break;
 			case Material::silver:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.972f, 0.960f, 0.915f);
 				glUniform1f(shader->getUniform("MatRough"), 0.2f);
 				glUniform1f(shader->getUniform("MatMetal"), 1.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				glUniform1f(shader->getUniform("MatAO"), 0.5f);
 				break;
 			case Material::brown:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.25f, 0.15f, 0.08f);
 				glUniform1f(shader->getUniform("MatRough"), 0.7f);
 				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				glUniform1f(shader->getUniform("MatAO"), 0.5f);
 				break;
 			case Material::orb_glowing_blue:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.1f, 0.2f, 0.5f);
 				glUniform1f(shader->getUniform("MatRough"), 0.7f);
 				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.1f, 0.2f, 1.0f);
+				glUniform1f(shader->getUniform("MatAO"), 0.5f);
 				break;
 			case Material::orb_glowing_red:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.5f, 0.1f, 0.1f);
 				glUniform1f(shader->getUniform("MatRough"), 1.0f);
 				glUniform1f(shader->getUniform("MatMetal"), 1.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.9f, 0.3f, 0.2f);
+				glUniform1f(shader->getUniform("MatAO"), 0.5f);
 				break;
 			case Material::orb_glowing_yellow:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.5f, 0.4f, 0.1f);
 				glUniform1f(shader->getUniform("MatRough"), 1.0f);
 				glUniform1f(shader->getUniform("MatMetal"), 1.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.9f, 0.8f, 0.2f);
+				glUniform1f(shader->getUniform("MatAO"), 0.5f);
 				break;
 			case Material::orb_glowing_green:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.1f, 0.5f, 0.1f);
 				glUniform1f(shader->getUniform("MatRough"), 1.0f);
 				glUniform1f(shader->getUniform("MatMetal"), 1.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.2f, 0.9f, 0.2f);
+				glUniform1f(shader->getUniform("MatAO"), 0.5f);
 				break;
 			case Material::orb_highlight_red:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.8f, 0.1f, 0.1f);
 				glUniform1f(shader->getUniform("MatRough"), 0.5f);
 				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				glUniform1f(shader->getUniform("MatAO"), 0.5f);
 				break;
 			case Material::orb_highlight_blue:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.1f, 0.1f, 0.8f);
 				glUniform1f(shader->getUniform("MatRough"), 0.5f);
 				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				glUniform1f(shader->getUniform("MatAO"), 0.5f);
 				break;
 			case Material::orb_highlight_yellow:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.8f, 0.8f, 0.1f);
 				glUniform1f(shader->getUniform("MatRough"), 0.5f);
 				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				glUniform1f(shader->getUniform("MatAO"), 0.5f);
 				break;
 			case Material::orb_highlight_green:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.1f, 0.8f, 0.1f);
 				glUniform1f(shader->getUniform("MatRough"), 0.5f);
 				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				glUniform1f(shader->getUniform("MatAO"), 0.5f);
 				break;
 			case Material::grey:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.8f, 0.8f, 0.8f);
 				glUniform1f(shader->getUniform("MatRough"), 0.6f);
 				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				glUniform1f(shader->getUniform("MatAO"), 0.5f);
 				break;
 			case Material::wood:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.65f, 0.45f, 0.25f);
 				glUniform1f(shader->getUniform("MatRough"), 0.8f);
 				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				glUniform1f(shader->getUniform("MatAO"), 0.5f);
 				break;
 			case Material::mini_map:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.65f, 0.45f, 0.25f);
 				glUniform1f(shader->getUniform("MatRough"), 0.0f);
 				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 1.0f, 1.0f, 1.0f);
+				glUniform1f(shader->getUniform("MatAO"), 0.5f);
 				break;
 			case Material::defaultMaterial:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.5f, 0.5f, 0.5f);
 				glUniform1f(shader->getUniform("MatRough"), 0.0f);
 				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				glUniform1f(shader->getUniform("MatAO"), 0.5f);
 				break;
 			case Material::blue_body:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.35f, 0.4f, 0.914f);
 				glUniform1f(shader->getUniform("MatRough"), 0.8f);
 				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				glUniform1f(shader->getUniform("MatAO"), 0.5f);
 				break;
 			case Material::red_body:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.914f, 0.35f, 0.4f);
 				glUniform1f(shader->getUniform("MatRough"), 0.8f);
 				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				glUniform1f(shader->getUniform("MatAO"), 0.5f);
 				break;
 			case Material::yellow_body:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.914f, 0.914f, 0.35f);
 				glUniform1f(shader->getUniform("MatRough"), 0.8f);
 				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				glUniform1f(shader->getUniform("MatAO"), 0.5f);
 				break;
 			case Material::gold:
 				glUniform3f(shader->getUniform("MatAlbedo"), 1.0f, 0.766f, 0.336f);
 				glUniform1f(shader->getUniform("MatRough"), 0.2f);
 				glUniform1f(shader->getUniform("MatMetal"), 1.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				glUniform1f(shader->getUniform("MatAO"), 0.5f);
+				break;
+			case Material::sun:
+				glUniform3f(shader->getUniform("MatAlbedo"), 1.0f, 0.9f, 0.6f);
+				glUniform1f(shader->getUniform("MatRough"), 0.0f);
+				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
+				glUniform3f(shader->getUniform("MatEmit"), 5.0f, 4.5f, 2.5f);
+				glUniform1f(shader->getUniform("MatAO"), 1.0f);
 				break;
 			case Material:: player_green: 
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.35f, 0.914f, 0.4f);
@@ -1753,7 +2104,7 @@ public:
 
 		shader->bind(); // Bind the simple shader
 
-		if (shader == ShadowProg && Config::DRAW_PAW_PRINTS) {
+		if (shader == buffProg && Config::DRAW_PAW_PRINTS) {
 			int num = (int)prints.size(); // only draw as many paw prints as we have left (removed on timer)
 			vec4 pawArr[Config::PRINTS_MAX];
 			for (int i = 0; i < num; ++i) {
@@ -1763,8 +2114,8 @@ public:
 				pawArr[i].w = prints[i].spawnTime;
 			}
 
-			glUniform1i(shader->getUniform("pawCount"), num);
-			glUniform4fv(shader->getUniform("pawData"), num, value_ptr(pawArr[0]));
+			glUniform1i(shader->getUniform("numPaws"), num);
+			glUniform4fv(shader->getUniform("paws"), num, value_ptr(pawArr[0]));
 			glUniform1f(shader->getUniform("curTime"), (float)glfwGetTime());
 
 			glActiveTexture(GL_TEXTURE0 + pawTex->getUnit());
@@ -1775,7 +2126,7 @@ public:
 		for (const auto& libGrnd : libraryGrounds) {
 			glBindVertexArray(libGrnd.VAO); // Bind each library ground VAO
 
-			if (shader == ShadowProg) {
+			if (shader == buffProg) {
 				glActiveTexture(GL_TEXTURE0);
 				glBindTexture(GL_TEXTURE_2D, libGrnd.texture->getID());
 			}
@@ -1790,14 +2141,14 @@ public:
 			glDrawElements(GL_TRIANGLES, libGrnd.GiboLen, GL_UNSIGNED_SHORT, 0);
 			Model->popMatrix();
 
-			if (shader == ShadowProg) {
+			if (shader == buffProg) {
 				glActiveTexture(GL_TEXTURE0);
 				glBindTexture(GL_TEXTURE_2D, 0);
 				libGrnd.texture->unbind(); // Unbind the texture after drawing each border
 			}
 		}
 
-		if (shader->hasUniform("pawCount")) glUniform1i(shader->getUniform("pawCount"), 0);
+		if (shader->hasUniform("numPaws")) glUniform1i(shader->getUniform("numPaws"), 0);
 		glBindVertexArray(0); // Unbind VAO after drawing all library grounds
 
 		shader->unbind(); // Unbind the simple shader
@@ -1922,10 +2273,11 @@ public:
 				delete enemy; // Free heap memory
 			}
 			enemies.clear();
+		keysneededToCollect = 3; // Reset key count
 
 		for (const auto& spawnPos : enemySpawnPositions) {
 			// enemies.push_back(new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.z), ENEMY_HP_MAX, 2.0f, iceElemental, vec3(1.0f), vec3(0.0f)));
-			keysneededToCollect++; // Increment the key count for each enemy spawned
+			// keysneededToCollect++; // Increment the key count for each enemy spawned
 
 			// cout << " Enemy placed at: (" << spawnPos.x << ", " << spawnPos.y << ", " << spawnPos.z << ")" << endl;
 
@@ -1971,7 +2323,7 @@ public:
 		for (const auto& border : borderWalls) {
 			glBindVertexArray(border.WallVAID); // Bind each border VAO
 
-			if (shader == ShadowProg) {
+			if (shader == buffProg) {
 				glActiveTexture(GL_TEXTURE0);
 				glBindTexture(GL_TEXTURE_2D, border.texture->getID());
 			}
@@ -1983,7 +2335,7 @@ public:
 			glDrawElements(GL_TRIANGLES, border.GiboLen, GL_UNSIGNED_SHORT, 0);
 			Model->popMatrix();
 
-			if (shader == ShadowProg) {
+			if (shader == buffProg) {
 				glActiveTexture(GL_TEXTURE0);
 				glBindTexture(GL_TEXTURE_2D, 0);
 				border.texture->unbind(); // Unbind the texture after drawing each border
@@ -2030,11 +2382,11 @@ public:
 			catwizard_animator->SetCurrentAnimation(player_roll);
 
 		}
-		
+
 		if (animTime != 0.0) {
 			catwizard_animator->UpdateAnimation(1.5f * animTime);
 		}
-		
+
 		// Update bone matrices
 		vector<glm::mat4> transforms = catwizard_animator->GetFinalBoneMatrices();
 
@@ -2069,10 +2421,10 @@ public:
 			playerBB->max);
 
 		// Set uniforms and draw
-		if (curS->hasUniform("texOnly")) glUniform1i(curS->getUniform("texOnly"), GL_TRUE);
+		//if (curS->hasUniform("texOnly")) glUniform1i(curS->getUniform("texOnly"), GL_TRUE);
 		if (curS->hasUniform("hasBones")) glUniform1i(curS->getUniform("hasBones"), GL_TRUE);
 		setModel(curS, Model);
-		if (curS->hasUniform("texOnly")) glUniform1i(curS->getUniform("texOnly"), GL_FALSE);
+		//if (curS->hasUniform("texOnly")) glUniform1i(curS->getUniform("texOnly"), GL_FALSE);
 		player_rig->Draw(curS);
 		if (curS->hasUniform("hasBones")) glUniform1i(curS->getUniform("hasBones"), GL_FALSE);
 		curS->unbind();
@@ -2081,7 +2433,7 @@ public:
 
 	void drawBooks(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		shader->bind();
-		if (shader->hasUniform("texOnly")) glUniform1i(shader->getUniform("texOnly"), GL_TRUE);
+		//if (shader->hasUniform("texOnly")) glUniform1i(shader->getUniform("texOnly"), GL_TRUE);
 		for (const auto& book : books) {
 			// Common values for book halves
 			float bookThickness = book.scale.z * 0.15f;
@@ -2172,7 +2524,7 @@ public:
 				bookCover->Draw(shader);
 			} Model->popMatrix();
 		} // END draw books loop
-		if (shader->hasUniform("texOnly")) glUniform1i(shader->getUniform("texOnly"), GL_FALSE);
+		//if (shader->hasUniform("texOnly")) glUniform1i(shader->getUniform("texOnly"), GL_FALSE);
 		shader->unbind();
 	}
 
@@ -2182,19 +2534,14 @@ public:
 		glDepthFunc(GL_LEQUAL);
 
 		shader->bind();
-		glUniformMatrix4fv(shader->getUniform("P"),
-			1, GL_FALSE,
-			glm::value_ptr(Projection->topMatrix()));
+		glUniformMatrix4fv(shader->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
 
-		glm::mat4 view = View->topMatrix();
-		view[3] = glm::vec4(0, 0, 0, 1);
-		glUniformMatrix4fv(shader->getUniform("V"),
-			1, GL_FALSE,
-			glm::value_ptr(view));
+		mat4 skyView = mat4(mat3(View->topMatrix()));
+		glUniformMatrix4fv(shader->getUniform("V"), 1, GL_FALSE, value_ptr(skyView));
 
 		// bind cubemap
 		glActiveTexture(GL_TEXTURE0 + 12);
-		glBindTexture(GL_TEXTURE_CUBE_MAP, skyboxCubemap);
+		glBindTexture(GL_TEXTURE_CUBE_MAP, currentSkyboxTex);
 		glUniform1i(shader->getUniform("skyTex"), 12);
 
 		// draw cube VAO
@@ -2383,9 +2730,9 @@ public:
 
 				if (orb.spellType == currentPlayerSpellType && orb.collected) {
 					// SetMaterial(simpleShader, orb.color * 1.2f); // Highlight current spell type
-					
+
 					Material highlight = orb.color;
-					
+
 					switch (orb.spellType) {
 						case SpellType::ICE:
 							highlight = Material::orb_highlight_blue;
@@ -2452,6 +2799,15 @@ public:
 
 				if (bossRoom->isInsideBossArea(glm::ivec2(i, j))) {
 					bossfightstarted = true; // Player is in the boss area
+					if (!playBossMusic) {
+						playBossMusic = true;
+						ma_sound_seek_to_pcm_frame(&boss_music, 0); // Reset normal music to start
+						ma_sound_set_looping(&boss_music, MA_TRUE); // Loop boss music
+						ma_sound_start(&boss_music); // Start boss music
+
+						playVictorySound = false; // Reset victory sound flag
+						playBossDeathSound = false; // Reset boss death sound flag
+					}
 				}
 			}
 		}
@@ -2460,6 +2816,20 @@ public:
 			bossfightended = true; // Boss fight ended
 			bossActiveSpells.clear(); // Clear active spells
 			canFightboss = false; // Reset boss fight flag
+			if (!playBossDeathSound) {
+				playBossDeathSound = true;
+				ma_sound_seek_to_pcm_frame(&boss_death_sound, 0); // Reset boss death sound to start
+				ma_sound_start(&boss_death_sound); // Play boss death sound
+			}
+			if (playBossMusic) {
+				playBossMusic = false;
+				ma_sound_stop(&boss_music); // Stop boss music
+			}
+				if (!playVictorySound) {
+				playVictorySound = true;
+				ma_sound_seek_to_pcm_frame(&victory_sound, 0); // Reset victory sound to start
+				ma_sound_start(&victory_sound); // Play victory sound
+			}
 		}
 	}
 
@@ -2490,7 +2860,6 @@ public:
 			libraryQuadTree->cleanup(); // Clean up the quad tree
 			bossRoomQuadTree->cleanup(); // Clean up the boss room quad tree
 			initQuadTree(); // Reinitialize the quad tree
-			keysneededToCollect = 0; // Reset key count
 
 			// Increase number of enemies based on time elapsed
 			float timeElapsed = glfwGetTime();
@@ -2515,50 +2884,61 @@ public:
 			initInstancingMatrices();
 			#endif
 			initCircularBorder();
+			initLocks();
+
+			int random = rand() % 3 + 1; // Random number between 1 and 3
+			SpellType randomSpellType = SpellType::NONE;
+			if (random < 1) {
+				randomSpellType = SpellType::FIRE;
+			} else if (random < 2) {
+				randomSpellType = SpellType::ICE;
+			} else if (random < 3) {
+				randomSpellType = SpellType::LIGHTNING;
+			} else {
+				randomSpellType = SpellType::FIRE; // Default to FIRE if none matched
+			}
+			bossEnemy->setBossSpellType(randomSpellType); // Set random spell type for the boss
+
+			ma_sound_seek_to_pcm_frame(&sound, 0); // Reset normal music to start
+			ma_sound_start(&sound); // Restart normal music
+			playGameOverSound = false; // Reset game over sound flag
+			playBossMusic = false;
 		}
 	}
 
-	void drawEnemies(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
+	void drawEnemies(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model, float frameTime) {
 		for (auto* enemy : enemies) {
-
-			if (!enemy || !enemy->isAlive()) {
+			if (!enemy) continue; // Skip null enemies
+			if (!enemy->isAlive()) {
 				// Ensure a key is added only once per dead enemy if not already present
                 // This simple check assumes positions are unique enough for dead enemies.
                 // A more robust way would be to tag enemies that have already dropped a key.
+				if (enemy->deathTimer < enemy->deathDuration && frameTime != 0.0f) {
+					enemy->deathTimer += frameTime; // Increment death timer
+					drawEnemyDeathParticles(enemy->getModel(), enemy->getPosition());
+				}
 
 
+				if (!enemy->isDropSpawned() && (keyCollectibles.size() < keysneededToCollect)) {
+					int remainingKeys = keysneededToCollect - keyCollectibles.size();
+					int remainingEnemies = 0;
 
-                // bool keyAlreadyExists = false; //some local bools and need some global bools
-				// bool enemyLastPos = false;
-                // for (const auto& key : keyCollectibles) {
-                //     // Approximate check, ideally use a unique ID from the enemy
-                //     if (glm::distance(key.position, enemy->getPosition()) < 0.1f) {
-                //         keyAlreadyExists = true;
-                //         break;
-                //     }
-                // }
-				// 	glm:: vec3 keyPos = enemy->getPosition();
+					// Count remaining enemies that are alive and not spawned a key
+					for (const auto* e : enemies) {
+						if (e && e->isAlive() && !e->isDropSpawned()) {
+							remainingEnemies++;
+						}
+					}
 
-                // if (!keyAlreadyExists ) { //&& !enemyLastPos
-
-				// 	//get enemy pos once, then don't change it until change  it up?
-				// 	keyPos.y = keyPos.y - 1.5f;
-				// 	//std::cout << "key position " << keyPos.x << " " << keyPos.y << " " << keyPos.z << " " << std::endl;
-
-                //     keyCollectibles.emplace_back(key, keyPos, 0.1f, Material::key_color, SpellType::NONE);
-				// 	drawKey(shader, Model );
-				// 	//enemyLastPos = true;
-                // }
-
-				if (!enemy->isDropSpawned()) {
-					glm::vec3 keyPos = enemy->getPosition();
-					keyPos.y -= 1.5f; // Adjust height for key position
-					keyCollectibles.emplace_back(key, keyPos, 0.1f, Material::gold, SpellType::NONE);
-					enemy->setDropSpawned(true); // Mark that the key has been spawned
-
-					
-					// Play key drop sound effect
-					ma_sound_start(&key_drop);
+					if (remainingEnemies <= remainingKeys || rand() % 100 < 50) { // 50% chance to spawn a key if enough enemies left
+						glm::vec3 keyPos = enemy->getPosition();
+						keyPos.y -= 1.5f; // Adjust height for key position
+						keyCollectibles.emplace_back(key, keyPos, 0.1f, Material::gold, SpellType::NONE);
+						enemy->setDropSpawned(true); // Mark that the key has been spawned
+            
+            // Play key drop sound effect
+				  	ma_sound_start(&key_drop);
+					}
 				}
 
 				continue; // Skip null or dead enemies
@@ -2594,6 +2974,7 @@ public:
 				if (shader->hasUniform("enemyAlpha")) glUniform1f(shader->getUniform("enemyAlpha"), enemy->getDamageTimer() / Config::ENEMY_HIT_DURATION);
 				setModel(shader, Model);
 				(enemy->getModel())->Draw(shader); // Draw the scaled sphere as the body
+				if (shader->hasUniform("enemyAlpha")) glUniform1f(shader->getUniform("enemyAlpha"), 1.0f);
 			} Model->popMatrix();
 			shader->unbind();
 		} // End loop through enemies
@@ -2936,13 +3317,52 @@ public:
 		shader->unbind();
 	}
 
-	void drawBossRoom(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model, bool cullFlag) {
+	void genLibLights() {
+		if (grid.getSize().x == 0 || grid.getSize().y == 0) return; // Safety checks
+
+		float groundSize = Config::GROUND_SIZE;
+
+		float gridWorldWidth = groundSize * 2.0f; // The world space the grid should occupy (library floor width)
+		float gridWorldDepth = groundSize * 2.0f; // The world space the grid should occupy (library floor depth)
+		float cellWidth = gridWorldWidth / (float)grid.getSize().x;
+		float cellDepth = gridWorldDepth / (float)grid.getSize().y;
+
+		for (int z = 0; z < grid.getSize().y; ++z) {
+			for (int x = 0; x < grid.getSize().x; ++x) {
+				glm::ivec2 gridPos(x, z);
+				float i = library->mapGridXtoWorldX(x); // Center the shelf in the cell
+				float j = library->mapGridYtoWorldZ(z); // Center the shelf in the cell
+				if (grid[gridPos].type == LibraryGen::CellType::CLUSTER) {
+					if (grid[gridPos].clusterType == LibraryGen::ClusterType::ONLY_CANDELABRA) {
+						sceneLightPos.push_back(vec3(i, libraryCenter.y + 1.0f, j));
+						sceneLightCol.push_back(Config::CANDELABRA_L_COLOR);
+					}
+					else if (grid[gridPos].clusterType == LibraryGen::ClusterType::LAYOUT1) {
+						if (grid[gridPos].objectType == LibraryGen::CellObjType::CANDELABRA) {
+							sceneLightPos.push_back(vec3(i, libraryCenter.y + 1.0f, j));
+							sceneLightCol.push_back(Config::CANDELABRA_L_COLOR);
+						}
+					}
+					else if (grid[gridPos].clusterType == LibraryGen::ClusterType::GLOWING_SHELF1) {
+						if (grid[gridPos].objectType == LibraryGen::CellObjType::SHELF_WITH_ABILITY) {
+							sceneLightPos.push_back(vec3(i, libraryCenter.y + 2.0f, j));
+							sceneLightCol.push_back(Config::SHELF_L_COLOR);
+						}
+					}
+					else if (grid[gridPos].clusterType == LibraryGen::ClusterType::GLOWING_SHELF2) {
+						if (grid[gridPos].objectType == LibraryGen::CellObjType::SHELF_WITH_ABILITY_ROTATED) {
+							sceneLightPos.push_back(vec3(i, libraryCenter.y + 2.0f, j));
+							sceneLightCol.push_back(Config::SHELF_L_COLOR);
+						}
+					}
+				}
+			}
+		}
+	}
+
+	void drawBossRoom(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model, bool cullFlag, float animTime) {
 		if (!shader || !Model) return;
 		shader->bind();
-
-		/*if (shader == ShadowProg) {
-			glUniform1i(shader->getUniform("hasMaterial"), 0);
-		}*/
 
 		for (int z = 0; z < bossGrid.getSize().y; ++z) {
 			for (int x = 0; x < bossGrid.getSize().x; ++x) {
@@ -2957,24 +3377,34 @@ public:
 						// Model->loadIdentity();
 						// Model->translate(vec3(i, libraryCenter.y, j)); // Position set in class members
 						// Model->rotate(glm::radians(bossGrid[gridPos].transformData.rotation), vec3(0, 1, 0)); // Rotate for left/right walls
-						// Model->scale(bossGrid[gridPos].transformData.scale); // Scale set in class members
+						// Model->scale(bossGrid[gr`idPos].transformData.scale); // Scale set in class members
 						// setModel(shader, Model);
 						// book_shelf1->Draw(shader); // Use the bookshelf model for the border
 						// Model->popMatrix();
 					}
 					else if (bossGrid[gridPos].type == BossRoomGen::CellType::ENTRANCE) {
 						if (bossGrid[gridPos].borderType == BossRoomGen::BorderType::ENTRANCE_MIDDLE) {
-							Model->pushMatrix();
-							Model->loadIdentity();
-							Model->translate(vec3(i, 0, j));
-							Model->rotate(glm::radians(bossGrid[gridPos].transformData.rotation), vec3(0, 1, 0)); // Rotate for left/right walls
-							Model->scale(bossGrid[gridPos].transformData.scale); // Scale set in class members
-							setModel(shader, Model);
-							if (unlock == false) {
-								door->Draw(shader); // Use the door model for the entrance
-							}
 
-							Model->popMatrix();
+
+
+							// Model->pushMatrix();
+							// Model->loadIdentity();
+							// Model->translate(vec3(i, 2.0f, j));
+							// Model->rotate(glm::radians(bossGrid[gridPos].transformData.rotation + 180.0f), vec3(0, 1, 0)); // Rotate for left/right walls
+							// Model->scale(bossGrid[gridPos].transformData.scale); // Scale set in class members
+							// // if (unlock == false) {
+							// // 	door->Draw(shader); // Use the door model for the entrance
+
+
+
+							// // }
+							// if (shader->hasUniform("hasBones")) glUniform1i(shader->getUniform("hasBones"), GL_TRUE);
+							// if (shader->hasUniform("texOnly")) glUniform1i(shader->getUniform("texOnly"), GL_TRUE);
+							// setModel(shader, Model);
+							// if (shader->hasUniform("texOnly")) glUniform1i(shader->getUniform("texOnly"), GL_FALSE);
+							// door_rig->Draw(shader); // Use the door model for the entrance
+							// if (shader->hasUniform("hasBones")) glUniform1i(shader->getUniform("hasBones"), GL_FALSE);
+							// Model->popMatrix();
 						}
 						else if (bossGrid[gridPos].borderType == BossRoomGen::BorderType::ENTRANCE_SIDE) {
 							Model->pushMatrix();
@@ -2989,14 +3419,14 @@ public:
 					}
 					else if (bossGrid[gridPos].type == BossRoomGen::CellType::EXIT) {
 						if (bossGrid[gridPos].borderType == BossRoomGen::BorderType::EXIT_MIDDLE) {
-							Model->pushMatrix();
-							Model->loadIdentity();
-							Model->translate(vec3(i, 0, j));
-							Model->rotate(glm::radians(bossGrid[gridPos].transformData.rotation), vec3(0, 1, 0)); // Rotate for left/right walls
-							Model->scale(bossGrid[gridPos].transformData.scale); // Scale set in class members
-							setModel(shader, Model);
-							door->Draw(shader); // Use the door model for the entrance
-							Model->popMatrix();
+							// Model->pushMatrix();
+							// Model->loadIdentity();
+							// Model->translate(vec3(i, 0, j));
+							// Model->rotate(glm::radians(bossGrid[gridPos].transformData.rotation), vec3(0, 1, 0)); // Rotate for left/right walls
+							// Model->scale(bossGrid[gridPos].transformData.scale); // Scale set in class members
+							// setModel(shader, Model);
+							// door->Draw(shader); // Use the door model for the entrance
+							// Model->popMatrix();
 						}
 						else if (bossGrid[gridPos].borderType == BossRoomGen::BorderType::EXIT_SIDE) {
 							Model->pushMatrix();
@@ -3151,22 +3581,66 @@ public:
 		shader->unbind();
 	}
 
-	void drawDoor(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
-		if (!shader || !Model || !cube) return; // Need cube model
+	void drawBossEntrDoor(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model, bool cullFlag, float animTime) {
+		if (!shader || !Model || !door_rig) return; // Need cube model
 
 		shader->bind();
 
+		if (animTime != 0.0) {
+			if (unlock && !doorOpened){
+				door_animator->UpdateAnimationOnce(0.25 * animTime);
+				if (!playDoorSound) {
+					playDoorSound = true;
+					ma_sound_stop(&sound);
+					ma_sound_start(&door_sound);
+
+				}
+				if (door_animator->IsFinished()) {
+					std::cout << "Door opened!" << std::endl;
+					doorOpened = true; // Mark the door as opened
+					doorOpenProgress = 0.25f * animTime; // Store the progress
+				}
+			} else if (unlock && doorOpened) {
+				door_animator->UpdateAnimationOnce(0.0f); // Keep the door open
+			}
+			else {
+				door_animator->UpdateAnimation(0.0f);
+			}
+		}
+
+		// Update bone matrices
+		vector<glm::mat4> transforms = door_animator->GetFinalBoneMatrices();
+
+
+		if (shader->hasUniform("finalBonesMatrices[0]")) {
+			int numBones = std::min((int)transforms.size(), Config::MAX_BONES);
+			for (int i = 0; i < numBones; ++i) {
+				string uniformName = "finalBonesMatrices[" + std::to_string(i) + "]";
+				glUniformMatrix4fv(shader->getUniform(uniformName), 1, GL_FALSE, value_ptr(transforms[i]));
+			}
+		}
+		glm::vec3 doorPos = vec3(bossEntrancetransforms.position.x, bossEntrancetransforms.position.y, bossEntrancetransforms.position.z);
+		if (!cullFlag || !ViewFrustCull(doorPos, 2.0f, planes)) {
 		Model->pushMatrix();
 		Model->loadIdentity();
-		Model->translate(doorPosition); // Position set in class members
-		Model->scale(doorScale);      // Scale set in class members
+		Model->translate(vec3(bossEntrancetransforms.position.x, bossEntrancetransforms.position.y, bossEntrancetransforms.position.z)); // Position set in class members
+		Model->rotate(glm::radians(bossEntrancetransforms.rotation), vec3(0, 1, 0)); // Rotate for left/right walls
+		Model->rotate(glm::radians(-90.0f), vec3(1, 0, 0)); // Rotate to face up
+		Model->scale(bossEntrancetransforms.scale); // Scale set in class members
+		// if (unlock == false) {
+		// 	door->Draw(shader); // Use the door model for the entrance
 
-		SetMaterial(shader, Material::wood); // Use Wood material
 
+
+		// }
+		if (shader->hasUniform("hasBones")) glUniform1i(shader->getUniform("hasBones"), GL_TRUE);
+		if (shader->hasUniform("texOnly")) glUniform1i(shader->getUniform("texOnly"), GL_TRUE);
 		setModel(shader, Model);
-		cube->Draw(shader);
-
+		if (shader->hasUniform("texOnly")) glUniform1i(shader->getUniform("texOnly"), GL_FALSE);
+		door_rig->Draw(shader); // Use the door model for the entrance
+		if (shader->hasUniform("hasBones")) glUniform1i(shader->getUniform("hasBones"), GL_FALSE);
 		Model->popMatrix();
+		}
 		shader->unbind();
 	}
 
@@ -3210,7 +3684,7 @@ public:
 		//Play Grab Book animation once
 		catwizard_animator->resetTime();
 		grabbingBook = true;
-		
+
 		float interactionRadius = 5.0f;
 		float interactionRadiusSq = interactionRadius * interactionRadius;
 
@@ -3223,6 +3697,7 @@ public:
 		float cellDepth = gridWorldDepth / (float)grid.getSize().y;
 
 		bool interacted = false;
+		interactedwithBook = false;
 
 		int gridX = library->mapXtoGridX(player->getPosition().x);
 		int gridZ = library->mapZtoGridY(player->getPosition().z);
@@ -3240,7 +3715,7 @@ public:
 				// glm::ivec2 gridPos(gridx, gridZ);
 				// if (!grid.inBounds(gridPos)) continue; // Skip out-of-bounds cells
 				LibraryGen::Cell cell = grid[e->grid_position];
-				std::cout << "Checking cell at (" << e->grid_position.x << ", " << e->grid_position.y << ") with object type: " << static_cast<int>(cell.objectType) << std::endl;
+				// std::cout << "Checking cell at (" << e->grid_position.x << ", " << e->grid_position.y << ") with object type: " << static_cast<int>(cell.objectType) << std::endl;
 				if (cell.objectType == LibraryGen::CellObjType::SHELF_WITH_ABILITY || cell.objectType == LibraryGen::CellObjType::SHELF_WITH_ABILITY_ROTATED) {
 					// float shelfWorldX = libraryCenter.x - gridWorldWidth * 0.5f + (x + 0.5f) * cellWidth;
 					// float shelfWorldZ = libraryCenter.z - gridWorldDepth * 0.5f + (z + 0.5f) * cellDepth;
@@ -3284,6 +3759,7 @@ public:
 						newBook.startFalling(groundY, player->getPosition());
 
 						interacted = true;
+						interactedwithBook = true; // Set this to true to indicate interaction occurred
 
 						/* possible sound effect */
 
@@ -3521,7 +3997,7 @@ public:
 				// int gridZ = library->mapZtoGridY(e->center.y);
 				// glm::ivec2 gridPos = glm::ivec2(gridx, gridZ);
 				LibraryGen::Cell cell = grid[e->grid_position];
-				std::cout << "Checking cell at (" << e->grid_position.x << ", " << e->grid_position.y << ") with object type: " << static_cast<int>(cell.objectType) << std::endl;
+				// std::cout << "Checking cell at (" << e->grid_position.x << ", " << e->grid_position.y << ") with object type: " << static_cast<int>(cell.objectType) << std::endl;
 				return true; // Collision found
 			}
 		}
@@ -3761,30 +4237,59 @@ public:
 			return;
 		}
 
-		// Consume an orb if not in debug mode
-		if (!debugCamera) {
-			// Remove visual orb logic... (find first collected orb and erase)
-			for (auto it = orbCollectibles.begin(); it != orbCollectibles.end(); ++it) {
-				if (it->collected && it->spellType == currentPlayerSpellType) {
-					spellCounts[it->spellType]--; // Increment spell count for the type being shot
-					cout << "Spells remaining of this type: " << spellCounts[it->spellType] << endl;
-					orbsCollectedCount--;
-					orbCollectibles.erase(it);
+		// // Consume an orb if not in debug mode
+		// if (!debugCamera) {
+		// 	// Remove visual orb logic... (find first collected orb and erase)
+		// 	for (auto it = orbCollectibles.begin(); it != orbCollectibles.end(); ++it) {
+		// 		if (it->collected && it->spellType == currentPlayerSpellType) {
+		// 			spellCounts[it->spellType]--; // Increment spell count for the type being shot
+		// 			cout << "Spells remaining of this type: " << spellCounts[it->spellType] << endl;
+		// 			orbsCollectedCount--;
+		// 			orbCollectibles.erase(it);
 
-					if (spellCounts[currentPlayerSpellType] <= 0) {
-						for (int i = 0; i < 4; ++i) {
-							if (spellCounts[spellSlots[i]] > 0) {
-								currentPlayerSpellType = spellSlots[i];
-								currentSpellSlotIndex = i;
-								cout << "[DEBUG] Changed currentPlayerSpellType to " << static_cast<int>(currentPlayerSpellType) << endl;
-								break;
-							}
-						}
-					}
+		// 			if (spellCounts[currentPlayerSpellType] <= 0) {
+		// 				for (int i = 0; i < 4; ++i) {
+		// 					if (spellCounts[spellSlots[i]] > 0) {
+		// 						currentPlayerSpellType = spellSlots[i];
+		// 						currentSpellSlotIndex = i;
+		// 						cout << "[DEBUG] Changed currentPlayerSpellType to " << static_cast<int>(currentPlayerSpellType) << endl;
+		// 						break;
+		// 					}
+		// 				}
+		// 			}
+		// 			break;
+		// 		}
+		// 	}
+		// }
+
+		// atempt to find a matching orb to shoot
+		auto it = std::find_if(orbCollectibles.begin(), orbCollectibles.end(), [&](const Collectible& orb) {
+			return orb.collected && orb.spellType == currentPlayerSpellType;
+		});
+
+		// if no orb of current type is found, check if there are any orbs at all
+		if (it == orbCollectibles.end() && !debugCamera) {
+			bool foundAlternate = false;
+			for (int i = 0; i < 4; ++i) {
+				SpellType altType = spellSlots[i];
+				auto altIt = std::find_if(orbCollectibles.begin(), orbCollectibles.end(), [&](const Collectible& orb) {
+					return orb.collected && orb.spellType == altType;
+				});
+				if (altIt != orbCollectibles.end()) {
+					currentPlayerSpellType = altType; // Switch to the first available spell type
+					currentSpellSlotIndex = i;
+					foundAlternate = true;
+					cout << "[DEBUG] Changed currentPlayerSpellType to " << static_cast<int>(currentPlayerSpellType) << endl;
 					break;
 				}
 			}
+
+			if (!foundAlternate) {
+			cout << "[DEBUG] Cannot shoot: No valid orb of current spell type." << endl;
+			return; // No valid orb to shoot
+			}
 		}
+
 
 		vec3 shootDir = manMoveDir;
 		vec3 playerRight = normalize(cross(manMoveDir, vec3(0.0f, 1.0f, 0.0f)));
@@ -3800,6 +4305,7 @@ public:
 
 		activeSpells.emplace_back(spawnPos, shootDir, (float)glfwGetTime());
 		SpellProjectile& newProj = activeSpells.back();
+		newProj.spellType = currentPlayerSpellType; // Set the spell type for the projectile
 
 		if (particleSystem && spellCounts[currentPlayerSpellType] > 0) {
 			float current_particle_system_time = particleSystem->getCurrentTime();
@@ -3861,6 +4367,7 @@ public:
 				if (!debugCamera) orbsCollectedCount++; // Refund orb if not in debug mode
 				return;
 			}
+
 			cout << "[DEBUG] Firing " << spellTypeName << " spell." << endl;
 
 			particleSystem->spawnParticleBurst(spawnPos,       // Use initial spawnPos for particles
@@ -3872,6 +4379,25 @@ public:
 				p_lifespan_min, p_lifespan_max,
 				p_color_start, p_color_end,
 				p_scale_min, p_scale_max);
+		}
+
+		// Commit orb consumption only after successful projectile setup
+		if (!debugCamera && it != orbCollectibles.end()) {
+			spellCounts[it->spellType]--;
+			orbsCollectedCount--;
+			orbCollectibles.erase(it);
+
+			// Switch again if spell count became 0 after firing
+			if (spellCounts[currentPlayerSpellType] <= 0) {
+				for (int i = 0; i < 4; ++i) {
+					if (spellCounts[spellSlots[i]] > 0) {
+						currentPlayerSpellType = spellSlots[i];
+						currentSpellSlotIndex = i;
+						cout << "[DEBUG] Changed currentPlayerSpellType to " << static_cast<int>(currentPlayerSpellType) << endl;
+						break;
+					}
+				}
+			}
 		}
 
 		// Play spell sound effect
@@ -3899,6 +4425,11 @@ public:
 			if (glfwGetTime() - proj.spawnTime > proj.lifetime) {
 				proj.active = false;
 				activeSpells.erase(activeSpells.begin() + i);
+				continue;
+			}
+			if (proj.spellType == SpellType::HEAL) {
+				// Healing spell does not move, just visual effect
+				proj.lifetime = 0.5f; // Short lifetime for visual effect
 				continue;
 			}
 
@@ -3930,6 +4461,7 @@ public:
 				if (checkAABBCollision(proj.aabbMin, proj.aabbMax, bossEnemy->getAABBMin(), bossEnemy->getAABBMax())) {
 					cout << "[DEBUG] Fireball HIT boss!" << endl;
 					float bossDamage = 100.0f;
+					// float bossDamage = bossEnemy->getHitpoints(); // just for testing
 					bossEnemy->takeDamage(bossDamage);
 					proj.active = false;
 					activeSpells.erase(activeSpells.begin() + i);
@@ -3947,7 +4479,7 @@ public:
 		//Reset animation to begining
 		catwizard_animator->resetTime();
 		rolling = true;
-		
+
 		vec3 desiredMoveDelta = vec3(0.0f);
 
 
@@ -3993,7 +4525,7 @@ public:
 
 		/*
 		cout << "Roll Duration: " << rollDuration << endl <<
-			"RollProg: " << rollProgress << endl << 
+			"RollProg: " << rollProgress << endl <<
 			"Step Value: " << rollProgress/rollDuration << endl
 			<< "Roll Destination: x|" << rollDestination.x << " y: " << rollDestination.y << " z: " << rollDestination.z << endl;
 			*/
@@ -4001,7 +4533,7 @@ public:
 		//vec3 rollStep = Bezier::lErp(player->getPosition(), rollDestination, rollProgress/rollDuration);
 		//midstep.y = groundY;
 		vec3 rollStep = Bezier::quadErp(player->getPosition(), rollDestination, rollProgress / rollDuration);
-		
+
 		//Collision
 		glm::quat playerOrientation = glm::angleAxis(player->getRotY(), glm::vec3(0, 1, 0));
 		vec3 currentPos = player->getPosition();
@@ -4020,7 +4552,7 @@ public:
 		}
 
 		// Try moving along Z only (starting from potentially updated X)
-		vec3 nextPosZ = vec3(allowedPos.x, currentPos.y, rollStep.z); 
+		vec3 nextPosZ = vec3(allowedPos.x, currentPos.y, rollStep.z);
 		if (!checkCollisionAt(nextPosZ, playerOrientation)) {
 			allowedPos.z = rollStep.z; // Allow Z movement
 		}
@@ -4049,7 +4581,7 @@ public:
 			<< "z: " << desiredMoveDelta.z << endl;
 		*/
 
-		//Dot products arent working for some reason 
+		//Dot products arent working for some reason
 		//Excuse my bad code :(
 		if (movingForward && movingRight) {
 			rotationAdjustment = glm::radians(45.0f);
@@ -4102,8 +4634,9 @@ public:
 		// if(shader->hasUniform("hasEmittance")) glUniform1i(shader->getUniform("hasEmittance"), 1);
 		// if(shader->hasUniform("MatEmitt")) glUniform3f(shader->getUniform("MatEmitt"), 1.0f, 1.0f, 0.8f);
 
-		for (const auto& proj : activeSpells) {
+		for (auto& proj : activeSpells) {
 			if (!proj.active) continue;
+			SpellType type = proj.spellType;
 			float current_particle_system_time = particleSystem->getCurrentTime();
 
 			float p_speed_min = 0.05f;
@@ -4118,41 +4651,74 @@ public:
 			glm::vec4 p_color_end;
 			float p_scale_min = 0.1f;
 			float p_scale_max = 0.25f;
-
 			int current_particles_to_spawn = 2; // Set a fixed number of particles for all orbs
+
+			glm::vec3 projPos = proj.position;
+			glm::vec3 emitDir = glm::vec3(0, 1, 0); // Emit upwards slowly or randomly
+			bool isHealSpell = false;
 			// Customize particle aura based on spell type
-			switch (currentPlayerSpellType) {
+			switch (type) {
 				case SpellType::FIRE:
 					// current_particles_to_spawn = 15; // Increased for density with short life
-					p_color_start = glm::vec4(1.0f, 0.5f, 0.1f, 0.8f);
-					p_color_end = glm::vec4(0.9f, 0.2f, 0.0f, 0.3f);
-					p_scale_min = 0.25f;
-					p_scale_max = 0.45f;
+					p_color_start = glm::vec4(1.0f, 0.6f, 0.1f, 1.0f);
+					p_color_end = glm::vec4(0.9f, 0.2f, 0.0f, 0.5f);
+					p_scale_min = 0.45f; // Increased size
+					p_scale_max = 0.85f;
 					break;
 				case SpellType::ICE:
 					// current_particles_to_spawn = 15; // Increased for density
-					p_color_start = glm::vec4(0.5f, 0.8f, 1.0f, 0.8f);
+					projPos += glm::vec3(Config::randFloat(-0.05f, 0.05f), Config::randFloat(-0.02f, 0.02f), Config::randFloat(-0.05f, 0.05f));
+					emitDir = glm::normalize(proj.direction + glm::vec3(
+                    Config::randFloat(-0.1f, 0.1f),
+                    Config::randFloat(0.0f, 0.05f),
+                    Config::randFloat(-0.1f, 0.1f)
+					));
+					p_color_start = glm::vec4(0.5f, 0.8f, 1.0f, 1.0f);
 					p_color_end = glm::vec4(0.2f, 0.5f, 0.8f, 0.3f);
-					p_scale_min = 0.25f;
-					p_scale_max = 0.45f;
+					p_scale_min = 0.35f; // Increased size
+					p_scale_max = 0.55f;
+					p_lifespan_min = 0.3f;
+					p_lifespan_max = 0.7f;
+					current_particles_to_spawn = 4;
 					break;
 				case SpellType::LIGHTNING:
-					// current_particles_to_spawn = 15; // Increased for density
-					p_color_start = glm::vec4(1.0f, 1.0f, 0.5f, 0.8f);
+					 // Zigzag: jitter particle spawn position each frame
+					projPos += glm::vec3(
+						Config::randFloat(-0.15f, 0.15f),
+						Config::randFloat(-0.05f, 0.05f),
+						Config::randFloat(-0.15f, 0.15f)
+					);
+					emitDir = glm::normalize(proj.direction + glm::vec3(
+						Config::randFloat(-0.3f, 0.3f),
+						Config::randFloat(-0.2f, 0.2f),
+						Config::randFloat(-0.3f, 0.3f)
+					));
+					p_color_start = glm::vec4(1.0f, 1.0f, 0.5f, 1.0f);
 					p_color_end = glm::vec4(0.8f, 0.8f, 0.2f, 0.3f);
-					p_scale_min = 0.25f;
-					p_scale_max = 0.45f;
+					p_scale_min = 0.2f; // Slightly smaller but more numerous for lightning
+					p_scale_max = 0.4f;
+					p_spread = 0.8f; // Smaller spread for lightning effect
+					p_lifespan_min = 0.1f; // Shorter lifespan for lightning effect
+					p_lifespan_max = 0.25f; // Shorter lifespan for lightning effect
+					p_speed_min = 0.3f;
+					p_speed_max = 0.6f;
+					current_particles_to_spawn = 6; // More particles for lightning
 					break;
+				case SpellType::HEAL:
+					projPos = player->getPosition() + vec3(Config::randFloat(-0.5f, 0.5f), Config::randFloat(0.8f, 0.0f), Config::randFloat(-0.5f, 0.5f)); // Randomize position around player for heal
+					p_color_start = glm::vec4(0.2f, 1.0f, 0.2f, 1.0f);
+					p_color_end = glm::vec4(0.2, 1.0f, 0.2f, 1.0f);
+					p_scale_min = 0.35f; // Slightly smaller but more numerous for lightning
+					p_scale_max = 0.6f;
+					p_lifespan_max = 0.3f; // Longer lifespan for healing effect
+					p_lifespan_min = 0.1f; // Longer lifespan for healing effect
+					isHealSpell = true; // Special case for healing
+					break;
+				case SpellType::NONE:
 				default:
-					// current_particles_to_spawn is 15 (standardized)
-					// p_color_start and p_color_end use orb.color
-					// p_lifespan_min/max are standardized
-					// Make scales consistent with other types:
-					p_scale_min = 0.25f;
-					p_scale_max = 0.45f;
-					break;
+					continue; // Skip drawing if no valid spell type
 			}
-			particleSystem->spawnParticleBurst(proj.position, // Emit from orb center
+			particleSystem->spawnParticleBurst(projPos, // Emit from orb center
 												glm::vec3(0,1,0), // Emit upwards slowly or randomly
 												current_particles_to_spawn,
 												current_particle_system_time,
@@ -4161,7 +4727,7 @@ public:
 												p_lifespan_min, p_lifespan_max,
 												p_color_start, p_color_end,
 												p_scale_min, p_scale_max);
-
+			if (isHealSpell) continue; // Skip drawing sphere for heal spell
 			Model->pushMatrix();
 			Model->loadIdentity(); // Start from identity for projectile
 
@@ -4413,6 +4979,8 @@ public:
 		cout << "[DEBUG] Spell Fired! Start:(" << spawnPos.x << "," << spawnPos.y << "," << spawnPos.z
 			<< ") Dir: (" << shootDir.x << "," << shootDir.y << "," << shootDir.z
 			<< "). Active spells: " << bossActiveSpells.size() << endl;
+
+		ma_sound_start(&spell_sound);
 	}
 
 // Boss slam attack logic
@@ -4498,10 +5066,31 @@ public:
 						bossEnemy->setAttack1Cooldown(glfwGetTime());
 
 						if (activeEnemiesCount <= 5) {
-							IceElemental* minion = new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.y), ENEMY_HP_MAX, 2.0f, iceElemental, vec3(0.65f), vec3(0.0f));
-							minion->setAggro(true);
-							minion->setSightRange(20.0f);
-							enemies.push_back(minion);
+							// IceElemental* minion = new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.y), ENEMY_HP_MAX, 2.0f, iceElemental, vec3(0.65f), vec3(0.0f));
+							// minion->setAggro(true);
+							// minion->setSightRange(20.0f);
+							// enemies.push_back(minion);
+							SpellType spellType = bossEnemy->getBossSpellType();
+
+							if (spellType == SpellType::FIRE) {
+								FireElemental* fireMinion = new FireElemental(vec3(spawnPos.x, Config::FIRE_ELEMENTAL_TRANS_Y, spawnPos.y), ENEMY_HP_MAX, 2.0f, fireElemental, vec3(0.65f), vec3(0.0f));
+								fireMinion->setAggro(true);
+								fireMinion->setSightRange(50.0f);
+								enemies.push_back(fireMinion);
+
+							} else if (spellType == SpellType::ICE) {
+								IceElemental* iceMinion = new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.y), ENEMY_HP_MAX, 2.0f, iceElemental, vec3(0.65f), vec3(0.0f));
+								iceMinion->setAggro(true);
+								iceMinion->setSightRange(50.0f);
+								enemies.push_back(iceMinion);
+
+							} else if (spellType == SpellType::LIGHTNING) {
+								LightningElemental* lightningMinion = new LightningElemental(vec3(spawnPos.x, Config::LIGHTNING_ELEMENTAL_TRANS_Y, spawnPos.y), ENEMY_HP_MAX, 2.0f, lightningElemental, vec3(0.65f), vec3(0.0f));
+								lightningMinion->setAggro(true);
+								lightningMinion->setSightRange(50.0f);
+								enemies.push_back(lightningMinion);
+
+							}
 						}
 					}
 					updateBossProjectiles(deltaTime);
@@ -4517,11 +5106,33 @@ public:
 						bossEnemy->setAttack1Cooldown(glfwGetTime());
 
 						if (activeEnemiesCount <= 5) {
-							enemies.push_back(new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.y), ENEMY_HP_MAX, 2.0f, iceElemental, vec3(0.65f), vec3(0.0f)));
+							SpellType spellType = bossEnemy->getBossSpellType();
+
+							if (spellType == SpellType::FIRE) {
+								FireElemental* fireMinion = new FireElemental(vec3(spawnPos.x, Config::FIRE_ELEMENTAL_TRANS_Y, spawnPos.y), ENEMY_HP_MAX, 2.0f, fireElemental, vec3(0.65f), vec3(0.0f));
+								fireMinion->setAggro(true);
+								fireMinion->setSightRange(50.0f);
+								enemies.push_back(fireMinion);
+
+							} else if (spellType == SpellType::ICE) {
+								IceElemental* iceMinion = new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.y), ENEMY_HP_MAX, 2.0f, iceElemental, vec3(0.65f), vec3(0.0f));
+								iceMinion->setAggro(true);
+								iceMinion->setSightRange(50.0f);
+								enemies.push_back(iceMinion);
+
+							} else if (spellType == SpellType::LIGHTNING) {
+								LightningElemental* lightningMinion = new LightningElemental(vec3(spawnPos.x, Config::LIGHTNING_ELEMENTAL_TRANS_Y, spawnPos.y), ENEMY_HP_MAX, 2.0f, lightningElemental, vec3(0.65f), vec3(0.0f));
+								lightningMinion->setAggro(true);
+								lightningMinion->setSightRange(50.0f);
+								enemies.push_back(lightningMinion);
+
+							}
 						}
 					}
 					if (!slamState.active && (glfwGetTime() - bossEnemy->getSlamCooldown() > Config::BOSS_SLAM_COOLDOWN)) {
 						bossSlamAttack();
+						ma_sound_seek_to_pcm_frame(&boss_slam_sound, 0);
+						ma_sound_start(&boss_slam_sound);
 					}
 
 					updateBossProjectiles(deltaTime);
@@ -4684,47 +5295,115 @@ public:
 	}
 
 	// Draw three locks
-	void drawLock(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
+	void drawLock(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model, float currentTime) {
 		//need models
 		shader->bind();
 
 
-		//top lock
-		Model->pushMatrix();
-			Model->loadIdentity();
-			Model->translate(vec3(bossEntrancePos.x, bossEntrancePos.y + 2.5f, bossEntrancePos.z));  //doorPosition
-			Model->rotate(glm::radians(bossEntranceRot), vec3(0.0f, 1.0f, 0.0f));
-			Model->scale(0.1f);
-			SetMaterial(shader, Material::gold); 
-			setModel(shader, Model);
-			lock->Draw(shader);
-			lockHandle->Draw(shader);
-		Model->popMatrix();
+		for (auto& l : lockOnDoors) {
+			if (l.animDone) continue; // Skip if animation is done
+			if (l.isLocked) {
+				Model->pushMatrix();
+				Model->loadIdentity();
+				Model->translate(l.position);
+				Model->rotate(glm::radians(l.RotY), vec3(0.0f, 1.0f, 0.0f));
+				Model->scale(0.1f);
+				SetMaterial(shader, Material::gold); // Use lock's material
+				setModel(shader, Model);
+				lock->Draw(shader); // Draw the lock model
+				lockHandle->Draw(shader); // Draw the lock handle model
+				Model->popMatrix();
+			} else {
+				if (!l.playUnlockSound) {
+					ma_sound_start(&key_unlock_sound);
+					l.playUnlockSound = true; // Ensure sound plays only once
+				}
+				// animate
+				float animationDuration = 1.5f;
+				float fallStartDelay = 0.5f;
+				float targetRot = -30.0f; // Target rotation for the handle
 
-		//middle lock
-		Model->pushMatrix();
-			Model->loadIdentity();
-			Model->translate(vec3(bossEntrancePos.x, bossEntrancePos.y + 1.5f, bossEntrancePos.z));
-			Model->rotate(glm::radians(bossEntranceRot), vec3(0.0f, 1.0f, 0.0f));
-			Model->scale(0.1f);
-			SetMaterial(shader, Material::gold);
-			setModel(shader, Model);
-			lock->Draw(shader);
-			lockHandle->Draw(shader);
-		Model->popMatrix();
+				float elapsedTime = currentTime - l.unlockStartTime;
+				elapsedTime = std::max(0.0f, elapsedTime); // Ensure non-negative elapsed time
 
-		//lower lock
-		Model->pushMatrix();
-			Model->loadIdentity();
-			Model->translate(vec3(bossEntrancePos.x, bossEntrancePos.y + 0.5f, bossEntrancePos.z));
-			Model->rotate(glm::radians(bossEntranceRot), vec3(0.0f, 1.0f, 0.0f));
-			Model->scale(0.1f);
-			SetMaterial(shader, Material::gold); 
-			setModel(shader, Model);
-			lock->Draw(shader);
-			lockHandle->Draw(shader);
-		Model->popMatrix();
+				float handleRot = 0.0f;
+				float yDrop = 0.0f;
+
+				// Rotate the lock first
+				if (elapsedTime <= fallStartDelay) {
+					float t = elapsedTime / fallStartDelay;
+					handleRot = -30.0f * t; // Rotate from 0 to -30 degrees over the fallStartDelay
+				} else {
+					handleRot = -30.0f; // Keep at -30 degrees after the delay
+				}
+
+				// Then drop the handle
+				if (elapsedTime > fallStartDelay && l.position.y >= 0.0f) {
+					float t = (elapsedTime - fallStartDelay) / (animationDuration - fallStartDelay);
+					t = std::min(t, 1.0f); // Clamp to [0, 1]
+					yDrop = -0.5f * t; // Fall down by 0.5 units over the remaining duration
+				}
+
+				l.position = vec3(l.position.x, l.position.y + yDrop, l.position.z); // Update position with drop
+				l.RotX = handleRot; // Update rotation with handle rotation
+
+
+				Model->pushMatrix();
+					Model->loadIdentity();
+					Model->translate(l.position);
+					Model->rotate(glm::radians(l.RotY), vec3(0.0f, 1.0f, 0.0f));
+					Model->rotate(glm::radians(l.RotX), vec3(0.0f, 0.0f, 1.0f)); // Rotate the handle
+					Model->scale(0.1f);
+					SetMaterial(shader, Material::gold); 
+					setModel(shader, Model);
+					lock->Draw(shader);
+				Model->popMatrix();
+
+				if (elapsedTime > fallStartDelay) {
+					Model->pushMatrix();
+						Model->loadIdentity();
+						Model->translate(l.position);
+						Model->rotate(glm::radians(l.RotY), vec3(0.0f, 1.0f, 0.0f));
+						Model->rotate(1 * glm::radians(15.0) + lTheta, vec3(0.0f, 0.0f, 1.0f)); 
+						Model->scale(0.1f);
+						SetMaterial(shader, Material::brown); 
+						setModel(shader, Model);
+						lockHandle->Draw(shader);
+					Model->popMatrix();
+				} else {
+					Model->pushMatrix();
+						Model->loadIdentity();
+						Model->translate(l.position);
+						Model->rotate(glm::radians(l.RotY), vec3(0.0f, 1.0f, 0.0f));
+						Model->scale(0.1f);
+						SetMaterial(shader, Material::brown); 
+						setModel(shader, Model);
+						lockHandle->Draw(shader);
+					Model->popMatrix();
+				}
+				if (elapsedTime >= animationDuration) {
+					// checks if lock is done animating
+					l.animDone = true; // Mark this lock as done animating
+				}
+			}
+
+		}
+
 		shader->unbind();
+
+		bool allAnimsDone = true;
+		for (const auto& l : lockOnDoors)  {
+			if (!l.animDone) {
+				allAnimsDone = false; // If any lock is still animating, set to false
+				break;
+			}
+		}
+
+		if (allAnimsDone) {
+			unlock = true;
+			canFightboss = true;
+		}
+
 	}
 
 	void updateLock(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model){
@@ -4813,7 +5492,8 @@ public:
 	void drawKey(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 
 		// --- Collision Check Logic ---
-		for (auto& key : keyCollectibles) {
+		for (int i = 0; i < keyCollectibles.size(); ++i) {
+			Collectible& key = keyCollectibles[i];
 			// Perform collision check ONLY if not collected AND in the IDLE state
 			if (!key.collected && key.state == OrbState::IDLE && // <<<--- ADD STATE CHECK
 				//checkAABBCollision(manAABBmin, manAABBmax, key.AABBmin, key.AABBmax)
@@ -4827,35 +5507,68 @@ public:
 				 
 				// play key collected sound effect
 				ma_sound_start(&key_pickup);
+
+				lockOnDoors[i].keyIndex = i;
+
 				std::cout << "Collected a key! (" << keysCollectedCount << ")\n";
 			}
 		}
 
 		int collectedKeyDrawIndex = 0;
 		shader->bind();
-		if (!unlock) {
-			for (auto& key : keyCollectibles) {
-				glm::vec3 currentDrawPosition;
-				//float currentDrawScale = key.scale; // Use base scale
-				if (key.collected) {
-					// Calculate position behind the player (same logic as before)
-					float backOffset = 0.4f;
-					float upOffsetBase = 0.6f;
-					float stackOffset = key.scale * 2.5f;
-					float sideOffset = 0.15f;
-					glm::vec3 playerForward = normalize(manMoveDir);
-					glm::vec3 playerUp = glm::vec3(0.0f, 1.0f, 0.0f);
-					glm::vec3 playerRight = normalize(cross(playerForward, playerUp));
-					float currentUpOffset = upOffsetBase + (collectedKeyDrawIndex * stackOffset);
-					float currentSideOffset = (collectedKeyDrawIndex % 2 == 0 ? -sideOffset : sideOffset);
-					currentDrawPosition = player->getPosition() - playerForward * backOffset
-						+ playerUp * currentUpOffset
-						+ playerRight * currentSideOffset;
-					collectedKeyDrawIndex++;
+		for (int i = 0; i < keyCollectibles.size(); ++i) {
+			if (lockOnDoors[i].animDone) continue; // Skip if the lock is already unlocked
+			Collectible& key = keyCollectibles[i];
+			glm::vec3 currentDrawPosition;
+			float currentScale = 1.0f;
+			float Rotx = glm::radians(0.0f); // Rotation around x-axis
+			float Roty = glm::radians(0.0f); // Rotation around y-axis
+			float Rotz = glm::radians(0.0f); // Rotation around z-axis
+			glm::vec3 secondPos = vec3(0.0f, 0.0f, 0.0f); // Placeholder for second position if needed
+			//float currentDrawScale = key.scale; // Use base scale
+			if (key.collected) {
+				// Calculate position behind the player (same logic as before)
+				float backOffset = 0.25f;
+				float upOffsetBase = 0.25f;
+				float stackOffset = 0.03f;
+				float sideOffset = 0.05f;
+				glm::vec3 playerForward = normalize(manMoveDir);
+				glm::vec3 playerUp = glm::vec3(0.0f, 1.0f, 0.0f);
+				glm::vec3 playerRight = normalize(cross(playerForward, playerUp));
+				// float currentUpOffset = upOffsetBase + (collectedKeyDrawIndex * stackOffset);
+				float currentSideOffset = -sideOffset - (collectedKeyDrawIndex * stackOffset); // Offset to the side for stacking
+				float currentUpOffset = upOffsetBase;
+				// float currentSideOffset = 0.0f;
+				currentDrawPosition = player->getPosition() - playerForward * backOffset
+					+ playerUp * currentUpOffset
+					+ playerRight * currentSideOffset;
+				collectedKeyDrawIndex++;
+				currentScale = 0.5f;
+				// Rotx = glm::radians(90.0f); // Rotate around x-axis for collected keys
+				float playerAngle = atan2(playerForward.z, playerForward.x);
+				Roty = playerAngle + glm::radians(90.0f); // Rotate around y-axis to face player direction
+			}
+			else if (key.keyUsed) {
+				// glm::vec3 baseOffset = vec3(0.0f, 0.3f, -0.25f); // Offset above the lock
+
+				// glm::mat4 rotationMat = glm::rotate(glm::mat4(1.0f), glm::radians(lockOnDoors[i].RotX), vec3(0.0f, 0.0f, 1.0f));
+				// glm::vec3 rotatedOffset = glm::vec3(rotationMat * glm::vec4(baseOffset, 1.0f));
+				if (lockOnDoors[i].RotX < 0.0f) {
+					secondPos = vec3(0.0f, 0.0f, -0.08f); // Offset above the lock
 				}
-				else {
-					currentDrawPosition = key.position; 
-				}
+				currentDrawPosition = lockOnDoors[i].position + vec3(0.0f, 0.3f, -0.25f);
+
+				currentScale = 1.5f; // Scale for used keys
+				Rotx = glm::radians(90.0f); // Rotate around x-axis for used keys
+				Roty = glm::radians(90.0f - lockOnDoors[i].RotX); // Rotate around y-axis for used keys
+				Rotz = glm::radians(180.0f); // Rotate around z-axis for used keys
+			} else {
+				// Use the key's position for drawing
+				currentDrawPosition = key.position;
+				currentScale = 2.0f;
+				Rotx = glm::radians(90.0f); // Rotate around x-axis for idle keys
+				Roty = glm::radians(-90.0f); // Rotate around y-axis for idle keys
+			}
 
 				// --- Set up transformations ---
 				Model->pushMatrix(); {
@@ -4873,6 +5586,8 @@ public:
 				} Model->popMatrix();
 			} // End drawing loop
 		}
+
+
 		shader->unbind();
 	}
 
@@ -5073,7 +5788,12 @@ public:
 		// 2. Draw the Static Library Shelves
 		drawLibrary(prog, Model, CULL);
 
-		drawBossRoom(prog, Model, CULL); // Draw the boss room
+		drawBossRoom(prog, Model, CULL, 0.0); // Draw the boss room
+
+		drawLock(prog, Model, (float)glfwGetTime());
+
+		drawBossEntrDoor(prog, Model, CULL, 0.0);
+		drawBossExitDoor(prog, Model, CULL, 0.0);
 		#endif
 
 		drawPlayer(prog, Model, 0.0);
@@ -5082,7 +5802,7 @@ public:
 		drawBooks(prog, Model);
 
 		// 5. Draw Enemies
-		drawEnemies(prog, Model);
+		drawEnemies(prog, Model, 0.0);
 
 		// 6. Draw Collectible Orbs
 		drawOrbs(prog, Model);
@@ -5093,16 +5813,19 @@ public:
 
 		drawBossProjectiles(prog, Model);
 
+		// drawBossDefeatParticles(0.0f);
+
 		//Test drawing cat model
 		//drawCat(assimptexProg, Model);
 
 		//testing drawing lock and key
-		if (unlock) {
-			updateLock(prog, Model);
-		}
-		else {
-			drawLock(prog, Model);
-		}
+		// if (unlock) {
+		// 	updateLock(prog, Model);
+		// }
+		// else {
+		// 	drawLock(prog, Model);
+		// }
+
 
 
 
@@ -5123,7 +5846,12 @@ public:
 		// 2. Draw the Static Library Shelves
 		drawLibrary(prog, Model, true);
 
-		drawBossRoom(prog, Model, true); // Draw the boss room
+		drawBossRoom(prog, Model, true, animTime); // Draw the boss room
+
+		drawLock(prog, Model, (float)glfwGetTime());
+
+		drawBossEntrDoor(prog, Model, true, animTime);
+		drawBossExitDoor(prog, Model, true, animTime);
 		#endif
 
 		// disable color writes
@@ -5154,7 +5882,7 @@ public:
 		drawBooks(prog, Model);
 
 		// 5. Draw Enemies
-		drawEnemies(prog, Model);
+		drawEnemies(prog, Model, (float)glfwGetTime());
 
 		// 6. Draw Collectible Orbs
 		drawOrbs(prog, Model);
@@ -5165,17 +5893,20 @@ public:
 
 		drawBossProjectiles(prog, Model);
 
+		drawBossDefeatParticles(animTime);
+
 		//Test drawing cat model
 		//drawCat(assimptexProg, Model);
 
 		//testing drawing lock and key
-		if (unlock) {
-			updateLock(prog, Model);
-		}
-		else {
-			drawLock(prog, Model);
-		}
+		// if (unlock) {
+		// 	updateLock(prog, Model);
+		// }
+		// else {
+		// 	drawLock(prog, Model);
+		// }
 
+		//drawKey(prog2, Model);
 
 		drawBossEnemy(prog, Model);
 	}
@@ -5232,6 +5963,8 @@ public:
 
 	void initCircularBorder() {
 		circularBookShelfMatrices.clear();
+		playDoorSound = false; // Reset door sound flag
+		playExitDoorSound = false; // Reset exit door sound flag
 
 		for (int z = 0; z < bossGrid.getSize().y; ++z) {
 			for (int x = 0; x < bossGrid.getSize().x; ++x) {
@@ -5240,7 +5973,8 @@ public:
 				float i = bossRoom->mapGridXtoWorldX(x);
 				float j = bossRoom->mapGridYtoWorldZ(z);
 				if ((bossGrid[gridPos].type != BossRoomGen::CellType::BORDER) &&
-					(bossGrid[gridPos].type != BossRoomGen::CellType::ENTRANCE)) {
+					(bossGrid[gridPos].type != BossRoomGen::CellType::ENTRANCE) &&
+					(bossGrid[gridPos].type != BossRoomGen::CellType::EXIT)) {
 					continue; // Skip non-border cells
 				}
 				glm::vec3 pos(i, libraryCenter.y, j);
@@ -5268,7 +6002,18 @@ public:
 					case CT::ENTRANCE:
 						if (cell.borderType == BT::ENTRANCE_MIDDLE) {
 							bossEntrancePos = pos;
-							bossEntranceRot = rotation + 180.0f; // Adjust rotation for entrance
+							bossEntranceRot = rotation; // Adjust rotation for entrance
+
+							bossEntrancetransforms.position = pos;
+							bossEntrancetransforms.rotation = rotation; // Adjust rotation for entrance
+							bossEntrancetransforms.scale = scale;
+						}
+						break;
+					case CT::EXIT:
+						if (cell.borderType == BT::EXIT_MIDDLE) {
+							bossExittransforms.position = pos;
+							bossExittransforms.rotation = rotation; // Adjust rotation for exit
+							bossExittransforms.scale = scale;
 						}
 						break;
 
@@ -5305,8 +6050,450 @@ public:
 
 		if (shader->hasUniform("hasInstancing")) glUniform1i(shader->getUniform("hasInstancing"), GL_FALSE);
 		shader->unbind();
+	}
+
+	void drawSunMoon(shared_ptr<Program>shader,  mat4 P, mat4 V) {
+		shader->bind();
+
+		glUniformMatrix4fv(shader->getUniform("P"), 1, GL_FALSE, value_ptr(P));
+		glUniformMatrix4fv(shader->getUniform("V"), 1, GL_FALSE, value_ptr(V));
+
+		mat4 M = glm::translate(mat4(1.0f), Config::sunPos);
+		M = glm::scale(M, vec3(2.5f)); // adjust sun/moon size here
+		glUniformMatrix4fv(shader->getUniform("M"), 1, GL_FALSE, value_ptr(M));
+
+		SetMaterial(shader, Material::sun);
+		sphere->Draw(shader);
+
+		if (shader->hasUniform("hasMaterial")) glUniform1i(shader->getUniform("hasMaterial"), GL_FALSE);
+		shader->unbind();
+	}
+
+	void updateSunMoon(float deltaTime) {
+
+		if (unlock) {
+			if (distance(Config::sunOrbitCenter, Config::targetOrbitCenter) < 0.01f) {
+				Config::sunOrbitCenter = Config::targetOrbitCenter;
+				Config::shadowTargetCenter = Config::targetOrbitCenter;
+			}
+			float interpolationSpeed = 0.5f; // tweak as needed for speed
+			Config::sunOrbitCenter = mix(Config::sunOrbitCenter, Config::targetOrbitCenter, interpolationSpeed * deltaTime);
+			Config::shadowTargetCenter = Config::sunOrbitCenter;
+		}
+
+		float sunSpeed = 0.01f;
+		float angle = Config::previousAngle + deltaTime * sunSpeed;
+		Config::previousAngle = angle;
+		Config::sunPos.x = Config::sunOrbitCenter.x + 40.0f * cos(angle);
+		Config::sunPos.y = Config::sunOrbitCenter.y + 20.0f;
+		Config::sunPos.z = Config::sunOrbitCenter.z + 40.0f * sin(angle);
+	}
+
+	void initQuad() {
+		// set up a simple quad for rendering FBO
+		glGenVertexArrays(1, &quad_VertexArrayID);
+		glBindVertexArray(quad_VertexArrayID);
+
+		static const GLfloat g_quad_vertex_buffer_data[] =
+		{
+			-1.0f, -1.0f, 0.0f,
+			1.0f, -1.0f, 0.0f,
+			-1.0f,  1.0f, 0.0f,
+			-1.0f,  1.0f, 0.0f,
+			1.0f, -1.0f, 0.0f,
+			1.0f,  1.0f, 0.0f,
+		};
+
+		glGenBuffers(1, &quad_vertexbuffer);
+		glBindBuffer(GL_ARRAY_BUFFER, quad_vertexbuffer);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(g_quad_vertex_buffer_data), g_quad_vertex_buffer_data, GL_STATIC_DRAW);
+	}
+
+	std::vector<vec3> getAllActiveSpellLightPos() {
+		std::vector<vec3> lights;
+
+		auto computeLightFromSpell = [](const SpellProjectile& proj) -> vec3 {
+			return proj.position;
+		};
+
+		for (const auto& p : activeSpells) {
+			if (!p.active) continue;
+			//if (ViewFrustCull(p.position, 4.0f, planes)) continue; // Using max radius as conservative cull
+
+			// spell type per projectile
+			lights.push_back(computeLightFromSpell(p));
+		}
+
+		for (const auto& p : bossActiveSpells) {
+			if (!p.active) continue;
+			//if (ViewFrustCull(p.position, 5.0f, planes)) continue;
+
+			// If boss spell type is not tracked per projectile, fallback to global:
+			SpellType type = bossEnemy ? bossEnemy->getBossSpellType() : SpellType::NONE;
+			lights.push_back(computeLightFromSpell(p));
+		}
+
+		return lights;
+	}
+
+	std::vector<vec3> getAllActiveSpellLightCol() {
+		std::vector<vec3> lights;
+
+		auto computeLightFromSpell = [](SpellType type) -> vec3 {
+			vec3 light;
+			switch (type) {
+			case SpellType::FIRE:
+				light = glm::vec3(1.0f, 0.5f, 0.1f);  // Warm orange
+				break;
+			case SpellType::ICE:
+				light = glm::vec3(0.4f, 0.8f, 1.0f);  // Cool blue
+				break;
+			case SpellType::LIGHTNING:
+				light = glm::vec3(1.0f, 1.0f, 0.6f);  // Yellowish white
+				break;
+			case SpellType::HEAL:
+				light = glm::vec3(0.2f, 1.0f, 0.2f);  // Green glow
+				break;
+			default:
+				light = glm::vec3(1.0f);  // fallback white
+				break;
+			}
+
+			return light;
+			};
+
+		for (const auto& p : activeSpells) {
+			if (!p.active) continue;
+			//if (ViewFrustCull(p.position, 4.0f, planes)) continue; // Using max radius as conservative cull
+
+			// spell type per projectile
+			lights.push_back(computeLightFromSpell(p.spellType));
+		}
+
+		for (const auto& p : bossActiveSpells) {
+			if (!p.active) continue;
+			//if (ViewFrustCull(p.position, 5.0f, planes)) continue;
+
+			// If boss spell type is not tracked per projectile, fallback to global:
+			SpellType type = bossEnemy ? bossEnemy->getBossSpellType() : SpellType::NONE;
+			lights.push_back(computeLightFromSpell(type));
+		}
+
+		return lights;
+	}
+
+	void initLocks() {
+		lockOnDoors.clear();
+		int numLocks = keysneededToCollect;
+		for (int i = 0; i < numLocks; ++i) {
+			float height = bossEntrancetransforms.position.y + 0.5f + i * 1.0f; // Adjust height for each lock
+			glm::vec3 lockPos = glm::vec3(bossEntrancetransforms.position.x, height, bossEntrancetransforms.position.z);
+			LocksOnDoor lock;
+			lock.position = lockPos;
+			lock.RotY = bossEntrancetransforms.rotation + 180.0f;
+			lock.isLocked = true;
+			lockOnDoors.push_back(lock);
+		}
+
+		door_animator->resetAnimation();
+		doorOpened = false; // Reset door opened state
+
+		exit_door_animator->resetAnimation();
+		doorExitOpened = false; // Reset exit door opened state
+	}
+
+	void interactWithLocks() {
+		if (lockOnDoors.empty()) return; // No locks to interact with
+		if (interactedwithBook) return; // If book is already interacted with, no need to check locks
+
+		float gridInteractionRadius = 1.5f;
+		float interactionRadius = 5.0f;
+		std::vector<const QuadElement*> objectElements;
+		bossRoomQuadTree->query(glm::vec2(player->getPosition().x, player->getPosition().z), glm::vec2(gridInteractionRadius), objectElements);
+		for (int i = 0; i < objectElements.size(); ++i) {
+			const QuadElement* e = objectElements[i];
+			BossRoomGen::Cell cell = bossGrid[e->grid_position];
+			if (cell.borderType == BossRoomGen::BorderType::ENTRANCE_MIDDLE) {
+				bool hasInteracted = false;
+				for (int j = 0; j < lockOnDoors.size(); ++j) {
+					LocksOnDoor& lock = lockOnDoors[j];
+					if (lock.interacted) continue; // Skip if lock is already interacted with
+					if (checkSphereCollision(player->getPosition(), interactionRadius, e->aabb_min, e->aabb_max)) {
+						// if (j < keyCollectibles.size() && j < keysneededToCollect && keyCollectibles[j].collected) {
+						// 	std::cout << "Interacting with lock " << j + 1 << std::endl;
+						// } else {
+						// 	std::cout << "No key collected for lock " << j + 1 << std::endl;
+						// 	std::cout << "Collect keys to unlock the door!" << std::endl;
+						// 	continue; // Skip to next lock if no key is collected
+						// }
+
+							// If the lock is locked and the key is collected, unlock it
+						if (lock.isLocked && (lock.keyIndex != -1) && (lock.keyIndex == j)) {
+							lock.interacted = true; // Mark as interacted
+							lock.isLocked = false; // Unlock the lock
+							keyCollectibles[j].collected = false; // Remove the key from collectibles
+							keyCollectibles[j].keyUsed = true; // Mark the key as used
+							lock.unlockStartTime = (float)glfwGetTime(); // Start the unlock animation
+							keysCollectedCount--;
+							std::cout << "Lock " << j + 1 << " unlocked!" << std::endl;
+							hasInteracted = true; // Mark that we have interacted with a lock
+						} else {
+							std::cout << "Lock " << j + 1 << " is already unlocked." << std::endl;
+						}
+					}
+				}
+				int totalUnlocked = 0;
+				for (const auto& lock : lockOnDoors) {
+					if (!lock.isLocked) {
+						totalUnlocked++;
+					}
+				}
+				if (totalUnlocked == lockOnDoors.size()) {
+					currentStringOutput = "You found all the keys!";
+				} else if (hasInteracted) {
+					currentStringOutput = "Unlocked " + std::to_string(totalUnlocked) + " out of " + std::to_string(lockOnDoors.size()) + " locks.";
+				}
+			}
+		}
+	}
+
+	void checkLocks() {
+		if (lockOnDoors.empty()) return; // No locks to check
+		if (doorOpened) return; // If door is already opened, no need to check locks
+		allLocksUnlocked = true; // Assume all locks are unlocked unless we find a locked one
+
+		for (auto& lock : lockOnDoors) {
+			if (lock.isLocked) {
+				allLocksUnlocked = false; // Found a locked lock
+				return; // No need to check further
+			}
+		}
+	}
+
+	void drawBossDefeatParticles(float frametime) {
+		if (bossfightended && particleSystem && !bossDeathEffectTriggered) {
+			bossDeathEffectTriggered = true;
+			// bossEnemy->setBossDeathTimer(0.0f); // Reset death timer to prevent multiple triggers
+		}
+		if (bossDeathEffectTriggered) {
+			float currentTime = particleSystem->getCurrentTime();
+			vec3 bossPos = bossEnemy->getPosition() + vec3(0.0f, 0.4f, 0.0f);
+
+			bossEnemy->setBossDeathTimer(bossEnemy->getBossDeathTimer() + frametime);
+			if (bossEnemy->getBossDeathTimer() < bossEnemy->getBossDeathDuration()) {
+				vec4 color_start = vec4(1.0f, 0.5f, 0.0f, 1.0f); // Orange color for particles
+				vec4 color_end = vec4(1.0f, 0.5f, 0.0f, 0.0f); // Fading out to transparent
+
+				switch (bossEnemy->getBossSpellType()) {
+					case SpellType::FIRE:
+						color_start = glm::vec4(1.0f, 0.6f, 0.1f, 1.0f);
+						color_end = glm::vec4(0.9f, 0.2f, 0.0f, 0.5f);
+						break;
+					case SpellType::ICE:
+						color_start = glm::vec4(0.5f, 0.8f, 1.0f, 1.0f);
+						color_end = glm::vec4(0.2f, 0.5f, 0.8f, 0.5f);
+						break;
+					case SpellType::LIGHTNING:
+						color_start = glm::vec4(1.0f, 1.0f, 0.5f, 1.0f);
+						color_end = glm::vec4(0.8f, 0.8f, 0.2f, 0.3f);
+						break;
+					default:
+						break;
+				}
+
+				// Implosion burst
+				particleSystem->spawnParticleBurst(
+					bossPos + glm::vec3(Config::randFloat(-1.0f, 1.0f), Config::randFloat(0.5f, 1.5f), Config::randFloat(-1.0f, 1.0f)),
+					vec3(0.0f, 1.0f, 0.0f), // Upward direction
+					5, // Number of particles
+					currentTime, // Current time for particle system
+					1.5f, 3.5f, // Speed range
+					1.0f, // Spread
+					0.4f, 0.8f, // Lifespan range
+					color_start, // Start color
+					color_end, // End color
+					0.5f, 1.0f // Size range
+				);
+
+				// Swirl ring effect — spawn rising helix
+				for (int i = 0; i < 12; ++i) {
+					float angle = i * glm::two_pi<float>() / 12.0f;
+					vec3 dir = vec3(cos(angle), 1.0f, sin(angle)); // upward spiral
+					particleSystem->spawnParticleBurst(
+						bossPos + glm::vec3(Config::randFloat(-1.0f, 1.0f), Config::randFloat(bossEnemy->getBossDeathTimer() * 0.5f, bossEnemy->getBossDeathTimer()), Config::randFloat(-1.0f, 1.0f)),
+						dir,
+						10,
+						currentTime,
+						1.0f, 2.0f,
+						0.3f,
+						0.8f, 1.4f,
+						color_start, // Start color
+						color_end, // End color
+						0.3f, 0.6f
+					);
+				}
+
+				// Soul beam (wisp trail up)
+				particleSystem->spawnParticleBurst(
+					bossPos + glm::vec3(Config::randFloat(-1.0f, 1.0f), Config::randFloat(bossEnemy->getBossDeathTimer() * 0.5f, bossEnemy->getBossDeathTimer()), Config::randFloat(-1.0f, 1.0f)),
+					vec3(0.0f, 1.0f, 0.0f),
+					5,
+					currentTime,
+					0.5f, 1.0f,
+					0.2f,
+					1.2f, 2.0f,
+					color_start, // Start color
+					color_end, // End color
+					0.2f, 0.5f
+				);
+
+				// std::cout << "[DEBUG] Boss death particle effect triggered." << std::endl;
+			} else {
+			// std::cout << "[DEBUG] Boss death particle effect done" << std::endl;
+			bossDeathEffectTriggered = false; // Reset for next boss fight
+			}
+
+			// random fireworks in the area // should happen regardless of boss particle effect
+			ma_sound_start(&firework_sound);
+			bossPos = bossRoom->getWorldOrigin() + glm::vec3(0.0f, 0.5f, 0.0f); // Center of the boss room
+			float r = Config::randFloat(0.5f, 1.5f);
+			float g = Config::randFloat(0.5f, 1.5f);
+			float b = Config::randFloat(0.5f, 1.5f);
+			vec4 color_start = vec4(r, g, b, 1.0f); // Random start color
+			vec4 color_end = vec4(r * 0.5f, g * 0.5f, b * 0.5f, 0.0f); // Fading out to transparent
+			particleSystem->spawnParticleBurst(
+				bossPos + glm::vec3(Config::randFloat(-20.0f, 20.0f), Config::randFloat(0.5f, 1.5f), Config::randFloat(-20.0f, 20.0f)),
+				vec3(0.0f, 1.0f, 0.0f), // Upward direction
+				5, // Number of particles
+				currentTime,
+				1.0f, 2.0f, // Speed range
+				1.0f, // Spread
+				0.5f, 1.5f, // Lifespan range
+				color_start, // Start color
+				color_end, // End color
+				0.3f, 0.6f // Size range
+			);
+		}
+	}
+
+	void drawBossExitDoor(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model, bool cullFlag, float animTime) {
+		if (!shader || !Model || !exit_door_rig) return; // Need cube model
+
+		shader->bind();
+
+		if (animTime != 0.0) {
+			if (bossfightended && !doorExitOpened){
+				exit_door_animator->UpdateAnimationOnce(0.25 * animTime);
+				if (!playExitDoorSound) {
+					playExitDoorSound = true;
+					ma_sound_start(&door_sound);
+
+				}
+				if (exit_door_animator->IsFinished()) {
+					std::cout << "Door opened!" << std::endl;
+					doorExitOpened = true; // Mark the door as opened
+					doorOpenProgress = 0.25f * animTime; // Store the progress
+				}
+			} else if (bossfightended && doorExitOpened) {
+				exit_door_animator->UpdateAnimationOnce(0.0f); // Keep the door open
+			}
+			else {
+				exit_door_animator->UpdateAnimation(0.0f);
+			}
+		}
+
+		// Update bone matrices
+		vector<glm::mat4> transforms = exit_door_animator->GetFinalBoneMatrices();
 
 
+		if (shader->hasUniform("finalBonesMatrices[0]")) {
+			int numBones = std::min((int)transforms.size(), Config::MAX_BONES);
+			for (int i = 0; i < numBones; ++i) {
+				string uniformName = "finalBonesMatrices[" + std::to_string(i) + "]";
+				glUniformMatrix4fv(shader->getUniform(uniformName), 1, GL_FALSE, value_ptr(transforms[i]));
+			}
+		}
+		glm::vec3 doorPos = vec3(bossExittransforms.position.x, bossExittransforms.position.y, bossExittransforms.position.z);
+		if (!cullFlag || !ViewFrustCull(doorPos, 2.0f, planes)) {
+		Model->pushMatrix();
+		Model->loadIdentity();
+		Model->translate(vec3(bossExittransforms.position.x, bossExittransforms.position.y, bossExittransforms.position.z)); // Position set in class members
+		Model->rotate(glm::radians(bossExittransforms.rotation), vec3(0, 1, 0)); // Rotate for left/right walls
+		Model->rotate(glm::radians(-90.0f), vec3(1, 0, 0)); // Rotate to face up
+		Model->scale(bossExittransforms.scale); // Scale set in class members
+		// if (unlock == false) {
+		// 	door->Draw(shader); // Use the door model for the entrance
+
+
+
+		// }
+		if (shader->hasUniform("hasBones")) glUniform1i(shader->getUniform("hasBones"), GL_TRUE);
+		if (shader->hasUniform("texOnly")) glUniform1i(shader->getUniform("texOnly"), GL_TRUE);
+		setModel(shader, Model);
+		if (shader->hasUniform("texOnly")) glUniform1i(shader->getUniform("texOnly"), GL_FALSE);
+		exit_door_rig->Draw(shader); // Use the door model for the entrance
+		if (shader->hasUniform("hasBones")) glUniform1i(shader->getUniform("hasBones"), GL_FALSE);
+		Model->popMatrix();
+		}
+		shader->unbind();
+	}
+
+	void drawEnemyDeathParticles(AssimpModel* enemyModel, glm::vec3 enemyPos) {
+		if (!particleSystem) return;
+
+		float t = particleSystem->getCurrentTime();
+		glm::vec3 emitDir = glm::vec3(0, 1, 0); // Direction: upward by default
+
+		// Default values
+		int count = 30;
+		float speedMin = 1.0f;
+		float speedMax = 3.0f;
+		float spread = 0.6f;
+		float lifeMin = 0.4f;
+		float lifeMax = 0.8f;
+		float scaleMin = 0.2f;
+		float scaleMax = 0.4f;
+		glm::vec4 colorStart = glm::vec4(1.0f);
+		glm::vec4 colorEnd = glm::vec4(1.0f, 1.0f, 1.0f, 0.0f);
+
+		if (enemyModel == fireElemental) {
+			count = 40;
+			colorStart = glm::vec4(1.0f, 0.6f, 0.1f, 1.0f);
+			colorEnd = glm::vec4(0.9f, 0.2f, 0.0f, 0.5f);
+			scaleMin = 0.45f; scaleMax = 0.85f;
+		}
+		else if (enemyModel == iceElemental) {
+			count = 40;
+			colorStart = glm::vec4(0.5f, 0.8f, 1.0f, 1.0f);
+			colorEnd = glm::vec4(0.2f, 0.5f, 0.8f, 0.3f);
+			scaleMin = 0.4f; scaleMax = 0.75f;
+		}
+		else if (enemyModel == lightningElemental) {
+			count = 50;
+			colorStart = glm::vec4(1.0f, 1.0f, 0.5f, 1.0f);
+			colorEnd = glm::vec4(0.8f, 0.8f, 0.2f, 0.3f);
+			scaleMin = 0.35f; scaleMax = 0.6f;
+			speedMin = 2.0f; speedMax = 4.0f;
+		}
+		else {
+			// fallback white puff
+			count = 20;
+			colorStart = glm::vec4(1.0f);
+			colorEnd = glm::vec4(1.0f, 1.0f, 1.0f, 0.0f);
+			scaleMin = 0.2f; scaleMax = 0.4f;
+		}
+
+		particleSystem->spawnParticleBurst(
+			enemyPos,
+			emitDir,
+			count,
+			t,
+			speedMin, speedMax,
+			spread,
+			lifeMin, lifeMax,
+			colorStart, colorEnd,
+			scaleMin, scaleMax
+		);
 	}
 
 	void render(float frametime, float animTime) {
@@ -5330,7 +6517,9 @@ public:
 		checkAllEnemies();
 		checkBossfight();
 		BossEnemyAttacks(frametime);
+		updateSunMoon(frametime);
 		restartGeneration();
+		checkLocks();
 		//debugMessages();
 
 		// Create the matrix stacks
@@ -5338,8 +6527,15 @@ public:
 		auto View = make_shared<MatrixStack>();
 		auto Model = make_shared<MatrixStack>();
 
-		vec3 lightPos = vec3(10); // Fixed light position above the scene
-		vec3 lightTarget = libraryCenter; // Light looks at library center
+		vec3 lightPos = Config::sunPos; // Fixed light position above the scene
+		float worldUnitsPerTexel = Config::ORTHO_SIZE / 8192.0f;
+		lightPos.x = floor(lightPos.x / worldUnitsPerTexel) * worldUnitsPerTexel;
+		lightPos.y = floor(lightPos.y / worldUnitsPerTexel) * worldUnitsPerTexel;
+		lightPos.z = floor(lightPos.z / worldUnitsPerTexel) * worldUnitsPerTexel;
+		vec3 lightTarget = Config::shadowTargetCenter; // Light looks at library center
+		float granularity = 0.25f; // world units per "step"
+		//vec3 snappedLightPos = floor(lightPos / granularity) * granularity;
+		//lightTarget = snappedLightPos;
 		vec3 lightDir = normalize(lightPos - lightTarget); // Light direction
 		vec3 lightUp = vec3(0, 1, 0);
 		vec3 lc = Config::LIGHT_COLOR;
@@ -5360,11 +6556,12 @@ public:
 
 			// Create a stable orthographic projection that covers the scene
 			float size = Config::ORTHO_SIZE;
-			LO = glm::ortho(-size, size, -size, size, 1.0f, 200.0f);
+			LO = glm::ortho(-size, size, -size, size, 0.1f, 200.0f);
 			glUniformMatrix4fv(DepthProg->getUniform("LP"), 1, GL_FALSE, value_ptr(LO));
 
 			// Create a stable light view matrix
 			LV = glm::lookAt(lightPos, lightTarget, lightUp);
+
 			glUniformMatrix4fv(DepthProg->getUniform("LV"), 1, GL_FALSE, value_ptr(LV));
 
 			CULL = false;
@@ -5380,8 +6577,11 @@ public:
 		// Prepare for Second Pass (Main Rendering to Screen)
 		// ===================================================
 		glViewport(0, 0, width, height); // Return viewport to screen size
+
+		if (Config::DEFER) { glBindFramebuffer(GL_FRAMEBUFFER, gBuffer); }
+		else { glBindFramebuffer(GL_FRAMEBUFFER, 0); }
+
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // Clear framebuffer
-		drawSkybox(SkyboxProg, Projection, View);
 
 		// Setup Camera
 		Projection->pushMatrix();
@@ -5390,11 +6590,14 @@ public:
 		View->loadIdentity();
 		View->lookAt(eye, lookAt, up); // Use updated eye/lookAt
 
+		currentSkyboxTex = skyboxTextures["day"]; // manual skybox setter
+		drawSkybox(SkyboxProg, Projection, View);
+
 		ExtractVFPlanes(Projection->topMatrix(), View->topMatrix(), planes); // Update frustum planes
 
-		// ==============================
-		// Second Pass: Render to Screen
-		// ==============================
+		// ===============================
+		// Second Pass: Render to Buffers
+		// ===============================
 		if (Config::DEBUG_LIGHTING) { // Debugging light view from lights perspective
 			if (Config::DEBUG_GEOM) {
 				DepthProgDebug->bind();
@@ -5417,30 +6620,120 @@ public:
 			}
 		}
 		else { // Render the scene like normal with shadow mapping
-			ShadowProg->bind();
-			// Setup shadow mapping
-			glActiveTexture(GL_TEXTURE10);
-			glBindTexture(GL_TEXTURE_2D, depthMap); // Bind shadow map texture
-			glUniform1i(ShadowProg->getUniform("shadowDepth"), 10); // Set uniform for shadow map
+			buffProg->bind();
 			// Set light and camera uniforms
-			glUniform3f(ShadowProg->getUniform("lightDir"), lightDir.x, lightDir.y, lightDir.z); // Set light direction
-			glUniform3f(ShadowProg->getUniform("lightColor"), lc.x, lc.y, lc.z);
-			glUniform3fv(ShadowProg->getUniform("cameraPos"), 1, glm::value_ptr(eye));
-			glUniform1f(ShadowProg->getUniform("exposure"), Config::EXPOSURE);
-			glUniform1f(ShadowProg->getUniform("saturation"), Config::SATURATION * (player->getHitpoints() / Config::PLAYER_HP_MAX));
-			setCameraProjectionFromStack(ShadowProg, Projection);
-			setCameraViewFromStack(ShadowProg, View);
+			//glUniform3f(ShadowProg->getUniform("lightDir"), lightDir.x, lightDir.y, lightDir.z); // Set light direction
+			//glUniform3f(ShadowProg->getUniform("lightColor"), lc.x, lc.y, lc.z);
+			//glUniform3fv(ShadowProg->getUniform("cameraPos"), 1, glm::value_ptr(eye));
+			//glUniform1f(ShadowProg->getUniform("exposure"), Config::EXPOSURE);
+			//glUniform1f(ShadowProg->getUniform("saturation"), Config::SATURATION * (player->getHitpoints() / Config::PLAYER_HP_MAX));
+			setCameraProjectionFromStack(buffProg, Projection);
+			setCameraViewFromStack(buffProg, View);
 			LSpace = LO * LV;
-			glUniformMatrix4fv(ShadowProg->getUniform("LV"), 1, GL_FALSE, value_ptr(LSpace)); // Set light space matrix
-			drawMainScene(ShadowProg, Model, animTime); // Draw the entire scene with shadows
-			ShadowProg->unbind();
+			glUniformMatrix4fv(buffProg->getUniform("LV"), 1, GL_FALSE, value_ptr(LSpace)); // Set light space matrix
+			drawMainScene(buffProg, Model, animTime); // Render the screen to their respective buffers (will show up in build as png)
+
+			//drawSunMoon(buffProg, Projection->topMatrix(), View->topMatrix());
+
+			buffProg->unbind();
 		}
 
-		//===================
-		// Second Pass Cont.
-		//===================
+		//============================
+		// Third Pass: Render to Quad
+		//============================
 
-		if (Config::DEBUG_AABBS) {
+		if (Config::DEFER) { // here were drawing the actual scene output
+			glBindFramebuffer(GL_FRAMEBUFFER, 0);
+			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+			// Turn off depth-test & depth-writes so the quad always passes
+			glDisable(GL_DEPTH_TEST);
+			glDepthMask(GL_FALSE);
+
+			lightProg->bind();
+				
+				glActiveTexture(GL_TEXTURE0 + 20);
+				glBindTexture(GL_TEXTURE_2D, gPosition);
+
+				glActiveTexture(GL_TEXTURE0 + 21);
+				glBindTexture(GL_TEXTURE_2D, gNormal);
+
+				glActiveTexture(GL_TEXTURE0 + 22);
+				glBindTexture(GL_TEXTURE_2D, gAlbedo);
+
+				glActiveTexture(GL_TEXTURE0 + 23);
+				glBindTexture(GL_TEXTURE_2D, gMRA);
+
+				glActiveTexture(GL_TEXTURE0 + 24);
+				glBindTexture(GL_TEXTURE_2D, gEmission);
+
+				glActiveTexture(GL_TEXTURE0 + 25);
+				glBindTexture(GL_TEXTURE_2D, gLSPosition);
+
+				glActiveTexture(GL_TEXTURE0 + 10);
+				glBindTexture(GL_TEXTURE_2D, depthMap); // Bind shadow map texture
+
+				glUniform1i(lightProg->getUniform("positionBuf"), 20);
+				glUniform1i(lightProg->getUniform("normalBuf"), 21);
+				glUniform1i(lightProg->getUniform("albedoBuf"), 22);
+				glUniform1i(lightProg->getUniform("mraBuf"), 23);
+				glUniform1i(lightProg->getUniform("emissionBuf"), 24);
+				glUniform1i(lightProg->getUniform("positionLSBuf"), 25);
+				glUniform1i(lightProg->getUniform("shadowDepth"), 10);
+
+				glUniform3fv(lightProg->getUniform("shadowLightDir"), 1, value_ptr(lightDir)); // Set light direction
+
+				glUniform3fv(lightProg->getUniform("sunPos"), 1, value_ptr(Config::sunPos));
+				glUniform3fv(lightProg->getUniform("sunCol"), 1, value_ptr(Config::sunColor * 2.5f));
+
+				// Get all lights
+				std::vector<vec3> allLightPos = sceneLightPos;
+				std::vector<vec3> allLightCol = sceneLightCol;
+
+				// Append dynamic spell lights
+				std::vector<vec3> spellLightPos = getAllActiveSpellLightPos();
+				std::vector<vec3> spellLightCol = getAllActiveSpellLightCol();
+				allLightPos.insert(allLightPos.end(), spellLightPos.begin(), spellLightPos.end());
+				allLightCol.insert(allLightCol.end(), spellLightCol.begin(), spellLightCol.end());
+
+				int actualLightCount = std::min<int>(allLightPos.size(), Config::MAX_LIGHTS);
+
+				// Defensive: only proceed if we have lights
+				if (actualLightCount > 0) {
+					glUniform1i(lightProg->getUniform("numLights"), actualLightCount);
+					glUniform3fv(lightProg->getUniform("lightPos"), actualLightCount, value_ptr(allLightPos[0]));
+					glUniform3fv(lightProg->getUniform("lightCol"), actualLightCount, value_ptr(allLightCol[0]));
+				}
+				else {
+					glUniform1i(lightProg->getUniform("numLights"), 0);
+				}
+
+				glUniform3fv(lightProg->getUniform("viewPos"), 1, value_ptr(eye));
+				glUniform1f(lightProg->getUniform("exposure"), Config::EXPOSURE);
+				glUniform1f(lightProg->getUniform("saturation"), Config::SATURATION * (player->getHitpoints() / Config::PLAYER_HP_MAX));
+
+				glBindVertexArray(quad_VertexArrayID);
+				glDrawArrays(GL_TRIANGLES, 0, 6);
+				glBindVertexArray(0);
+			lightProg->unbind();
+
+			// Restore depth state
+			glDepthMask(GL_TRUE);
+			glEnable(GL_DEPTH_TEST);
+		}
+
+		//code to write out the FBO (texture) on key press
+		if (Config::DEFER && Config::WRITE_FBOS) {
+			assert(GLTextureWriter::WriteImage(gBuffer, "gBuf.png"));
+			assert(GLTextureWriter::WriteImage(gPosition, "gPos.png"));
+			assert(GLTextureWriter::WriteImage(gNormal, "gNorm.png"));
+			assert(GLTextureWriter::WriteImage(gAlbedo, "gAlb.png"));
+			assert(GLTextureWriter::WriteImage(gMRA, "gMRA.png"));
+			assert(GLTextureWriter::WriteImage(gEmission, "gEmit.png"));
+			assert(GLTextureWriter::WriteImage(gLSPosition, "gLSPos.png"));
+		}
+
+		if (Config::DEBUG_AABBS && !Config::FIRST_PASS) {
 			drawAABB(playerBB->min, playerBB->max, debugLineProg, Projection, View, { 1,0,0 });
 			//drawAABB(sphereBB->min, sphereBB->max, debugLineProg, Projection, View, { 0,1,0 });
 			for (int i = 0; i < bossActiveSpells.size(); i++) {
@@ -5458,102 +6751,185 @@ public:
 			}
 			for (const auto* enemy : enemies) {
 				if (enemy && enemy->isAlive()) {
-					drawAABB(enemy->getAABBMin(), enemy->getAABBMax(), debugLineProg, Projection, View, {0,0,1});
+					drawAABB(enemy->getAABBMin(), enemy->getAABBMax(), debugLineProg, Projection, View, { 0,0,1 });
 				}
 			}
 		}
 
-		if (Config::DRAW_PARTICLES) {
+		if (Config::DRAW_PARTICLES && !Config::FIRST_PASS) {
 			particleProg->bind();
-			// glPointSize(10.0f); // Remove this line, size is now per-particle in shader
 			glUniformMatrix4fv(particleProg->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
 			glUniformMatrix4fv(particleProg->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
 			particleAlphaTex->bind(particleProg->getUniform("alphaTexture"));
-			drawParticles(particleSystem, particleProg, Model); // draw particles if full scene render
+			drawParticles(particleSystem, particleProg, Model);
 			particleAlphaTex->unbind();
 			particleProg->unbind();
 		}
-		glDisable(GL_DEPTH_TEST);
-		drawColorFilter();
 
-		if (Config::DRAW_PLAYER_DAMAGE && player->getDamageTimer() > 0.0f) {
-			player->setDamageTimer(player->getDamageTimer() - frametime);
+		if (!Config::FIRST_PASS) {
+			glDisable(GL_DEPTH_TEST);
+			drawColorFilter();
 
-			float alpha = player->getDamageTimer() / Config::PLAYER_HIT_DURATION;
-			// cout << "Red flash alpha: " << alpha << endl;
-			// glEnable(GL_DEPTH_TEST);
+			if (Config::DRAW_PLAYER_DAMAGE && player->getDamageTimer() > 0.0f) {
+				player->setDamageTimer(player->getDamageTimer() - frametime);
 
-			drawDamageIndicator(alpha);
-		}
+				float alpha = player->getDamageTimer() / Config::PLAYER_HIT_DURATION;
+				// cout << "Red flash alpha: " << alpha << endl;
+				// glEnable(GL_DEPTH_TEST);
 
-		else if (Config::DRAW_PLAYER_DAMAGE && !player->isAlive() && !debugCamera) {
-			// If player is dead, show red flash
-			movingForward = false;
-			movingBackward = false;
-			movingLeft = false;
-			movingRight = false;
-			drawDamageIndicator(1.0f);
-		}
+				drawDamageIndicator(alpha);
+			}
 
-		glEnable(GL_DEPTH_TEST);
+			else if (Config::DRAW_PLAYER_DAMAGE && !player->isAlive() && !debugCamera) {
+				// If player is dead, show red flash
+				movingForward = false;
+				movingBackward = false;
+				movingLeft = false;
+				movingRight = false;
+				drawDamageIndicator(1.0f);
+			}
 
-		if (Config::DRAW_HEALTHBAR) { // Draw the health bar
-			//cout << "Drawing healthbar" << endl;
-			drawHealthBar();
-			drawEnemyHealthBars(View->topMatrix(), Projection->topMatrix());
+			glEnable(GL_DEPTH_TEST);
+
+			if (Config::DRAW_HEALTHBAR) { // Draw the health bar
+				//cout << "Drawing healthbar" << endl;
+				drawHealthBar();
+				drawEnemyHealthBars(View->topMatrix(), Projection->topMatrix());
+
+				if (bossfightstarted && !bossfightended) {
+					drawBossHealthBar(View->topMatrix(), Projection->topMatrix(), static_cast<float>(width), static_cast<float>(height));
+				}
+			}
+
+			// Needs to be before MiniMap rendering
+			glEnable(GL_BLEND); // Enable blending for text rendering
+			// RenderText(textProg, "Cats are ok.  Cur time: " + to_string(glfwGetTime()), 10.0f, 265.0f, 1.0f, glm::vec3(1.0f, 1.0f, 0.9f),
+			// 		window_width, window_height);
+			// RenderText(textProg, "Keys collected: x" + to_string(keysCollectedCount), 25.0f, 25.0f, 1.0f, glm::vec3(1.0f, 1.0f, 0.9f),
+			// 		width, height);
+			float formattedfps = floor(getFPS() * 100) / 100; // Format FPS to 2 decimal places
+			RenderText(textProg, "FPS: " + to_string(formattedfps), width - 100.0f, height - 50.0f, 1.0f, glm::vec3(1.0f, 1.0f, 0.9f),
+				width, height);
+			if (currentStringOutput != "") {
+				if (bossfightstarted) {
+					currentStringOutput = ""; // Clear the output if boss fight has started
+				}
+				else {
+					if (currentStringOutput != prevStringOutput) {
+						stringOutputTimer = 0.0f; // Reset timer if the string output changes
+						prevStringOutput = currentStringOutput; // Update previous string output
+					}
+					else {
+						stringOutputTimer += frametime; // Increment timer if the string output is the same
+					}
+					if (stringOutputTimer < stringOutputDuration) {
+						RenderText(textProg, currentStringOutput, width / 2.0f - 400.0f, height / 2.0f + 300.0f, 1.5f, glm::vec3(1.0f, 1.0f, 0.9f), width, height);
+					}
+					else {
+						currentStringOutput = ""; // Clear the output after duration
+					}
+				}
+			}
 
 			if (bossfightstarted && !bossfightended) {
-				drawBossHealthBar(View->topMatrix(), Projection->topMatrix(), static_cast<float>(width), static_cast<float>(height));
-			}
-		}
-
-		// Needs to be before MiniMap rendering
-		glEnable(GL_BLEND); // Enable blending for text rendering
-		// RenderText(textProg, "Cats are ok.  Cur time: " + to_string(glfwGetTime()), 10.0f, 265.0f, 1.0f, glm::vec3(1.0f, 1.0f, 0.9f),
-		// 		window_width, window_height);
-		RenderText(textProg, "Keys collected: x" + to_string(keysCollectedCount), 25.0f, 25.0f, 1.0f, glm::vec3(1.0f, 1.0f, 0.9f),
-				width, height);
-		float formattedfps = floor(getFPS() * 100) / 100; // Format FPS to 2 decimal places
-		RenderText(textProg, "FPS: " + to_string(formattedfps), width - 100.0f, height - 50.0f, 1.0f, glm::vec3(1.0f, 1.0f, 0.9f),
-				width, height);
-
-		if (bossfightstarted && !bossfightended) {
 				RenderText(textProg, "BOSS HP", width / 2.0f, height - 70.0f, 1.0f, glm::vec3(1.0f, 0.0f, 0.0f),
-				width, height);
+					width, height);
 			}
-		glDisable(GL_BLEND); // Disable blending after text rendering
+			glDisable(GL_BLEND); // Disable blending after text rendering
 
-		if (Config::DRAW_MINIMAP) { // Draw the mini map
-			ShadowProg->bind();
-			//cout << "Drawing minimap" << endl;
-			glClear(GL_DEPTH_BUFFER_BIT);
-			glViewport(0, height - 350, 350, 350);
-			SetOrthoMatrix(ShadowProg);
-			SetTopView(ShadowProg); /*MINI MAP*/
-			SetMaterial(ShadowProg, Material::brown);
-			//drawScene(prog2, CULL);
-			/* draws */
-			// drawBorder(prog2, Model);
-			// drawDoor(prog2, Model);
-			// drawBooks(prog2, Model);
-			// drawEnemies(prog2, Model);
-			#if USE_INSTANCING
-			drawLibInstancing(ShadowProg, false); // Draw the library shelves without culling
-			#else
-			drawCircularBorder(ShadowProg, false); // Draw the circular library shelves
-			drawLibrary(ShadowProg, Model, false);
-			drawBossRoom(ShadowProg, Model, false);
-			#endif
-			// drawLibInstancing(ShadowProg, false); // Draw the library shelves without culling
-			drawBossEnemy(ShadowProg, Model);
-			// drawOrbs(prog2, Model);
-			drawMiniPlayer(ShadowProg, Model);
-			drawBorderWalls(ShadowProg, Model);
-			// SetMaterialMan(prog2,6 );
-			drawLibGrnd(ShadowProg, Model);
-			// drawBossRoom(ShadowProg, Model, false); //boss room not drawing
-			drawEnemies(ShadowProg, Model);
-			ShadowProg->unbind();
+			if (Config::DRAW_MINIMAP) { // Draw the mini map
+				ShadowProg->bind();
+				//cout << "Drawing minimap" << endl;
+				glClear(GL_DEPTH_BUFFER_BIT);
+				glViewport(0, height - 350, 350, 350);
+				SetOrthoMatrix(ShadowProg);
+				SetTopView(ShadowProg); /*MINI MAP*/
+				SetMaterial(ShadowProg, Material::brown);
+				//drawScene(prog2, CULL);
+				/* draws */
+				// drawBorder(prog2, Model);
+				// drawDoor(prog2, Model);
+				// drawBooks(prog2, Model);
+				// drawEnemies(prog2, Model);
+#if USE_INSTANCING
+				drawLibInstancing(ShadowProg, false); // Draw the library shelves without culling
+#else
+				drawCircularBorder(ShadowProg, false); // Draw the circular library shelves
+				drawLibrary(ShadowProg, Model, false);
+				drawBossRoom(ShadowProg, Model, false, animTime);
+#endif
+				// drawLibInstancing(ShadowProg, false); // Draw the library shelves without culling
+				drawBossEnemy(ShadowProg, Model);
+				// drawOrbs(prog2, Model);
+				drawMiniPlayer(ShadowProg, Model);
+				drawBorderWalls(ShadowProg, Model);
+				// SetMaterialMan(prog2,6 );
+				drawLibGrnd(ShadowProg, Model);
+				// drawBossRoom(ShadowProg, Model, false); //boss room not drawing
+				drawEnemies(ShadowProg, Model, frametime); // IS THIS SUPPOSED TO BE ANIMTIME OR FRAMETIME?
+				ShadowProg->unbind();
+			}
+
+			if (!player->isAlive() && !debugCamera) {
+				RenderText(textProg, "You Died!", width / 2.0f - 150.0f, height / 2.0f + 100.0f, 3.0f, glm::vec3(1.0f, 1.0f, 1.0f),
+					width, height);
+				RenderText(textProg, "Press R to Restart", width / 2.0f - 250.0f, height / 2.0f, 3.0f, glm::vec3(1.0f, 1.0f, 1.0f),
+					width, height);
+				if (!playGameOverSound) {
+					ma_sound_stop(&sound);
+					ma_sound_stop(&boss_music); // Stop boss music
+					ma_sound_start(&game_over_sound);
+					playGameOverSound = true; // Prevent multiple sound plays
+				}
+			}
+
+			// glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+			glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); // Set blending function for text rendering
+			DrawKeyHUD(keyHUDshader, keyScreenTexture->getID(), width, height, keysCollectedCount, glm::vec2(100.0f, 50.0f), glm::vec2(100.0f, 100.0f));
+
+			if (!player->isAlive() && !debugCamera) {
+				DrawTextoScreen(keyHUDshader, catSadScreenTexture->getID(), width, height, glm::vec2(900.0f, 200.0f), glm::vec2(500.0f, 500.0f));
+			}
+			glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); // Reset blending function for other rendering
+
+			glDisable(GL_BLEND); // Disable blending after text rendering
+
+
+
+			if (Config::DRAW_MINIMAP) { // Draw the mini map
+				ShadowProg->bind();
+				//cout << "Drawing minimap" << endl;
+				glClear(GL_DEPTH_BUFFER_BIT);
+				glViewport(0, height - 350, 350, 350);
+				SetOrthoMatrix(ShadowProg);
+				SetTopView(ShadowProg); /*MINI MAP*/
+				SetMaterial(ShadowProg, Material::brown);
+				//drawScene(prog2, CULL);
+				/* draws */
+				// drawBorder(prog2, Model);
+				// drawBooks(prog2, Model);
+				// drawEnemies(prog2, Model);
+				#if USE_INSTANCING
+				drawLibInstancing(ShadowProg, false); // Draw the library shelves without culling
+				#else
+				drawCircularBorder(ShadowProg, false); // Draw the circular library shelves
+				drawLibrary(ShadowProg, Model, false);
+				drawBossRoom(ShadowProg, Model, false, 0.0);
+				drawBossEntrDoor(ShadowProg, Model, false, 0.0);
+				drawBossExitDoor(ShadowProg, Model, false, 0.0); // Draw the boss exit door
+				#endif
+				// drawLibInstancing(ShadowProg, false); // Draw the library shelves without culling
+				drawBossEnemy(ShadowProg, Model);
+				// drawOrbs(prog2, Model);
+				drawMiniPlayer(ShadowProg, Model);
+				drawBorderWalls(ShadowProg, Model);
+				// SetMaterialMan(prog2,6 );
+				drawLibGrnd(ShadowProg, Model);
+				// drawBossRoom(ShadowProg, Model, false); //boss room not drawing
+				drawEnemies(ShadowProg, Model, 0.0f);
+				ShadowProg->unbind();
+			}
+
 		}
 
 		// glEnable(GL_BLEND); // Enable blending for text rendering
@@ -5569,45 +6945,50 @@ public:
 		// Unbind any VAO or Program that might be lingering (belt-and-suspenders)
 		glBindVertexArray(0);
 		glUseProgram(0);
+
+		if (Config::FIRST_PASS) {
+			Config::DEFER = !Config::DEFER;
+			Config::FIRST_PASS = false;
+		}
 	}
 
 	void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
-		if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) glfwSetWindowShouldClose(window, GL_TRUE);
+		if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) { glfwSetWindowShouldClose(window, GL_TRUE); }
+		if (key == GLFW_KEY_ENTER && action == GLFW_PRESS) { gameState = GameState::IN_GAME; }
 
 		//Debug
 		if (key == GLFW_KEY_K && action == GLFW_PRESS) {
 			//Debug Camera
 			debugCamera = !debugCamera;
-
-			if (debugCamera) {
-				if (key == GLFW_KEY_L && action == GLFW_PRESS) {
-					cursor_visable = !cursor_visable;
-					if (cursor_visable) {
-						glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-					}
-					else {
-						glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-					}
+		}
+		if (debugCamera) {
+			if (key == GLFW_KEY_L && action == GLFW_PRESS) {
+				cursor_visable = !cursor_visable;
+				if (cursor_visable) {
+					glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+				}
+				else {
+					glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
 				}
 			}
-			if (debugCamera && key == GLFW_KEY_N && action == GLFW_PRESS) {
-				//Debug Enemy Movement
-				enemyActive = !enemyActive;
-			}
-			if (debugCamera && key == GLFW_KEY_M && action == GLFW_PRESS) {
-				//Debug Player Movement Toggle
-				playerActive = !playerActive;
-			}
-			// Lighting / Shader settings
-			if (key == GLFW_KEY_1 && action == GLFW_PRESS) Config::SATURATION -= 0.1f;
-			if (key == GLFW_KEY_2 && action == GLFW_PRESS) Config::SATURATION += 0.1f;
-			if (key == GLFW_KEY_3 && action == GLFW_PRESS) Config::EXPOSURE += 0.1f;
-			if (key == GLFW_KEY_4 && action == GLFW_PRESS) Config::EXPOSURE -= 0.1f;
-			if (key == GLFW_KEY_9 && action == GLFW_PRESS) Config::DEBUG_LIGHTING = !Config::DEBUG_LIGHTING;
-			if (key == GLFW_KEY_0 && action == GLFW_PRESS) Config::DEBUG_GEOM = !Config::DEBUG_GEOM;
-			if (key == GLFW_KEY_B && action == GLFW_PRESS) Config::DEBUG_AABBS = !Config::DEBUG_AABBS;
-
 		}
+		if (debugCamera && key == GLFW_KEY_N && action == GLFW_PRESS) {
+			//Debug Enemy Movement
+			enemyActive = !enemyActive;
+		}
+		if (debugCamera && key == GLFW_KEY_M && action == GLFW_PRESS) {
+			//Debug Player Movement Toggle
+			playerActive = !playerActive;
+		}
+		// Lighting / Shader settings
+		if (debugCamera && key == GLFW_KEY_1 && action == GLFW_PRESS) Config::SATURATION -= 0.1f;
+		if (debugCamera && key == GLFW_KEY_2 && action == GLFW_PRESS) Config::SATURATION += 0.1f;
+		if (debugCamera && key == GLFW_KEY_3 && action == GLFW_PRESS) Config::EXPOSURE += 0.1f;
+		if (debugCamera && key == GLFW_KEY_4 && action == GLFW_PRESS) Config::EXPOSURE -= 0.1f;
+		if (debugCamera && key == GLFW_KEY_9 && action == GLFW_PRESS) Config::DEBUG_LIGHTING = !Config::DEBUG_LIGHTING;
+		if (debugCamera && key == GLFW_KEY_0 && action == GLFW_PRESS) Config::DEBUG_GEOM = !Config::DEBUG_GEOM;
+		if (debugCamera && key == GLFW_KEY_B && action == GLFW_PRESS) Config::DEBUG_AABBS = !Config::DEBUG_AABBS;
+		if (key == GLFW_KEY_O && action == GLFW_PRESS) { Config::DEFER = !Config::DEFER; }
 
 		if (key == GLFW_KEY_GRAVE_ACCENT && action == GLFW_PRESS)
 		{
@@ -5735,16 +7116,19 @@ public:
 			//F Time out to avoid pointer crash
 			if (fTimeout <= 0) {
 				interactWithBooks();
+				interactWithLocks();
 				fTimeout = 3.0f;
 			}
 		}
-		if (key == GLFW_KEY_U && action == GLFW_PRESS && (keysCollectedCount == keysneededToCollect || debugCamera)) {
+		if (key == GLFW_KEY_U && action == GLFW_PRESS && (allLocksUnlocked || debugCamera)) {
 			unlock = true;
+			Config::targetOrbitCenter = Config::BOSS_CENTER;
 			canFightboss = true;
 		}
 
 		if (key == GLFW_KEY_P && action == GLFW_PRESS) {
 			unlock = true;
+			Config::targetOrbitCenter = Config::BOSS_CENTER;
 			canFightboss = true;
 		}
 
@@ -5759,7 +7143,7 @@ public:
 		}
 
 		//Restart key R
-		if ((debugCamera || !player->isAlive()) && key == GLFW_KEY_R && action == GLFW_PRESS) restartGen = true; 
+		if ((debugCamera || !player->isAlive()) && key == GLFW_KEY_R && action == GLFW_PRESS) restartGen = true;
 	}
 
 	void scrollCallback(GLFWwindow* window, double deltaX, double deltaY) {
@@ -5863,6 +7247,11 @@ int main(int argc, char* argv[]) {
 	if (ma_sound_init_from_file(&engine, "../resources/SoundEffects/tada-fanfare.mp3", 0, NULL, NULL, &key_drop) != MA_SUCCESS) {
 		printf("Failed to load key dropped sound\n");
 		ma_sound_uninit(&sound); // Uninitialize background sound if spell sound fails
+
+   //Load door opening sound effect
+	if (ma_sound_init_from_file(&engine, "../resources/audio/door_open.mp3", 0, NULL, NULL, &door_sound) != MA_SUCCESS) {
+		printf("Failed to load title screen sound\n");
+
 		ma_engine_uninit(&engine);
 		return -1;
 	}
@@ -5871,23 +7260,78 @@ int main(int argc, char* argv[]) {
 	if (ma_sound_init_from_file(&engine, "../resources/SoundEffects/item-pick-up.mp3", 0, NULL, NULL, &key_pickup) != MA_SUCCESS) {
 		printf("Failed to load key pickup sound\n");
 		ma_sound_uninit(&sound); // Uninitialize background sound if spell sound fails
+
+  // Load boss music
+	if (ma_sound_init_from_file(&engine, "../resources/audio/boss_music.mp3", 0, NULL, NULL, &boss_music) != MA_SUCCESS) {
+		printf("Failed to load title screen sound\n");
+
 		ma_engine_uninit(&engine);
 		return -1;
 	}
 
-	// Load door locked sound effect
+  // Load unlock sound effect
+	if (ma_sound_init_from_file(&engine, "../resources/audio/key_unlock.mp3", 0, NULL, NULL, &key_unlock_sound) != MA_SUCCESS) {
+		printf("Failed to load title screen sound\n");
+		ma_engine_uninit(&engine);
+		return -1;
+	}
+
+	if (ma_sound_init_from_file(&engine, "../resources/audio/boss_death.mp3", 0, NULL, NULL, &boss_death_sound) != MA_SUCCESS) {
+		printf("Failed to load title screen sound\n");
+		ma_engine_uninit(&engine);
+		return -1;
+	}
+
+	if (ma_sound_init_from_file(&engine, "../resources/audio/firework.mp3", 0, NULL, NULL, &firework_sound) != MA_SUCCESS) {
+		printf("Failed to load title screen sound\n");
+		ma_engine_uninit(&engine);
+		return -1;
+	}
+
+	if (ma_sound_init_from_file(&engine, "../resources/audio/boss_win.mp3", 0, NULL, NULL, &victory_sound) != MA_SUCCESS) {
+		printf("Failed to load title screen sound\n");
+		ma_engine_uninit(&engine);
+		return -1;
+	}
+
+	if (ma_sound_init_from_file(&engine, "../resources/audio/GameOver.mp3", 0, NULL, NULL, &game_over_sound) != MA_SUCCESS) {
+		printf("Failed to load title screen sound\n");
+		ma_engine_uninit(&engine);
+		return -1;
+	}
+
+	if (ma_sound_init_from_file(&engine, "../resources/audio/boss_slam.mp3", 0, NULL, NULL, &boss_slam_sound) != MA_SUCCESS) {
+		printf("Failed to load title screen sound\n");
+		ma_engine_uninit(&engine);
+		return -1;
+	}
 
 
 	// This is the code that will likely change program to program as you
 	// may need to initialize or set up different data and state
+
+	glfwMakeContextCurrent(windowManager->getHandle());
+	std::cout << "GL Version: " << glGetString(GL_VERSION) << std::endl;
+	std::cout << "GLSL Version: " << glGetString(GL_SHADING_LANGUAGE_VERSION) << std::endl;
+
+	glfwSetWindowUserPointer(windowManager->getHandle(), application);
+	glfwSetFramebufferSizeCallback(
+		windowManager->getHandle(), [](GLFWwindow* win, int newW, int newH) {
+			// Update the GL viewport
+			glViewport(0, 0, newW, newH);
+
+			// Tell our Application to resize its G-buffer
+			auto app = reinterpret_cast<Application*>(glfwGetWindowUserPointer(win));
+			app->resizeGBuffer(newW, newH);
+		}
+	);
 
 	application->init(resourceDir);
 	application->initMapGen();
 	application->initGeom(resourceDir);
 	application->initGround();
 	application->initQuadTree();
-	application->initSkyboxCube();
-	application->initSkyboxTex(resourceDir);
+	application->initSkyboxes(resourceDir);
 	application->initCircularBorder();
 	application->initAABBWireframe();
 
@@ -5908,6 +7352,33 @@ int main(int argc, char* argv[]) {
 		<< "[DEBUG] Press K To Enter Debug Camera Mode." << endl << "+/- Change Brightness, 1/2 Change Saturation"
 		<< endl << "While in Debug Camera mode, M toggles player movement and N toggles enemy movement" << endl;
 
+	int width, height;
+	glfwGetFramebufferSize(windowManager->getHandle(), &width, &height);
+	initKeyFBO(resourceDir, width, height); // Initialize the key FBO
+
+	// Title screen
+	initTitleScreen(resourceDir); // Initialize the title screen
+	while (application->gameState == GameState::TITLE_SCREEN && !glfwWindowShouldClose(windowManager->getHandle()))
+	{
+		int width, height;
+		glfwGetFramebufferSize(windowManager->getHandle(), &width, &height);
+
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // Clear the screen
+
+		glEnable(GL_BLEND); // Enable blending for text rendering
+		RenderText(application->textProg, "Press Enter to Start", width / 2 - 500.0f, height / 2.0f - 50.0f, 3.0f, glm::vec3(1.0f, 1.0f, 0.9f),
+				width, height);
+		RenderText(application->textProg, "THE CAT WIZARD", width / 2 - 500.0f, height / 2.0f + 20.0f, 5.0f, glm::vec3(1.0f, 1.0f, 0.9f),
+				width, height);
+		glDisable(GL_BLEND); // Disable blending after text rendering
+
+		drawTitleScreen(titleShader, width, height); // Draw the title screen
+
+
+		glfwSwapBuffers(windowManager->getHandle()); // Swap buffers to display the title screen
+		glfwPollEvents(); // Poll for events
+	}
+
 	// Loop until the user closes the window.
 	while (!glfwWindowShouldClose(windowManager->getHandle())) {
 		auto nextLastTIme = chrono::high_resolution_clock::now();
@@ -5921,7 +7392,7 @@ int main(int argc, char* argv[]) {
 		float AnimcurrFrame = glfwGetTime();
 		application->AnimDeltaTime = AnimcurrFrame - application->AnimLastFrame;
 		application->AnimLastFrame = AnimcurrFrame;
-		// Render scene.
+		// Render scene
 		application->render(deltaTime, application->AnimDeltaTime);
 
 		// Swap front and back buffers
@@ -5932,9 +7403,18 @@ int main(int argc, char* argv[]) {
 
 	// Quit program
 	windowManager->shutdown();
+	ma_sound_uninit(&key_unlock_sound);
+	ma_sound_uninit(&boss_music);
+	ma_sound_uninit(&door_sound);
 	ma_sound_uninit(&sound);
 	ma_sound_uninit(&spell_sound); 
 	ma_sound_uninit(&key_drop);
 	ma_engine_uninit(&engine); 
+	ma_engine_uninit(&engine);
+	ma_sound_uninit(&boss_death_sound);
+	ma_sound_uninit(&firework_sound);
+	ma_sound_uninit(&victory_sound);
+	ma_sound_uninit(&game_over_sound);
+	ma_sound_uninit(&boss_slam_sound);
 	return 0;
 }
