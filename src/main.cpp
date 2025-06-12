@@ -7399,14 +7399,14 @@ int main(int argc, char* argv[]) {
 	ma_sound_set_volume(&sound, 0.25f);
 
 	// Load key dropped sound effect
-	if (ma_sound_init_from_file(&engine, "../SoundEffects/tada-fanfare.mp3", 0, NULL, NULL, &key_drop) != MA_SUCCESS) {
+	if (ma_sound_init_from_file(&engine, "../resources/SoundEffects/tada-fanfare.mp3", 0, NULL, NULL, &key_drop) != MA_SUCCESS) {
 		printf("Failed to load sound\n");
 		ma_engine_uninit(&engine);
 		return -1;
 	}
 
 	// Load key pick up sound effect
-	if (ma_sound_init_from_file(&engine, "../SoundEffects/item-pick-up.mp3", 0, NULL, NULL, &key_pickup) != MA_SUCCESS) {
+	if (ma_sound_init_from_file(&engine, "../resources/SoundEffects/item-pick-up.mp3", 0, NULL, NULL, &key_pickup) != MA_SUCCESS) {
 		printf("Failed to load sound\n");
 		ma_engine_uninit(&engine);
 		return -1;
@@ -7571,8 +7571,8 @@ int main(int argc, char* argv[]) {
 	ma_sound_uninit(&sound);
 	ma_sound_uninit(&spell_sound);
 	ma_engine_uninit(&engine);
-	ma_engine_uninit(&key_drop);
-	ma_engine_uninit(&key_pickup);
+	ma_sound_uninit(&key_drop);
+	ma_sound_uninit(&key_pickup);
 	ma_sound_uninit(&boss_death_sound);
 	ma_sound_uninit(&firework_sound);
 	ma_sound_uninit(&victory_sound);
