@@ -3487,7 +3487,7 @@ public:
 		glm::vec3 eyePupilColor = glm::vec3(0.1f, 0.1f, 0.1f);
 
 		// --- Common Eye Parameters ---
-		float bodyBaseScaleY = 0.8f; // Base height factor before pill stretch
+		float bodyBaseScaleY = 0.4f; // Base height factor before pill stretch
 		glm::vec3 eyeOffsetBase = glm::vec3(0.0f, bodyBaseScaleY * 0.4f, 0.45f); // Y up, Z forward from body center
 		float eyeSeparation = 0.25f; // Distance between eye centers
 		float whiteScale = 0.18f;
