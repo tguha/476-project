@@ -59,6 +59,11 @@ ma_sound spell_sound;
 ma_sound door_sound;
 ma_sound boss_music;
 ma_sound key_unlock_sound;
+ma_sound boss_death_sound;
+ma_sound firework_sound;
+ma_sound victory_sound;
+ma_sound game_over_sound;
+ma_sound boss_slam_sound;
 
 class Application : public EventCallbacks {
 public:
@@ -278,6 +283,14 @@ public:
 	bool playDoorSound = false; // Flag to control door sound playback
 	bool playExitDoorSound = false; // Flag to control exit door sound playback
 	bool playBossMusic = false; // Flag to control boss music playback
+	bool playBossDeathSound = false; // Flag to control boss death sound playback
+	bool playVictorySound = false; // Flag to control victory sound playback
+	bool playGameOverSound = false; // Flag to control game over sound playback
+
+	std::string currentStringOutput = ""; // Current string output for text rendering
+	std::string prevStringOutput = ""; // Previous string output for text rendering
+	float stringOutputTimer = 0.0f; // Timer for string output display duration
+	float stringOutputDuration = 4.0f; // Duration to display the string output
 
 	// -- Camera Occlusion Query --
 	GLuint occlusionQueryID = 0; // Occlusion query ID
@@ -2502,7 +2515,11 @@ public:
 					if (!playBossMusic) {
 						playBossMusic = true;
 						ma_sound_seek_to_pcm_frame(&boss_music, 0); // Reset normal music to start
+						ma_sound_set_looping(&boss_music, MA_TRUE); // Loop boss music
 						ma_sound_start(&boss_music); // Start boss music
+
+						playVictorySound = false; // Reset victory sound flag
+						playBossDeathSound = false; // Reset boss death sound flag
 					}
 				}
 			}
@@ -2512,11 +2529,19 @@ public:
 			bossfightended = true; // Boss fight ended
 			bossActiveSpells.clear(); // Clear active spells
 			canFightboss = false; // Reset boss fight flag
+			if (!playBossDeathSound) {
+				playBossDeathSound = true;
+				ma_sound_seek_to_pcm_frame(&boss_death_sound, 0); // Reset boss death sound to start
+				ma_sound_start(&boss_death_sound); // Play boss death sound
+			}
 			if (playBossMusic) {
 				playBossMusic = false;
 				ma_sound_stop(&boss_music); // Stop boss music
-				ma_sound_seek_to_pcm_frame(&sound, 0); // Reset normal music to start
-				ma_sound_start(&sound); // Restart normal music
+			}
+				if (!playVictorySound) {
+				playVictorySound = true;
+				ma_sound_seek_to_pcm_frame(&victory_sound, 0); // Reset victory sound to start
+				ma_sound_start(&victory_sound); // Play victory sound
 			}
 		}
 	}
@@ -2573,6 +2598,23 @@ public:
 			#endif
 			initCircularBorder();
 			initLocks();
+
+			int random = rand() % 3 + 1; // Random number between 1 and 3
+			SpellType randomSpellType = SpellType::NONE;
+			if (random < 1) {
+				randomSpellType = SpellType::FIRE;
+			} else if (random < 2) {
+				randomSpellType = SpellType::ICE;
+			} else if (random < 3) {
+				randomSpellType = SpellType::LIGHTNING;
+			} else {
+				randomSpellType = SpellType::FIRE; // Default to FIRE if none matched
+			}
+			bossEnemy->setBossSpellType(randomSpellType); // Set random spell type for the boss
+
+			ma_sound_seek_to_pcm_frame(&sound, 0); // Reset normal music to start
+			ma_sound_start(&sound); // Restart normal music
+			playGameOverSound = false; // Reset game over sound flag
 		}
 	}
 
@@ -3872,12 +3914,10 @@ public:
 			// Remove visual orb logic... (find first collected orb and erase)
 			for (auto it = orbCollectibles.begin(); it != orbCollectibles.end(); ++it) {
 				if (it->collected && it->spellType == currentPlayerSpellType) {
-					spellCounts[it->spellType]--; // Increment spell count for the type being shot
-					cout << "Spells remaining of this type: " << spellCounts[it->spellType] << endl;
 					orbsCollectedCount--;
 					orbCollectibles.erase(it);
 
-					if (spellCounts[currentPlayerSpellType] <= 0) {
+					if (spellCounts[currentPlayerSpellType] < 0) {
 						for (int i = 0; i < 4; ++i) {
 							if (spellCounts[spellSlots[i]] > 0) {
 								currentPlayerSpellType = spellSlots[i];
@@ -3887,6 +3927,8 @@ public:
 							}
 						}
 					}
+					spellCounts[it->spellType]--; // Increment spell count for the type being shot
+					cout << "Spells remaining of this type: " << spellCounts[it->spellType] << endl;
 					break;
 				}
 			}
@@ -4534,6 +4576,8 @@ public:
 		cout << "[DEBUG] Spell Fired! Start:(" << spawnPos.x << "," << spawnPos.y << "," << spawnPos.z
 			<< ") Dir: (" << shootDir.x << "," << shootDir.y << "," << shootDir.z
 			<< "). Active spells: " << bossActiveSpells.size() << endl;
+
+		ma_sound_start(&spell_sound);
 	}
 
 // Boss slam attack logic
@@ -4619,10 +4663,31 @@ public:
 						bossEnemy->setAttack1Cooldown(glfwGetTime());
 
 						if (activeEnemiesCount <= 5) {
-							IceElemental* minion = new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.y), ENEMY_HP_MAX, 2.0f, iceElemental, vec3(0.65f), vec3(0.0f));
-							minion->setAggro(true);
-							minion->setSightRange(20.0f);
-							enemies.push_back(minion);
+							// IceElemental* minion = new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.y), ENEMY_HP_MAX, 2.0f, iceElemental, vec3(0.65f), vec3(0.0f));
+							// minion->setAggro(true);
+							// minion->setSightRange(20.0f);
+							// enemies.push_back(minion);
+							SpellType spellType = bossEnemy->getBossSpellType();
+
+							if (spellType == SpellType::FIRE) {
+								FireElemental* fireMinion = new FireElemental(vec3(spawnPos.x, Config::FIRE_ELEMENTAL_TRANS_Y, spawnPos.y), ENEMY_HP_MAX, 2.0f, fireElemental, vec3(0.65f), vec3(0.0f));
+								fireMinion->setAggro(true);
+								fireMinion->setSightRange(50.0f);
+								enemies.push_back(fireMinion);
+
+							} else if (spellType == SpellType::ICE) {
+								IceElemental* iceMinion = new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.y), ENEMY_HP_MAX, 2.0f, iceElemental, vec3(0.65f), vec3(0.0f));
+								iceMinion->setAggro(true);
+								iceMinion->setSightRange(50.0f);
+								enemies.push_back(iceMinion);
+
+							} else if (spellType == SpellType::LIGHTNING) {
+								LightningElemental* lightningMinion = new LightningElemental(vec3(spawnPos.x, Config::LIGHTNING_ELEMENTAL_TRANS_Y, spawnPos.y), ENEMY_HP_MAX, 2.0f, lightningElemental, vec3(0.65f), vec3(0.0f));
+								lightningMinion->setAggro(true);
+								lightningMinion->setSightRange(50.0f);
+								enemies.push_back(lightningMinion);
+
+							}
 						}
 					}
 					updateBossProjectiles(deltaTime);
@@ -4638,11 +4703,33 @@ public:
 						bossEnemy->setAttack1Cooldown(glfwGetTime());
 
 						if (activeEnemiesCount <= 5) {
-							enemies.push_back(new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.y), ENEMY_HP_MAX, 2.0f, iceElemental, vec3(0.65f), vec3(0.0f)));
+							SpellType spellType = bossEnemy->getBossSpellType();
+
+							if (spellType == SpellType::FIRE) {
+								FireElemental* fireMinion = new FireElemental(vec3(spawnPos.x, Config::FIRE_ELEMENTAL_TRANS_Y, spawnPos.y), ENEMY_HP_MAX, 2.0f, fireElemental, vec3(0.65f), vec3(0.0f));
+								fireMinion->setAggro(true);
+								fireMinion->setSightRange(50.0f);
+								enemies.push_back(fireMinion);
+
+							} else if (spellType == SpellType::ICE) {
+								IceElemental* iceMinion = new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.y), ENEMY_HP_MAX, 2.0f, iceElemental, vec3(0.65f), vec3(0.0f));
+								iceMinion->setAggro(true);
+								iceMinion->setSightRange(50.0f);
+								enemies.push_back(iceMinion);
+
+							} else if (spellType == SpellType::LIGHTNING) {
+								LightningElemental* lightningMinion = new LightningElemental(vec3(spawnPos.x, Config::LIGHTNING_ELEMENTAL_TRANS_Y, spawnPos.y), ENEMY_HP_MAX, 2.0f, lightningElemental, vec3(0.65f), vec3(0.0f));
+								lightningMinion->setAggro(true);
+								lightningMinion->setSightRange(50.0f);
+								enemies.push_back(lightningMinion);
+
+							}
 						}
 					}
 					if (!slamState.active && (glfwGetTime() - bossEnemy->getSlamCooldown() > Config::BOSS_SLAM_COOLDOWN)) {
 						bossSlamAttack();
+						ma_sound_seek_to_pcm_frame(&boss_slam_sound, 0);
+						ma_sound_start(&boss_slam_sound);
 					}
 
 					updateBossProjectiles(deltaTime);
@@ -5751,6 +5838,7 @@ public:
 			const QuadElement* e = objectElements[i];
 			BossRoomGen::Cell cell = bossGrid[e->grid_position];
 			if (cell.borderType == BossRoomGen::BorderType::ENTRANCE_MIDDLE) {
+				int locksCount = 0;
 				for (int j = 0; j < lockOnDoors.size(); ++j) {
 					LocksOnDoor& lock = lockOnDoors[j];
 					if (lock.interacted) continue; // Skip if lock is already interacted with
@@ -5771,12 +5859,14 @@ public:
 							keyCollectibles[j].keyUsed = true; // Mark the key as used
 							lock.unlockStartTime = (float)glfwGetTime(); // Start the unlock animation
 							keysCollectedCount--;
+							locksCount++;
 							std::cout << "Lock " << j + 1 << " unlocked!" << std::endl;
 						} else {
 							std::cout << "Lock " << j + 1 << " is already unlocked." << std::endl;
 						}
 					}
 				}
+				currentStringOutput = "Unlocked: " + std::to_string(locksCount) + "Locks. You need " + std::to_string(lockOnDoors.size() - locksCount) + " more keys to open the door.";
 			}
 		}
 	}
@@ -5878,23 +5968,25 @@ public:
 			}
 
 			// random fireworks in the area // should happen regardless of boss particle effect
-				float r = Config::randFloat(0.5f, 1.5f);
-				float g = Config::randFloat(0.5f, 1.5f);
-				float b = Config::randFloat(0.5f, 1.5f);
-				vec4 color_start = vec4(r, g, b, 1.0f); // Random start color
-				vec4 color_end = vec4(r * 0.5f, g * 0.5f, b * 0.5f, 0.0f); // Fading out to transparent
-				particleSystem->spawnParticleBurst(
-					bossPos + glm::vec3(Config::randFloat(-10.0f, 10.0f), Config::randFloat(0.5f, 1.5f), Config::randFloat(-10.0f, 10.0f)),
-					vec3(0.0f, 1.0f, 0.0f), // Upward direction
-					5, // Number of particles
-					currentTime,
-					1.0f, 2.0f, // Speed range
-					1.0f, // Spread
-					0.5f, 1.5f, // Lifespan range
-					color_start, // Start color
-					color_end, // End color
-					0.3f, 0.6f // Size range
-				);
+			ma_sound_start(&firework_sound);
+			bossPos = bossRoom->getWorldOrigin() + glm::vec3(0.0f, 0.5f, 0.0f); // Center of the boss room
+			float r = Config::randFloat(0.5f, 1.5f);
+			float g = Config::randFloat(0.5f, 1.5f);
+			float b = Config::randFloat(0.5f, 1.5f);
+			vec4 color_start = vec4(r, g, b, 1.0f); // Random start color
+			vec4 color_end = vec4(r * 0.5f, g * 0.5f, b * 0.5f, 0.0f); // Fading out to transparent
+			particleSystem->spawnParticleBurst(
+				bossPos + glm::vec3(Config::randFloat(-20.0f, 20.0f), Config::randFloat(0.5f, 1.5f), Config::randFloat(-20.0f, 20.0f)),
+				vec3(0.0f, 1.0f, 0.0f), // Upward direction
+				5, // Number of particles
+				currentTime,
+				1.0f, 2.0f, // Speed range
+				1.0f, // Spread
+				0.5f, 1.5f, // Lifespan range
+				color_start, // Start color
+				color_end, // End color
+				0.3f, 0.6f // Size range
+			);
 		}
 	}
 
@@ -6168,6 +6260,19 @@ public:
 		float formattedfps = floor(getFPS() * 100) / 100; // Format FPS to 2 decimal places
 		RenderText(textProg, "FPS: " + to_string(formattedfps), width - 100.0f, height - 50.0f, 1.0f, glm::vec3(1.0f, 1.0f, 0.9f),
 				width, height);
+		if (currentStringOutput != "") {
+			if (currentStringOutput != prevStringOutput) {
+				stringOutputTimer = 0.0f; // Reset timer if the string output changes
+				prevStringOutput = currentStringOutput; // Update previous string output
+			} else {
+				stringOutputTimer += frametime; // Increment timer if the string output is the same
+			}
+			if (stringOutputTimer < stringOutputDuration) {
+				RenderText(textProg, currentStringOutput, width / 2.0f - 400.0f, height / 2.0f + 300.0f, 1.5f, glm::vec3(1.0f, 1.0f, 0.9f), width, height);
+			} else {
+				currentStringOutput = ""; // Clear the output after duration
+			}
+		}
 
 		if (bossfightstarted && !bossfightended) {
 				RenderText(textProg, "BOSS HP", width / 2.0f, height - 70.0f, 1.0f, glm::vec3(1.0f, 0.0f, 0.0f),
@@ -6179,6 +6284,12 @@ public:
 				width, height);
 			RenderText(textProg, "Press R to Restart", width / 2.0f - 250.0f, height / 2.0f, 3.0f, glm::vec3(1.0f, 1.0f, 1.0f),
 				width, height);
+			if (!playGameOverSound) {
+				ma_sound_stop(&sound);
+				ma_sound_stop(&boss_music); // Stop boss music
+				ma_sound_start(&game_over_sound);
+				playGameOverSound = true; // Prevent multiple sound plays
+			}
 		}
 
 		// glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -6553,7 +6664,35 @@ int main(int argc, char* argv[]) {
 		return -1;
 	}
 
+	if (ma_sound_init_from_file(&engine, "../resources/audio/boss_death.mp3", 0, NULL, NULL, &boss_death_sound) != MA_SUCCESS) {
+		printf("Failed to load title screen sound\n");
+		ma_engine_uninit(&engine);
+		return -1;
+	}
 
+	if (ma_sound_init_from_file(&engine, "../resources/audio/firework.mp3", 0, NULL, NULL, &firework_sound) != MA_SUCCESS) {
+		printf("Failed to load title screen sound\n");
+		ma_engine_uninit(&engine);
+		return -1;
+	}
+
+	if (ma_sound_init_from_file(&engine, "../resources/audio/boss_win.mp3", 0, NULL, NULL, &victory_sound) != MA_SUCCESS) {
+		printf("Failed to load title screen sound\n");
+		ma_engine_uninit(&engine);
+		return -1;
+	}
+
+	if (ma_sound_init_from_file(&engine, "../resources/audio/GameOver.mp3", 0, NULL, NULL, &game_over_sound) != MA_SUCCESS) {
+		printf("Failed to load title screen sound\n");
+		ma_engine_uninit(&engine);
+		return -1;
+	}
+
+	if (ma_sound_init_from_file(&engine, "../resources/audio/boss_slam.mp3", 0, NULL, NULL, &boss_slam_sound) != MA_SUCCESS) {
+		printf("Failed to load title screen sound\n");
+		ma_engine_uninit(&engine);
+		return -1;
+	}
 
 
 	// This is the code that will likely change program to program as you
@@ -6643,5 +6782,10 @@ int main(int argc, char* argv[]) {
 	ma_sound_uninit(&sound);
 	ma_sound_uninit(&spell_sound);
 	ma_engine_uninit(&engine);
+	ma_sound_uninit(&boss_death_sound);
+	ma_sound_uninit(&firework_sound);
+	ma_sound_uninit(&victory_sound);
+	ma_sound_uninit(&game_over_sound);
+	ma_sound_uninit(&boss_slam_sound);
 	return 0;
 }
