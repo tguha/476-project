@@ -5681,6 +5681,7 @@ public:
 			if (!key.collected && key.state == OrbState::IDLE && // <<<--- ADD STATE CHECK
 				//checkAABBCollision(manAABBmin, manAABBmax, key.AABBmin, key.AABBmax)
 				checkSphereCollision(player->getPosition(), 4.0f, key.AABBmin, key.AABBmax)
+				&& !key.keyUsed // Ensure the key is not already used
 				//checkSphereCollision(player->getPosition(), 2.0f, orb.AABBmin, orb.AABBmax)
 
 				) {
