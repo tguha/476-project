@@ -221,6 +221,7 @@ public:
     float orbScale = 0.1f;
     bool orbSpawned = false;
     SpellType spellType = SpellType::FIRE;
+    float spawnTime = 0.0f;
 
     Book(const glm::vec3& pos, const glm::vec3& scl, const glm::quat& orient, SpellType type)
         : initialPosition(pos), position(pos), scale(scl), orientation(orient), spellType(type) {
@@ -303,6 +304,7 @@ public:
             }
             break;
         case BookState::OPENED:
+            spawnTime = glfwGetTime();
             break; // Remains open
         case BookState::ON_SHELF:
         default:

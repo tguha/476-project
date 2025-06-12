@@ -369,6 +369,11 @@ public:
 	std::vector<vec3> sceneLightPos;
 	std::vector<vec3> sceneLightCol;
 
+	int runCount = 0;
+	bool resetting = false;
+	float bossDeathTime = 0.0f;
+	const double effectDur = 2.0;
+
 	GLuint gBuffer;
 	GLuint gPosition, gNormal, gTangent, gBitangent, gAlbedo, gMRA, gEmission, gLSPosition;
 	GLuint depthBuf;
@@ -1019,6 +1024,7 @@ public:
 		buffProg->addUniform("numPaws");
 		buffProg->addUniform("paws");
 		buffProg->addUniform("curTime");
+		buffProg->addUniform("texOnly");
 		// --- END FBO shader setup ---
 
 		// --- Lighting shader setup ---
@@ -1043,6 +1049,10 @@ public:
 
 		lightProg->addUniform("sunPos");
 		lightProg->addUniform("sunCol");
+
+		lightProg->addUniform("warpOn");
+		lightProg->addUniform("effect");
+		lightProg->addUniform("warpTime");
 		// --- END Lighting shader setup ---
 		
 		updateCameraVectors();
@@ -2532,6 +2542,7 @@ public:
 				Model->rotate(-Config::HALF_PI, glm::vec3(1, 0, 0));
 				if (book.state == BookState::OPENING || book.state == BookState::OPENED) { // hinge around the spine (world-Y after flatten)
 					Model->rotate(book.openAngle, glm::vec3(0, 1, 0));
+					//book.spawnTime = glfwGetTime();
 				}
 				Model->translate(glm::vec3(0, 0, +bookThickness * 0.5f));
 				Model->scale(coverScale);
@@ -3643,8 +3654,8 @@ public:
 		if (shader->hasUniform("hasBones")) glUniform1i(shader->getUniform("hasBones"), GL_TRUE);
 		if (shader->hasUniform("texOnly")) glUniform1i(shader->getUniform("texOnly"), GL_TRUE);
 		setModel(shader, Model);
-		if (shader->hasUniform("texOnly")) glUniform1i(shader->getUniform("texOnly"), GL_FALSE);
 		door_rig->Draw(shader); // Use the door model for the entrance
+		if (shader->hasUniform("texOnly")) glUniform1i(shader->getUniform("texOnly"), GL_FALSE);
 		if (shader->hasUniform("hasBones")) glUniform1i(shader->getUniform("hasBones"), GL_FALSE);
 		Model->popMatrix();
 		}
@@ -3668,6 +3679,18 @@ public:
 	}
 
 	void updateBooks(float deltaTime) { // deltaTime might not be needed if using glfwGetTime()
+		double now = glfwGetTime();
+
+		// 1) walk with an iterator, erasing inline
+		for (auto it = books.begin(); it != books.end(); /*no ++it here*/) {
+			if (it->state == BookState::OPENED && now - it->spawnTime > Config::BOOK_TIME_LIMIT) {
+				it = books.erase(it);    // erase returns the next valid iterator
+			}
+			else {
+				++it;
+			}
+		}
+
 		for (auto& book : books) {
 			book.update(deltaTime, 0.0f);
 
@@ -4034,6 +4057,7 @@ public:
 				if (checkSphereCollision(checkPos, 0.25f, clusterWorldMin, clusterWorldMax)) {
 					bossfightended = false;
 					restartGen = true;
+					onBossDefeated();
 					return false;
 				}
 			}
@@ -6657,6 +6681,12 @@ public:
 		);
 	}
 
+	void onBossDefeated() {
+		runCount += 0;
+		resetting = true;
+		bossDeathTime = glfwGetTime();
+	}
+
 	void render(float frametime, float animTime) {
 		// Get current frame buffer size
 		int width, height;
@@ -6682,6 +6712,29 @@ public:
 		restartGeneration();
 		checkLocks();
 		//debugMessages();
+
+		double now = glfwGetTime();
+		if (resetting) {
+			double sinceDefeat = now - bossDeathTime;
+			if (sinceDefeat < effectDur) {
+				// **still in post-boss state**  
+				// e.g. enable your warp effect uniform:
+				lightProg->bind();
+				glUniform1i(lightProg->getUniform("warpOn"), GL_TRUE);
+				glUniform1f(lightProg->getUniform("warpTime"), (float)sinceDefeat);
+				lightProg->unbind();
+				// then continue to render with that effect
+			}
+			else {
+				// **post-effect period is over**  
+				resetting = false;
+				// clear the warp flag so you go back to normal rendering
+				lightProg->bind();
+				glUniform1i(lightProg->getUniform("warpOn"), GL_FALSE);
+				lightProg->unbind();
+				// maybe advance to next level or show UI…
+			}
+		}
 
 		// Create the matrix stacks
 		auto Projection = make_shared<MatrixStack>();
@@ -6846,6 +6899,10 @@ public:
 
 				glUniform3fv(lightProg->getUniform("sunPos"), 1, value_ptr(Config::sunPos));
 				glUniform3fv(lightProg->getUniform("sunCol"), 1, value_ptr(Config::sunColor * 2.5f));
+
+				//glUniform1i(lightProg->getUniform("warpOn"), resetting ? GL_TRUE : GL_FALSE);
+				glUniform1i(lightProg->getUniform("effect"), runCount > 2 ? GL_TRUE : GL_FALSE);
+				//glUniform1f(lightProg->getUniform("warpTime"), glfwGetTime());
 
 				// Get all lights
 				std::vector<vec3> allLightPos = sceneLightPos;

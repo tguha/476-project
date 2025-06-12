@@ -25,6 +25,10 @@ uniform vec3 viewPos;
 uniform float saturation;
 uniform float exposure;
 
+uniform bool  warpOn;
+uniform bool  effect;
+uniform float warpTime;
+
 float DistributionGGX(vec3 N, vec3 H, float roughness);
 float GeometrySchlickGGX(float NdotV, float roughness);
 float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness);
@@ -33,12 +37,30 @@ float ShadowCalculation(vec4 LSfPos, vec3 normal, vec3 lightDir);
 vec3 toneReinhard(vec3 x);
 
 void main() {
-	vec3 position = texture(positionBuf, texCoord).rgb;
-	vec3 normal = texture(normalBuf, texCoord).rgb;
-	vec3 albedo = texture(albedoBuf, texCoord).rgb;
-	vec3 mra = texture(mraBuf, texCoord).rgb;
-	vec3 emission = texture(emissionBuf, texCoord).rgb;
-	vec4 positionLS = texture(positionLSBuf, texCoord).rgba;
+	
+	vec2 uv = texCoord;
+	if (warpOn) {
+		if (effect) {
+			// sine wave distort
+			float strength = 0.02;
+			float speed    = 5.0;
+			uv.x += sin(uv.y * 20.0 + warpTime * speed) * strength;
+			uv.y += cos(uv.x * 20.0 + warpTime * speed) * strength;
+		} else {
+			// radial swirl
+			vec2 c = uv - 0.5;
+			float r = length(c);
+			float a = atan(c.y, c.x) + warpTime * 0.5 * (1.0 - r);
+			uv = 0.5 + vec2(cos(a), sin(a)) * r;
+		}
+	}
+
+	vec3 position = texture(positionBuf, uv).rgb;
+	vec3 normal = texture(normalBuf, uv).rgb;
+	vec3 albedo = texture(albedoBuf, uv).rgb;
+	vec3 mra = texture(mraBuf, uv).rgb;
+	vec3 emission = texture(emissionBuf, uv).rgb;
+	vec4 positionLS = texture(positionLSBuf, uv).rgba;
 
 	albedo = vec3(
 		pow(albedo.x, 2.2),
@@ -117,17 +139,18 @@ void main() {
 		vec3 specular = numerator / denominator;
 		
 		// add to outgoing radiance Lo
-		//float NdotL = max(dot(N, L), 0.0);
+		float NdotL = max(dot(N, L), 0.0);
+		float wrapped = NdotL * 0.5 + 0.5;
 		//Lo += (kD * albedo / PI + specular) * radiance * NdotL;
 
 		//float rawNL = dot(N, L);
 		//float wrap  = rawNL * 0.5 + 0.5;
 		//wrap        = max(wrap, 0.0);
 		//Lo += (kD * albedo / PI + specular) * radiance * wrap;
-		float rawNL = dot(N, L);
-		float bias   = 0.1;
-		float softNL = smoothstep(0.0, bias, rawNL);
-		Lo += (kD * albedo/PI + specular) * radiance * softNL;
+		//float rawNL = dot(N, L);
+		//float bias   = 0.1;
+		//float softNL = smoothstep(0.0, bias, rawNL);
+		Lo += (kD * albedo/PI + specular) * radiance * wrapped;
 	}
 	
 	//float shadow = ShadowCalculation(positionLS, N, shadowLightDir);

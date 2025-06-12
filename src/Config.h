@@ -133,6 +133,7 @@ namespace Config {// --- Global Game Settings (Config::<thing you want>)---
     constexpr float SPELL_PROJECTILE_LIFETIME = 2.0f;
     constexpr glm::vec3 SPELL_PROJECTILE_SCALE = glm::vec3(0.05f, 0.05f, 0.6f);
     constexpr float SPELL_DAMAGE_AMOUNT = 25.0f;
+    constexpr float BOOK_TIME_LIMIT = 5.0f;
 
     // Scene
     constexpr float GROUND_SIZE = 20.0f;
@@ -164,6 +165,11 @@ namespace Config {// --- Global Game Settings (Config::<thing you want>)---
 
     // A random float generator
     inline float randFloat(float l, float h) {
+        if (h < l) {
+            float t = h;
+            h = l;
+            l = t;
+        }
         static std::mt19937 generator(std::random_device{}());
         std::uniform_real_distribution<float> distribution(l, h);
         return distribution(generator);
