@@ -2621,7 +2621,7 @@ public:
 		};
 		for (auto& orb : orbCollectibles) {
             // Particle emission for uncollected, idle orbs
-            if (!orb.collected && orb.state == OrbState::IDLE && particleSystem) {
+            if (!orb.collected && (orb.state == OrbState::IDLE || orb.state == OrbState::LEVITATING) && particleSystem) {
                 float current_particle_system_time = particleSystem->getCurrentTime();
 
                 float p_speed_min = 0.05f;
@@ -7234,6 +7234,8 @@ int main(int argc, char* argv[]) {
 		ma_engine_uninit(&engine);
 		return -1;
 	}
+
+	ma_sound_set_volume(&sound, 0.25f);
 
 	// Load spell sound effect
 	if (ma_sound_init_from_file(&engine, "../resources/firespellsound.mp3", 0, NULL, NULL, &spell_sound) != MA_SUCCESS) {
