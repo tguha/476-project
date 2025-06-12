@@ -9,6 +9,8 @@ LightningElemental::LightningElemental(const glm::vec3& position, float hitpoint
     aggroRange = Config::LIGHTNING_ELEMENTAL_AGGRO_RANGE; // Range for aggro detection
     sightRange = Config::LIGHTNING_ELEMENTAL_SIGHT_RANGE; // Sight range for lightning elemental
     territoryRadius = Config::LIGHTNING_ELEMENTAL_TERRITORY_RADIUS; // Territory radius for lightning elemental
+    teleport_timing = Config::LIGHTNING_ELEMENTAL_TP_INTERVAL;
+    teleport_clock = 0.0f;
 }
 
 void LightningElemental::moveTowardsPlayer(const glm::vec3& playerPosition, float deltaTime) {
@@ -88,6 +90,6 @@ void LightningElemental::tpInterp(float deltaTime) {
         setPosition(midstep);
         //cout << "tt: " << teleport_timing << endl;
         //cout << "dt: " << deltaTime << endl;
-        teleport_clock -= 10 * deltaTime;
+        teleport_clock -= 20 * deltaTime;
     }
 }
