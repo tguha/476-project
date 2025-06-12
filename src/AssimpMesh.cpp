@@ -67,20 +67,20 @@ void AssimpMesh::Draw(const std::shared_ptr<Program> prog) const {
     // build an ID array in the same order as uMaps[0..5]
     GLuint ids[6] = { 0,0,0,0,0,0 };
     for (auto& t : textures) {
-        if (t.type == "texture_diffuse")   ids[0] = t.id;
-        if (t.type == "texture_specular")  ids[1] = t.id;
-        if (t.type == "texture_roughness") ids[2] = t.id;
-        if (t.type == "texture_metalness") ids[3] = t.id;
-        if (t.type == "texture_normal")     ids[4] = t.id;
-        if (t.type == "texture_emission")   ids[5] = t.id;
+        if (t.type == "texAlbedo")    ids[0] = t.id;
+        if (t.type == "texNormal")    ids[1] = t.id;
+        if (t.type == "texRoughness") ids[2] = t.id;
+        if (t.type == "texMetalness") ids[3] = t.id;
+        if (t.type == "texAO")        ids[4] = t.id;
+        if (t.type == "texEmission")  ids[5] = t.id;
     }
 
-    // bind each either to the real map or your 1�1 fallback
+    // bind each either to the real map or 1x1 fallback
     for (int i = 0; i < 6; ++i) {
         glActiveTexture(GL_TEXTURE0 + i);
         GLuint toBind = ids[i]
             ? ids[i]
-            : (i == 4 ? TextureManager::flatNormal()
+            : (i == 1 ? TextureManager::flatNormal()
                 : (i == 5 ? TextureManager::black() // <-- black for emission
                     : TextureManager::white())); // white for all others
         glBindTexture(GL_TEXTURE_2D, toBind);

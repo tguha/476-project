@@ -11,6 +11,7 @@ std::shared_ptr<Texture> titleScreenTexture;
 std::shared_ptr<Program> titleShader;
 std::shared_ptr<Program> keyHUDshader;
 std::shared_ptr<Texture> keyScreenTexture;
+std::shared_ptr<Texture> catSadScreenTexture;
 
 GLuint screenVAO = 0;
 GLuint screenVBO = 0;
@@ -149,6 +150,12 @@ void initKeyFBO(const std::string& resourceDirectory, int width, int height) {
     keyScreenTexture->setUnit(0);
     keyScreenTexture->setWrapModes(GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE);
 
+    catSadScreenTexture = make_shared<Texture>();
+    catSadScreenTexture->setFilename(resourceDirectory + "/sadcat.png");
+    catSadScreenTexture->init();
+    catSadScreenTexture->setUnit(0);
+    catSadScreenTexture->setWrapModes(GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE);
+
     initKeyQuad();
 }
 
@@ -170,6 +177,28 @@ void DrawKeyHUD(std::shared_ptr<Program> shader, GLuint tex, int width, int heig
         glBindVertexArray(keyHUDVAO);
         glDrawArrays(GL_TRIANGLES, 0, 6);
     }
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+    shader->unbind();
+}
+
+void DrawTextoScreen(std::shared_ptr<Program> shader, GLuint tex, int width, int height, glm::vec2 pos, glm::vec2 size) {
+    shader->bind();
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glUniform1i(shader->getUniform("screenTexture"), 0);
+    glUniform2f(shader->getUniform("screenSize"), width, height);
+
+    glm::vec2 centerPx = pos; // Center position for the text
+    glm::vec2 sizePx = size; // Size for the text
+
+    glUniform2f(shader->getUniform("center_px"), centerPx.x, centerPx.y);
+    glUniform2f(shader->getUniform("size_px"), sizePx.x, sizePx.y);
+
+    glBindVertexArray(keyHUDVAO);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindVertexArray(0);
 
     glBindTexture(GL_TEXTURE_2D, 0);
     shader->unbind();

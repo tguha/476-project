@@ -26,19 +26,25 @@ namespace Config {// --- Global Game Settings (Config::<thing you want>)---
     inline static bool DEBUG_LIGHTING = false;
     inline static bool DEBUG_GEOM = false;
     inline static bool DEBUG_AABBS = false;
+    inline static bool WRITE_FBOS = false;
 
     // Rendering & Shaders
     constexpr int MAX_BONES = 200;
-    constexpr float ORTHO_SIZE = 60.0f;
+    constexpr float ORTHO_SIZE = 40.0f;
     inline static bool SHADOW = true;
-    inline static float EXPOSURE = 0.5f; // Default exposure
-    inline static float SATURATION = 2.7f; // Default saturation
+    inline static float EXPOSURE = 1.5f; // Default exposure
+    inline static float SATURATION = 1.7f; // Default saturation
 	inline static vec3 LIGHT_COLOR = vec3(1.0f, 1.0f, 1.0f); // Default light color
+    inline static bool FIRST_PASS = true;
+    inline static bool DEFER = false;
+    constexpr int MAX_LIGHTS = 100;
+    constexpr vec3 CANDELABRA_L_COLOR = vec3(1.0f, 0.58f, 0.25f) * 10.0f;
+    constexpr vec3 SHELF_L_COLOR = vec3(1.0f, 0.58f, 0.25f) * 5.0f;
 
     // Game Elements --- should be set to true to enable drawing of the system
     constexpr bool DRAW_PARTICLES = true;
     constexpr bool DRAW_HEALTHBAR = true;
-	constexpr bool DRAW_MINIMAP = true;
+	constexpr bool DRAW_MINIMAP = false;
     constexpr bool DRAW_PLAYER_DAMAGE = true;
     constexpr bool DRAW_PAW_PRINTS = true;
 
@@ -131,6 +137,8 @@ namespace Config {// --- Global Game Settings (Config::<thing you want>)---
     // Scene
     constexpr float GROUND_SIZE = 20.0f;
     constexpr float GROUND_HEIGHT = 0.0f;
+    constexpr vec3 LIB_CENTER = vec3(0.0f, GROUND_HEIGHT, 0.0f);
+    constexpr vec3 BOSS_CENTER = vec3(0.0f, GROUND_HEIGHT, 60.0f);
 
     // Rotation Constants
     constexpr float HALF_PI = glm::half_pi<float>();
@@ -143,6 +151,14 @@ namespace Config {// --- Global Game Settings (Config::<thing you want>)---
     constexpr float PAW_SPACING = 0.1f;
     inline static vec2 LAST_PAW_POS;
     constexpr float MIN_PAW_DIST = 0.2f;
+
+    // Sun / Moon Settings
+    inline static vec3 sunPos;
+    inline static vec3 sunColor = vec3(1.0f, 0.9f, 0.6f);
+    inline static float previousAngle = 0.0f;
+    inline static vec3 sunOrbitCenter = LIB_CENTER;
+    inline static vec3 targetOrbitCenter = LIB_CENTER;
+    inline static vec3 shadowTargetCenter = LIB_CENTER;
 
     // --- Utility Functions ---
 
