@@ -365,33 +365,29 @@ AssimpMesh AssimpModel::processMesh(aiMesh* mesh, const aiScene* scene) {
 
     aiMaterial* material = scene->mMaterials[mesh->mMaterialIndex];
 
-    // diffuse maps
-    std::vector<AssimpTexture> diffuseMaps = loadMaterialTextures(material, aiTextureType_DIFFUSE, "texture_diffuse", scene);
+    // albedo maps
+    std::vector<AssimpTexture> diffuseMaps = loadMaterialTextures(material, aiTextureType_BASE_COLOR, "texAlbedo", scene);
     textures.insert(textures.end(), diffuseMaps.begin(), diffuseMaps.end());
 
-    // specular maps
-    std::vector<AssimpTexture> specularMaps = loadMaterialTextures(material, aiTextureType_SPECULAR, "texture_specular", scene);
-    textures.insert(textures.end(), specularMaps.begin(), specularMaps.end());
-
     // normal maps
-    std::vector<AssimpTexture> normalMaps = loadMaterialTextures(material, aiTextureType_HEIGHT, "texture_normal", scene);
+    std::vector<AssimpTexture> normalMaps = loadMaterialTextures(material, aiTextureType_NORMAL_CAMERA, "texNormal", scene);
     textures.insert(textures.end(), normalMaps.begin(), normalMaps.end());
 
-    // height maps
-    std::vector<AssimpTexture> heightMaps = loadMaterialTextures(material, aiTextureType_AMBIENT, "texture_height", scene);
-    textures.insert(textures.end(), heightMaps.begin(), heightMaps.end());
-
-    // roughness maps
-    std::vector<AssimpTexture> roughnessMaps = loadMaterialTextures(material, aiTextureType_SHININESS, "texture_roughness", scene);
-    textures.insert(textures.end(), roughnessMaps.begin(), roughnessMaps.end());
+    // emission maps
+    std::vector<AssimpTexture> emissionMaps = loadMaterialTextures(material, aiTextureType_EMISSION_COLOR, "texEmission", scene);
+    textures.insert(textures.end(), emissionMaps.begin(), emissionMaps.end());
 
     // metalness maps
-    std::vector<AssimpTexture> metalnessMaps = loadMaterialTextures(material, aiTextureType_OPACITY, "texture_metalness", scene);
+    std::vector<AssimpTexture> metalnessMaps = loadMaterialTextures(material, aiTextureType_METALNESS, "texMetalness", scene);
     textures.insert(textures.end(), metalnessMaps.begin(), metalnessMaps.end());
 
-    // emission maps
-    std::vector<AssimpTexture> emissionMaps = loadMaterialTextures(material, aiTextureType_EMISSIVE, "texture_emission", scene);
-    textures.insert(textures.end(), emissionMaps.begin(), emissionMaps.end());
+    // roughness maps
+    std::vector<AssimpTexture> roughnessMaps = loadMaterialTextures(material, aiTextureType_DIFFUSE_ROUGHNESS, "texRoughness", scene);
+    textures.insert(textures.end(), roughnessMaps.begin(), roughnessMaps.end());
+
+    // ao maps
+    std::vector<AssimpTexture> aoMaps = loadMaterialTextures(material, aiTextureType_AMBIENT_OCCLUSION, "texAO", scene);
+    textures.insert(textures.end(), aoMaps.begin(), aoMaps.end());
 
     ExtractBoneWeightForVertices(vertices, mesh, scene);
 
@@ -534,23 +530,25 @@ void AssimpModel::updateInstancingOffsetVBO(const std::vector<glm::mat4>& instan
 void AssimpModel::DrawInstanced(const std::vector<glm::mat4>& instanceOffsetMatrices) {
 
     for (unsigned int i = 0; i < this->meshes.size(); ++i) {
-        GLuint ids[6] = { 0, 0, 0, 0, 0, 0 };
-        for (const auto& t : meshes[i].textures) {
-            if (t.type == "texture_diffuse")   ids[0] = t.id;
-            if (t.type == "texture_specular")  ids[1] = t.id;
-            if (t.type == "texture_roughness") ids[2] = t.id;
-            if (t.type == "texture_metalness") ids[3] = t.id;
-            if (t.type == "texture_normal")    ids[4] = t.id;
-            if (t.type == "texture_emission")  ids[5] = t.id;
+        // build an ID array in the same order as uMaps[0..4]
+        GLuint ids[6] = { 0,0,0,0,0,0 };
+        for (auto& t : meshes[i].textures) {
+            if (t.type == "texAlbedo")    ids[0] = t.id;
+            if (t.type == "texNormal")    ids[1] = t.id;
+            if (t.type == "texRoughness") ids[2] = t.id;
+            if (t.type == "texMetalness") ids[3] = t.id;
+            if (t.type == "texAO")        ids[4] = t.id;
+            if (t.type == "texEmission")  ids[5] = t.id;
         }
 
+        // bind each either to the real map or 1x1 fallback
         for (int i = 0; i < 6; ++i) {
             glActiveTexture(GL_TEXTURE0 + i);
             GLuint toBind = ids[i]
                 ? ids[i]
-                : (i == 4 ? TextureManager::flatNormal()
-                        : (i == 5 ? TextureManager::black()
-                                    : TextureManager::white()));
+                : (i == 1 ? TextureManager::flatNormal()
+                    : (i == 5 ? TextureManager::black() // <-- black for emission
+                        : TextureManager::white())); // white for all others
             glBindTexture(GL_TEXTURE_2D, toBind);
         }
 

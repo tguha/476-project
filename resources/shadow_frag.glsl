@@ -11,6 +11,7 @@ uniform vec3 MatAlbedo;
 uniform float MatRough;
 uniform float MatMetal;
 uniform vec3 MatEmit;
+uniform float MatAO;
 
 uniform bool hasMaterial;
 
@@ -80,26 +81,8 @@ vec3 toneReinhard(vec3 x) {
 }
 
 float ShadowCalculation(vec4 LSfPos) {
-    /*
-	float bias = .005;
-	vec3 shiftedCords = (LSfPos.xyz + vec3(1.0)) * 0.5; // shift the coordinates from -1, 1 to 0 ,1
-	float lightDepth = texture(shadowDepth, shiftedCords.xy).r; // read off the stored depth (.) from the ShadowDepth, using the shifted.xy
-	float currentDepth = shiftedCords.z - bias; // compare to the current depth (.z) of the projected depth
-	vec2 texelScale = 1.0 / textureSize(shadowDepth, 0);
-	float percentShadow = 0.0;
-	for (int i = -2; i <= 2; i++) {
-		for (int j = -2; j <= 2; j++) {
-			lightDepth = texture(shadowDepth, shiftedCords.xy + vec2(i, j) * texelScale).r;
-			if (currentDepth > lightDepth) {
-				percentShadow += 1.0;
-			}
-		}
-	}
-	return percentShadow / 25.0; // 5x5 = 25 samples
-    */
-    
     vec3 projCoords = LSfPos.xyz / LSfPos.w;
-    projCoords = projCoords * 0.5 + 0.5; // Convert to [0,1]
+    projCoords = projCoords * 0.5 + 0.5; // Convert to (0,1)
 
     if (projCoords.z > 1.0)
         return 0.0;
@@ -119,8 +102,7 @@ float ShadowCalculation(vec4 LSfPos) {
     }
     shadow /= 25.0;
 
-    // Optional: soft shadow fade at edges
-    shadow = smoothstep(0.0, 1.0, shadow);
+    shadow = smoothstep(0.0, 1.0, shadow); // soft shadow fade at edges
 
     return shadow;
 }

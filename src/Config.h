@@ -26,19 +26,25 @@ namespace Config {// --- Global Game Settings (Config::<thing you want>)---
     inline static bool DEBUG_LIGHTING = false;
     inline static bool DEBUG_GEOM = false;
     inline static bool DEBUG_AABBS = false;
+    inline static bool WRITE_FBOS = false;
 
     // Rendering & Shaders
     constexpr int MAX_BONES = 200;
     constexpr float ORTHO_SIZE = 40.0f;
     inline static bool SHADOW = true;
-    inline static float EXPOSURE = 0.5f; // Default exposure
-    inline static float SATURATION = 2.7f; // Default saturation
+    inline static float EXPOSURE = 1.5f; // Default exposure
+    inline static float SATURATION = 1.7f; // Default saturation
 	inline static vec3 LIGHT_COLOR = vec3(1.0f, 1.0f, 1.0f); // Default light color
+    inline static bool FIRST_PASS = true;
+    inline static bool DEFER = false;
+    constexpr int MAX_LIGHTS = 100;
+    constexpr vec3 CANDELABRA_L_COLOR = vec3(1.0f, 0.58f, 0.25f) * 10.0f;
+    constexpr vec3 SHELF_L_COLOR = vec3(1.0f, 0.58f, 0.25f) * 5.0f;
 
     // Game Elements --- should be set to true to enable drawing of the system
     constexpr bool DRAW_PARTICLES = true;
     constexpr bool DRAW_HEALTHBAR = true;
-	constexpr bool DRAW_MINIMAP = true;
+	constexpr bool DRAW_MINIMAP = false;
     constexpr bool DRAW_PLAYER_DAMAGE = true;
     constexpr bool DRAW_PAW_PRINTS = true;
 
