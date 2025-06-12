@@ -391,7 +391,9 @@ struct LocksOnDoor {
     bool animDone = false; // Whether the unlock animation is done
     int keyIndex = -1; // Index of the key used to unlock the door
     bool playUnlockSound = false; // Whether to play the unlock sound
+};
 
 struct ColorFilter {
     std::string name;
     glm::vec4 tintColor; // RGB + optional alpha
+};
