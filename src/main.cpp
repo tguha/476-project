@@ -210,8 +210,9 @@ public:
 
 	float wasd_sens = 0.5f;
 
-	glm::vec3 eye = glm::vec3(-6, 1.03, 0); /*MINI MAP*/
-	glm::vec3 lookAt = glm::vec3(0, 0, 0); /*MINI MAP*/
+	/*MINI MAP*/
+	glm::vec3 eye = glm::vec3(-6, 1.03, 0); 
+	glm::vec3 lookAt = glm::vec3(0, 0, 0);
 	glm::vec3 up = glm::vec3(0, 1, 0);
 	bool CULL = false;
 
