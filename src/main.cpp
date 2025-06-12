@@ -61,8 +61,6 @@ using namespace glm;
 ma_engine engine;
 ma_sound sound;
 ma_sound spell_sound;
-ma_sound key_drop;
-ma_sound key_pickup;
 ma_sound door_sound;
 ma_sound boss_music;
 ma_sound key_unlock_sound;
@@ -71,7 +69,6 @@ ma_sound firework_sound;
 ma_sound victory_sound;
 ma_sound game_over_sound;
 ma_sound boss_slam_sound;
-
 
 class Application : public EventCallbacks {
 public:
@@ -1604,7 +1601,22 @@ public:
 		exit_door_open = new Animation(resourceDirectory + "/cluster_assets/door/door_anim.dae", exit_door_rig, 0);
 		exit_door_animator = new Animator(exit_door_open);
 
+		/*
+		* KEY COLLECTIBLE IS BROKEN. THIS IS THE COMMENTED OUT PROGRESS OF MADILINE SINCE PROJECT DOESN'T COMPILE WITH IT
+		//key
 		key = new AssimpModel(resourceDirectory + "/Key_and_Lock/key.obj");
+
+		// Collectible key1 = Collectible(key, vec3(0.0, 2.0, 0.0), 0.1f,  vec3(0.9, 0.9, 0.9), SpellType::NONE);
+		// keyCollectibles.push_back(key1);
+
+
+		Collectible key1 = Collectible(key, vec3(0.0, 2.0, 0.0), 0.1f,  vec3(0.9, 0.9, 0.9), SpellType::NONE);
+		keyCollectibles.push_back(key1);
+		*/
+		//lock
+
+		key = new AssimpModel(resourceDirectory + "/Key_and_Lock/key.obj");
+
 		lock = new AssimpModel(resourceDirectory + "/Key_and_Lock/lockCopy.obj");
 		lockHandle = new AssimpModel(resourceDirectory + "/Key_and_Lock/lockHandle.obj");
 
@@ -1845,7 +1857,7 @@ public:
 				glUniform3f(shader->getUniform("MatEmit"), 5.0f, 4.5f, 2.5f);
 				glUniform1f(shader->getUniform("MatAO"), 1.0f);
 				break;
-			case Material:: player_green: 
+			case Material:: player_green: //add this to main
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.35f, 0.914f, 0.4f);
 				glUniform1f(shader->getUniform("MatRough"), 0.8f);
 				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
@@ -2560,18 +2572,11 @@ public:
 	//TODO: Add particle effects to orbs
 	void drawOrbs(shared_ptr<Program> simpleShader, shared_ptr<MatrixStack> Model) {
 		// --- Collision Check Logic ---
-
 		for (auto& orb : orbCollectibles) {
-			
-			
 			// Perform collision check ONLY if not collected AND in the IDLE state
 			if (!orb.collected && orb.state == OrbState::IDLE && // <<<--- ADD STATE CHECK
 				checkAABBCollision(playerBB->min, playerBB->max, orb.AABBmin, orb.AABBmax)) {
 				orb.collected = true;
-
-				/* possible sound effect */
-
-				
 				// orb.state = OrbState::COLLECTED; // Optionally set state
 
 				bool allSpellsEmpty = true;
@@ -2596,7 +2601,6 @@ public:
 				// orbsCollectedCount++; // This might now just mean "spell charges" or be repurposed
 				spellCounts[orb.spellType]++; // Increment the count for the specific spell type
 				orbsCollectedCount++; // Increment the total orbs collected count
-
 
 				// Debug output for spell type equipped
 				std::string spellTypeName = "NONE";
@@ -2701,7 +2705,7 @@ public:
 			if (orb.collected && spellCounts[orb.spellType] > 0) {
 				// Calculate position behind the player (same logic as before)
 				float backOffset = 0.4f;
-				float upOffsetBase = 0.6f; 
+				float upOffsetBase = 0.6f;
 				float stackOffset = orb.scale * 1.5f;
 				float sideOffset = sideOffsets[orb.spellType];
 				glm::vec3 playerForward = normalize(manMoveDir);
@@ -2935,9 +2939,6 @@ public:
 						keyPos.y -= 1.5f; // Adjust height for key position
 						keyCollectibles.emplace_back(key, keyPos, 0.1f, Material::gold, SpellType::NONE);
 						enemy->setDropSpawned(true); // Mark that the key has been spawned
-            
-            // Play key drop sound effect
-				  	ma_sound_start(&key_drop);
 					}
 				}
 
@@ -3761,8 +3762,6 @@ public:
 						interacted = true;
 						interactedwithBook = true; // Set this to true to indicate interaction occurred
 
-						/* possible sound effect */
-
 					}
 				}
 			}
@@ -3821,8 +3820,6 @@ public:
 						newBook.startFalling(groundY, player->getPosition());
 
 						interacted = true;
-
-						/* possible sound effect */
 
 					}
 				}
@@ -5151,8 +5148,8 @@ public:
 		}
 	}
 
-	/* Top down camera view  for mini map */
-	mat4 SetTopView(shared_ptr<Program> curShade) { 
+	/* top down camera view  */
+	mat4 SetTopView(shared_ptr<Program> curShade) { /*MINI MAP*/
 		mat4 Cam = glm::lookAt(eye + vec3(0, 12, 0), eye, lookAt - eye);
 		glUniformMatrix4fv(curShade->getUniform("V"), 1, GL_FALSE, value_ptr(Cam));
 		return Cam;
@@ -5165,9 +5162,8 @@ public:
 		return ortho;
   }
 
-	// Draws player on mini map 
-	void drawMiniPlayer(shared_ptr<Program> curS, shared_ptr<MatrixStack> Model) { 
-
+	void drawMiniPlayer(shared_ptr<Program> curS, shared_ptr<MatrixStack> Model) { /*MINI MAP*/
+		//sphere->Draw(shader);
 		curS->bind();
 
 		// Model matrix setup
@@ -5175,7 +5171,7 @@ public:
 		Model->loadIdentity();
 		Model->translate(player->getPosition()); // Use final player position
 		// *** USE CAMERA ROTATION FOR MODEL ***
-		
+		// Model->rotate(manRot.y, vec3(0, 1, 0)); // <<-- FIXED ROTATION
 		Model->scale(1.0);
 
 		// Update VISUAL bounding box (can be different from collision box if needed)
@@ -5187,9 +5183,19 @@ public:
 			playerBB->min, // This is the visual/interaction AABB
 			playerBB->max);
 
+		// Set uniforms and draw
+		//glUniform1i(curS->getUniform("hasTexture"), 1); //0.6f, 0.2f, 0.8f
+		//0.8f, 0.4f, 0.2f
+		// 0.95, 0.78, 0.14
+		/*glUniform3f(curS->getUniform("MatAmb"), 0.95f, 0.78f, 0.14f);
+		glUniform3f(curS->getUniform("MatDif"), 0.95f, 0.78f, 0.14f);
+		glUniform3f(curS->getUniform("MatSpec"), 0.3f, 0.3f, 0.3f);
+		glUniform1f(curS->getUniform("MatShine"), 8.0f);*/
 		SetMaterial(curS, Material::player_green);
 		setModel(curS, Model);
+		//player_rig->Draw(curS);
 		sphere->Draw(curS);
+
 		Model->popMatrix();
 		curS->unbind();
 	}
@@ -5294,11 +5300,53 @@ public:
 		}
 	}
 
-	// Draw three locks
 	void drawLock(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model, float currentTime) {
 		//need models
 		shader->bind();
 
+
+		// //top lock
+
+		// Model->pushMatrix();
+		// 	Model->loadIdentity();
+		// 	// Model->translate(vec3(0.0f, 2.5f, 38.5f));
+		// 	Model->translate(vec3(bossEntrancePos.x, bossEntrancePos.y + 2.5f, bossEntrancePos.z));  //doorPosition
+		// 	Model->rotate(glm::radians(bossEntranceRot), vec3(0.0f, 1.0f, 0.0f));
+		// 	// Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+		// 	Model->scale(0.1f);
+		// 	SetMaterial(shader, Material::gold); //gold
+		// 	setModel(shader, Model);
+		// 	lock->Draw(shader);
+		// 	lockHandle->Draw(shader);
+		// Model->popMatrix();
+
+		// //middle lock
+		// Model->pushMatrix();
+		// 	Model->loadIdentity();
+		// 	// Model->translate(vec3(0.0f, 1.5f, 38.5f));  //doorPosition
+		// 	Model->translate(vec3(bossEntrancePos.x, bossEntrancePos.y + 1.5f, bossEntrancePos.z));
+		// 	Model->rotate(glm::radians(bossEntranceRot), vec3(0.0f, 1.0f, 0.0f));
+		// 	// Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+		// 	Model->scale(0.1f);
+		// 	SetMaterial(shader, Material::gold); //gold
+		// 	setModel(shader, Model);
+		// 	lock->Draw(shader);
+		// 	lockHandle->Draw(shader);
+		// Model->popMatrix();
+
+		// //lower lock
+		// Model->pushMatrix();
+		// 	Model->loadIdentity();
+		// 	// Model->translate(vec3(0.0f, 0.5f, 38.5f));
+		// 	Model->translate(vec3(bossEntrancePos.x, bossEntrancePos.y + 0.5f, bossEntrancePos.z));
+		// 	Model->rotate(glm::radians(bossEntranceRot), vec3(0.0f, 1.0f, 0.0f));
+		// 	// Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+		// 	Model->scale(0.1f);
+		// 	SetMaterial(shader, Material::gold); //gold
+		// 	setModel(shader, Model);
+		// 	lock->Draw(shader);
+		// 	lockHandle->Draw(shader);
+		// Model->popMatrix();
 
 		for (auto& l : lockOnDoors) {
 			if (l.animDone) continue; // Skip if animation is done
@@ -5350,11 +5398,13 @@ public:
 
 				Model->pushMatrix();
 					Model->loadIdentity();
+					// Model->translate(vec3(0.0f, 2.5f, 38.5f));  //doorPosition
 					Model->translate(l.position);
 					Model->rotate(glm::radians(l.RotY), vec3(0.0f, 1.0f, 0.0f));
 					Model->rotate(glm::radians(l.RotX), vec3(0.0f, 0.0f, 1.0f)); // Rotate the handle
+					// Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
 					Model->scale(0.1f);
-					SetMaterial(shader, Material::gold); 
+					SetMaterial(shader, Material::gold); //gold
 					setModel(shader, Model);
 					lock->Draw(shader);
 				Model->popMatrix();
@@ -5362,21 +5412,27 @@ public:
 				if (elapsedTime > fallStartDelay) {
 					Model->pushMatrix();
 						Model->loadIdentity();
+						// Model->translate(vec3(0.0f, 2.5f, 38.5f));
 						Model->translate(l.position);
 						Model->rotate(glm::radians(l.RotY), vec3(0.0f, 1.0f, 0.0f));
-						Model->rotate(1 * glm::radians(15.0) + lTheta, vec3(0.0f, 0.0f, 1.0f)); 
+						// Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+						Model->rotate(1 * glm::radians(15.0) + lTheta, vec3(0.0f, 0.0f, 1.0f)); //max -30?
 						Model->scale(0.1f);
-						SetMaterial(shader, Material::brown); 
+						// Model->rotate(  glm::radians(90.0) , vec3(0.0f, 1.0f, 0.0f)); //max -30
+						SetMaterial(shader, Material::brown); //brown
 						setModel(shader, Model);
 						lockHandle->Draw(shader);
 					Model->popMatrix();
 				} else {
 					Model->pushMatrix();
 						Model->loadIdentity();
+						// Model->translate(vec3(0.0f, 2.5f, 38.5f));
 						Model->translate(l.position);
 						Model->rotate(glm::radians(l.RotY), vec3(0.0f, 1.0f, 0.0f));
+						// Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
 						Model->scale(0.1f);
-						SetMaterial(shader, Material::brown); 
+						// Model->rotate(  glm::radians(90.0) , vec3(0.0f, 1.0f, 0.0f)); //max -30
+						SetMaterial(shader, Material::brown); //brown
 						setModel(shader, Model);
 						lockHandle->Draw(shader);
 					Model->popMatrix();
@@ -5412,13 +5468,80 @@ public:
 
 		shader->bind();
 
+		/*
+
+
+		Model->pushMatrix();
+			Model->loadIdentity();
+			Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			//Model->scale(0.1f);
+			SetMaterialMan(shader, 5); //gold
+
+			//top lock
+			Model->pushMatrix();
+				Model->translate(vec3(0.0f, 2.5f, 38.5f));
+				Model->scale(0.1f);
+				setModel(shader, Model);
+				lock->Draw(shader);
+			Model->popMatrix();
+			//top handle
+			Model->pushMatrix();
+				Model->translate(vec3(0.0f, 2.5f, 38.5f));
+				Model->scale(0.1f);
+				Model->rotate( 1* glm::radians(15.0) + lTheta , vec3(0.0f, 0.0f, 1.0f)); //max -30?
+				setModel(shader, Model);
+				lockHandle->Draw(shader);
+			Model->popMatrix();
+
+			//middle lock
+			Model->pushMatrix();
+				Model->translate(vec3(0.0f, 1.5f, 38.5f));
+				Model->scale(0.1f);
+				setModel(shader, Model);
+				lock->Draw(shader);
+			Model->popMatrix();
+
+			//middle handle
+			Model->pushMatrix();
+				Model->translate(vec3(0.0f, 1.5f, 38.5f));
+				Model->scale(0.1f);
+				Model->rotate( 1* glm::radians(15.0) + lTheta , vec3(0.0f, 0.0f, 1.0f));
+				setModel(shader, Model);
+				lockHandle->Draw(shader);
+			Model->popMatrix();
+
+			//bottom lock
+			Model->pushMatrix();
+				Model->translate(vec3(0.0f, 0.5f, 38.5f));
+				Model->scale(0.1f);
+				setModel(shader, Model);
+				lock->Draw(shader);
+			Model->popMatrix();
+
+			//bottom handle
+			Model->pushMatrix();
+				Model->translate(vec3(0.0f, 0.5f, 38.5f));
+				Model->scale(0.1f);
+				Model->rotate( 1* glm::radians(15.0) + lTheta , vec3(0.0f, 0.0f, 1.0f));
+				setModel(shader, Model);
+				lockHandle->Draw(shader);
+			Model->popMatrix();
+
+
+		Model->popMatrix();
+
+		*/
+
+
 		//top lock
 		Model->pushMatrix();
 			Model->loadIdentity();
+			// Model->translate(vec3(0.0f, 2.5f, 38.5f));  //doorPosition
 			Model->translate(vec3(bossEntrancePos.x, bossEntrancePos.y + 2.5f, bossEntrancePos.z));
 			Model->rotate(glm::radians(bossEntranceRot), vec3(0.0f, 1.0f, 0.0f));
+			// Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
 			Model->scale(0.1f);
-			SetMaterial(shader, Material::gold);
+			SetMaterial(shader, Material::gold); //gold
 			setModel(shader, Model);
 			lock->Draw(shader);
 		Model->popMatrix();
@@ -5426,11 +5549,14 @@ public:
 		//top handle
 		Model->pushMatrix();
 			Model->loadIdentity();
+			// Model->translate(vec3(0.0f, 2.5f, 38.5f));
 			Model->translate(vec3(bossEntrancePos.x, bossEntrancePos.y + 2.5f, bossEntrancePos.z));
 			Model->rotate(glm::radians(bossEntranceRot), vec3(0.0f, 1.0f, 0.0f));
+			// Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
 			Model->rotate(1 * glm::radians(15.0) + lTheta, vec3(0.0f, 0.0f, 1.0f)); //max -30?
 			Model->scale(0.1f);
-			SetMaterial(shader, Material::brown); 
+			// Model->rotate(  glm::radians(90.0) , vec3(0.0f, 1.0f, 0.0f)); //max -30
+			SetMaterial(shader, Material::brown); //brown
 			setModel(shader, Model);
 			lockHandle->Draw(shader);
 		Model->popMatrix();
@@ -5438,10 +5564,12 @@ public:
 		//middle lock
 		Model->pushMatrix();
 			Model->loadIdentity();
+			// Model->translate(vec3(0.0f, 1.5f, 38.5f));
 			Model->translate(vec3(bossEntrancePos.x, bossEntrancePos.y + 1.5f, bossEntrancePos.z));
 			Model->rotate(glm::radians(bossEntranceRot), vec3(0.0f, 1.0f, 0.0f));
+			// Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
 			Model->scale(0.1f);
-			SetMaterial(shader, Material::gold); 
+			SetMaterial(shader, Material::gold); //gold
 			setModel(shader, Model);
 			lock->Draw(shader);
 		Model->popMatrix();
@@ -5449,11 +5577,14 @@ public:
 		//midle handle
 		Model->pushMatrix();
 			Model->loadIdentity();
+			// Model->translate(vec3(0.0f, 1.5f, 38.5f));
 			Model->translate(vec3(bossEntrancePos.x, bossEntrancePos.y + 1.5f, bossEntrancePos.z));
 			Model->rotate(glm::radians(bossEntranceRot), vec3(0.0f, 1.0f, 0.0f));
-			Model->rotate(1 * glm::radians(15.0) + lTheta, vec3(0.0f, 0.0f, 1.0f)); 
+			// Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			Model->rotate(1 * glm::radians(15.0) + lTheta, vec3(0.0f, 0.0f, 1.0f)); //max -30?
 			Model->scale(0.1f);
-			SetMaterial(shader, Material::brown); 
+			// Model->rotate(  glm::radians(90.0) , vec3(0.0f, 1.0f, 0.0f)); //max -30
+			SetMaterial(shader, Material::brown); //brown
 			setModel(shader, Model);
 			lockHandle->Draw(shader);
 		Model->popMatrix();
@@ -5461,10 +5592,12 @@ public:
 		// lower lock
 		Model->pushMatrix();
 			Model->loadIdentity();
+			// Model->translate(vec3(0.0f, 0.5f, 38.5f));
 			Model->translate(vec3(bossEntrancePos.x, bossEntrancePos.y + 0.5f, bossEntrancePos.z));
 			Model->rotate(glm::radians(bossEntranceRot), vec3(0.0f, 1.0f, 0.0f));
+			// Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
 			Model->scale(0.1f);
-			SetMaterial(shader, Material::gold);
+			SetMaterial(shader, Material::gold); //gold
 			setModel(shader, Model);
 			lock->Draw(shader);
 		Model->popMatrix();
@@ -5472,14 +5605,34 @@ public:
 		//lower handle
 		Model->pushMatrix();
 			Model->loadIdentity();
+			// Model->translate(vec3(0.0f, 0.5f, 38.5f));
 			Model->translate(vec3(bossEntrancePos.x, bossEntrancePos.y + 0.5f, bossEntrancePos.z));
 			Model->rotate(glm::radians(bossEntranceRot), vec3(0.0f, 1.0f, 0.0f));
-			Model->rotate(1 * glm::radians(15.0) + lTheta, vec3(0.0f, 0.0f, 1.0f)); 
+			// Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+			Model->rotate(1 * glm::radians(15.0) + lTheta, vec3(0.0f, 0.0f, 1.0f)); //max -30?
 			Model->scale(0.1f);
-			SetMaterial(shader, Material::brown); 
+			// Model->rotate(  glm::radians(90.0) , vec3(0.0f, 1.0f, 0.0f)); //max -30
+			SetMaterial(shader, Material::brown); //brown
 			setModel(shader, Model);
 			lockHandle->Draw(shader);
 		Model->popMatrix();
+
+		// if(lTheta < 30.0){
+		// 	lTheta+= 0.1;
+		// lTheta = sin(glfwGetTime());
+		// }
+
+	// Model->pushMatrix();
+	// 	Model->loadIdentity();
+	// 	Model->translate(vec3(0.0f, 0.5f, 38.5f));  //doorPosition
+	// 	Model->rotate(glm::radians(180.0f), vec3(0.0f, 1.0f, 0.0f));
+	// 	Model->rotate( glm::radians(lTheta) , vec3(0.0f, 1.0f, 0.0f)); //max -30?
+	// 	Model->scale(0.1f);
+	// 	SetMaterialMan(shader, 6); //brown
+	// 	setModel(shader, Model);
+	// 	lockHandle->Draw(shader);
+	// Model->popMatrix();
+
 		shader->unbind();
 	}
 
@@ -5488,7 +5641,7 @@ public:
 	//glm::vec3 enemyPos = enemy->getPosition();
 	//enemy->isAlive() == false
 
-	// Draw dropped keys 
+	/* keyCollect */
 	void drawKey(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 
 		// --- Collision Check Logic ---
@@ -5504,12 +5657,7 @@ public:
 				key.collected = true;
 				// key.state = OrbState::COLLECTED; // Optionally set state
 				keysCollectedCount++;
-				 
-				// play key collected sound effect
-				ma_sound_start(&key_pickup);
-
 				lockOnDoors[i].keyIndex = i;
-
 				std::cout << "Collected a key! (" << keysCollectedCount << ")\n";
 			}
 		}
@@ -5570,28 +5718,28 @@ public:
 				Roty = glm::radians(-90.0f); // Rotate around y-axis for idle keys
 			}
 
-				// --- Set up transformations ---
-				Model->pushMatrix(); {
-					Model->loadIdentity();
-					Model->translate(currentDrawPosition); //last enemy pos
-					Model->rotate(glm::radians(90.0f), vec3(1.0f, 0.0f, 0.0f));
-					Model->rotate(glm::radians(-90.0f), vec3(0.0f, 1.0f, 0.0f));
-					Model->scale(2.0f);
+			// std::cout << "key position " << key.position.x << " " << key.position.y << " " << key.position.z << " " << std::endl;
+
+			// --- Set up transformations ---
+			Model->pushMatrix(); {
+				Model->loadIdentity();
+				Model->translate(currentDrawPosition); //last enemy pos
+				Model->rotate(Rotx, vec3(1.0f, 0.0f, 0.0f));
+				Model->rotate(Roty, vec3(0.0f, 1.0f, 0.0f));
+				Model->rotate(Rotz, vec3(0.0f, 0.0f, 1.0f));
+				Model->translate(secondPos); // Optional second position
+				Model->scale(currentScale);
 
 
-					// --- Set Material & Draw ---
-					SetMaterial(shader, Material::gold); 
-					setModel(shader, Model);
-					key.model->Draw(shader);
-				} Model->popMatrix();
-			} // End drawing loop
-		}
-
-
+				// --- Set Material & Draw ---
+				SetMaterial(shader, Material::gold); //gold
+				setModel(shader, Model);
+				key.model->Draw(shader);
+			} Model->popMatrix();
+		} // End drawing loop
 		shader->unbind();
 	}
 
-	// Draws keys floating 
 	void updateKeys(float currentTime) {
 		// for (auto* enemy : enemies) {
 		// 	if (!enemy->isAlive() && !enemy->dropSpawned) {
@@ -5826,6 +5974,9 @@ public:
 		// 	drawLock(prog, Model);
 		// }
 
+
+		// orbCollectibles.emplace_back(sphere, orbSpawnPos, book.orbScale, book.orbColor);
+		// drawKey(prog2, Model);
 
 
 
@@ -7245,33 +7396,18 @@ int main(int argc, char* argv[]) {
 		return -1;
 	}
 
-	// Load key dropped sound effect
-	if (ma_sound_init_from_file(&engine, "../resources/SoundEffects/tada-fanfare.mp3", 0, NULL, NULL, &key_drop) != MA_SUCCESS) {
-		printf("Failed to load key dropped sound\n");
-		ma_sound_uninit(&sound); // Uninitialize background sound if spell sound fails
-
-   //Load door opening sound effect
 	if (ma_sound_init_from_file(&engine, "../resources/audio/door_open.mp3", 0, NULL, NULL, &door_sound) != MA_SUCCESS) {
 		printf("Failed to load title screen sound\n");
-
 		ma_engine_uninit(&engine);
 		return -1;
 	}
 
-	// Load key pick up sound effect
-	if (ma_sound_init_from_file(&engine, "../resources/SoundEffects/item-pick-up.mp3", 0, NULL, NULL, &key_pickup) != MA_SUCCESS) {
-		printf("Failed to load key pickup sound\n");
-		ma_sound_uninit(&sound); // Uninitialize background sound if spell sound fails
-
-  // Load boss music
 	if (ma_sound_init_from_file(&engine, "../resources/audio/boss_music.mp3", 0, NULL, NULL, &boss_music) != MA_SUCCESS) {
 		printf("Failed to load title screen sound\n");
-
 		ma_engine_uninit(&engine);
 		return -1;
 	}
 
-  // Load unlock sound effect
 	if (ma_sound_init_from_file(&engine, "../resources/audio/key_unlock.mp3", 0, NULL, NULL, &key_unlock_sound) != MA_SUCCESS) {
 		printf("Failed to load title screen sound\n");
 		ma_engine_uninit(&engine);
@@ -7409,9 +7545,7 @@ int main(int argc, char* argv[]) {
 	ma_sound_uninit(&boss_music);
 	ma_sound_uninit(&door_sound);
 	ma_sound_uninit(&sound);
-	ma_sound_uninit(&spell_sound); 
-	ma_sound_uninit(&key_drop);
-	ma_engine_uninit(&engine); 
+	ma_sound_uninit(&spell_sound);
 	ma_engine_uninit(&engine);
 	ma_sound_uninit(&boss_death_sound);
 	ma_sound_uninit(&firework_sound);
