@@ -9,7 +9,7 @@ public:
 
     void moveTowardsPlayer(const glm::vec3& playerPosition, float deltaTime) override;
     void update(Player* player, float deltaTime) override;
-    void LightningElemental::tpInterp(float deltaTime);
+    void tpInterp(float deltaTime);
 
     glm::vec3 newPosition;
     glm::vec3 startPosition;
