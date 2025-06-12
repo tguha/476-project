@@ -379,4 +379,6 @@ struct LocksOnDoor {
     bool interacted = false; // Whether the lock has been interacted with
     float unlockStartTime = -1.0f; // Start time of the unlock animation
     bool animDone = false; // Whether the unlock animation is done
+    int keyIndex = -1; // Index of the key used to unlock the door
+    bool playUnlockSound = false; // Whether to play the unlock sound
 };

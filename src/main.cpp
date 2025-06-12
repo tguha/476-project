@@ -56,6 +56,9 @@ using namespace glm;
 ma_engine engine;
 ma_sound sound;
 ma_sound spell_sound;
+ma_sound door_sound;
+ma_sound boss_music;
+ma_sound key_unlock_sound;
 
 class Application : public EventCallbacks {
 public:
@@ -142,9 +145,9 @@ public:
 	AssimpModel *border, *lock, *lockHandle, *key;
 	AssimpModel *bookCover, *bookPaper;
 	AssimpModel *stoneGolem;
-	AssimpModel *door_rig;
-	Animation *door_open, *door_close;
-	Animator *door_animator;
+	AssimpModel *door_rig, *exit_door_rig;
+	Animation *door_open, *door_close, *exit_door_open;
+	Animator *door_animator, *exit_door_animator;
 
 	//key collectibles
 	std::vector<Collectible> keyCollectibles;
@@ -257,6 +260,12 @@ public:
 	float doorOpenProgress = 0.0f; // Progress of the door opening animation
 	bool allLocksUnlocked = false;
 	bool interactedwithBook = false; // Flag to check if the player has interacted with a book
+	bool bossDeathEffectTriggered = false; // Flag to check if the boss death effect has been triggered
+	bool doorExitOpened = false; // Flag to check if the exit door has been opened
+
+	bool playDoorSound = false; // Flag to control door sound playback
+	bool playExitDoorSound = false; // Flag to control exit door sound playback
+	bool playBossMusic = false; // Flag to control boss music playback
 
 	// -- Camera Occlusion Query --
 	GLuint occlusionQueryID = 0; // Occlusion query ID
@@ -306,6 +315,7 @@ public:
 	glm::vec3 bossEntrancePos;
 	float bossEntranceRot;
 	BossRoomGen::transform bossEntrancetransforms;
+	BossRoomGen::transform bossExittransforms;
 
 	std::vector<glm::mat4> vCircularBookShelfMatrices;
 	int activeEnemiesCount = 0; // Count of active enemies in the scene
@@ -1317,6 +1327,13 @@ public:
 		door_close = new Animation(resourceDirectory + "/cluster_assets/door/door_anim.dae", door_rig, 1);
 		door_animator = new Animator(door_open);
 
+		exit_door_rig = new AssimpModel(resourceDirectory + "/cluster_assets/door/door_anim.dae");
+		exit_door_rig->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/door/Door_diffuse.png");
+
+		//Getting Player animations
+		exit_door_open = new Animation(resourceDirectory + "/cluster_assets/door/door_anim.dae", exit_door_rig, 0);
+		exit_door_animator = new Animator(exit_door_open);
+
 		/*
 		* KEY COLLECTIBLE IS BROKEN. THIS IS THE COMMENTED OUT PROGRESS OF MADILINE SINCE PROJECT DOESN'T COMPILE WITH IT
 		//key
@@ -1910,6 +1927,7 @@ public:
 				delete enemy; // Free heap memory
 			}
 			enemies.clear();
+		keysneededToCollect = 0; // Reset key count
 
 		for (const auto& spawnPos : enemySpawnPositions) {
 			// enemies.push_back(new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.z), ENEMY_HP_MAX, 2.0f, iceElemental, vec3(1.0f), vec3(0.0f)));
@@ -2397,6 +2415,11 @@ public:
 
 				if (bossRoom->isInsideBossArea(glm::ivec2(i, j))) {
 					bossfightstarted = true; // Player is in the boss area
+					if (!playBossMusic) {
+						playBossMusic = true;
+						ma_sound_seek_to_pcm_frame(&boss_music, 0); // Reset normal music to start
+						ma_sound_start(&boss_music); // Start boss music
+					}
 				}
 			}
 		}
@@ -2405,6 +2428,12 @@ public:
 			bossfightended = true; // Boss fight ended
 			bossActiveSpells.clear(); // Clear active spells
 			canFightboss = false; // Reset boss fight flag
+			if (playBossMusic) {
+				playBossMusic = false;
+				ma_sound_stop(&boss_music); // Stop boss music
+				ma_sound_seek_to_pcm_frame(&sound, 0); // Reset normal music to start
+				ma_sound_start(&sound); // Restart normal music
+			}
 		}
 	}
 
@@ -2930,14 +2959,14 @@ public:
 					}
 					else if (bossGrid[gridPos].type == BossRoomGen::CellType::EXIT) {
 						if (bossGrid[gridPos].borderType == BossRoomGen::BorderType::EXIT_MIDDLE) {
-							Model->pushMatrix();
-							Model->loadIdentity();
-							Model->translate(vec3(i, 0, j));
-							Model->rotate(glm::radians(bossGrid[gridPos].transformData.rotation), vec3(0, 1, 0)); // Rotate for left/right walls
-							Model->scale(bossGrid[gridPos].transformData.scale); // Scale set in class members
-							setModel(shader, Model);
-							door->Draw(shader); // Use the door model for the entrance
-							Model->popMatrix();
+							// Model->pushMatrix();
+							// Model->loadIdentity();
+							// Model->translate(vec3(i, 0, j));
+							// Model->rotate(glm::radians(bossGrid[gridPos].transformData.rotation), vec3(0, 1, 0)); // Rotate for left/right walls
+							// Model->scale(bossGrid[gridPos].transformData.scale); // Scale set in class members
+							// setModel(shader, Model);
+							// door->Draw(shader); // Use the door model for the entrance
+							// Model->popMatrix();
 						}
 						else if (bossGrid[gridPos].borderType == BossRoomGen::BorderType::EXIT_SIDE) {
 							Model->pushMatrix();
@@ -3092,7 +3121,7 @@ public:
 		shader->unbind();
 	}
 
-	void drawDoor(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model, bool cullFlag, float animTime) {
+	void drawBossEntrDoor(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model, bool cullFlag, float animTime) {
 		if (!shader || !Model || !door_rig) return; // Need cube model
 
 		shader->bind();
@@ -3100,6 +3129,12 @@ public:
 		if (animTime != 0.0) {
 			if (unlock && !doorOpened){
 				door_animator->UpdateAnimationOnce(0.25 * animTime);
+				if (!playDoorSound) {
+					playDoorSound = true;
+					ma_sound_stop(&sound);
+					ma_sound_start(&door_sound);
+
+				}
 				if (door_animator->IsFinished()) {
 					std::cout << "Door opened!" << std::endl;
 					doorOpened = true; // Mark the door as opened
@@ -3498,7 +3533,7 @@ public:
 				// int gridZ = library->mapZtoGridY(e->center.y);
 				// glm::ivec2 gridPos = glm::ivec2(gridx, gridZ);
 				LibraryGen::Cell cell = grid[e->grid_position];
-				std::cout << "Checking cell at (" << e->grid_position.x << ", " << e->grid_position.y << ") with object type: " << static_cast<int>(cell.objectType) << std::endl;
+				// std::cout << "Checking cell at (" << e->grid_position.x << ", " << e->grid_position.y << ") with object type: " << static_cast<int>(cell.objectType) << std::endl;
 				return true; // Collision found
 			}
 		}
@@ -3862,9 +3897,13 @@ public:
 
 			SpellProjectile& proj = activeSpells[i];
 
-			if (glfwGetTime() - proj.spawnTime > proj.lifetime) {
+			if (glfwGetTime() - proj.spawnTime > proj.lifetime || proj.spellType == SpellType::HEAL) {
 				proj.active = false;
 				activeSpells.erase(activeSpells.begin() + i);
+				continue;
+			}
+			if (proj.spellType == SpellType::HEAL) {
+				// Healing spell does not move, just visual effect
 				continue;
 			}
 
@@ -3895,7 +3934,8 @@ public:
 			if (canFightboss && bossEnemy && bossEnemy->isAlive()) {
 				if (checkAABBCollision(proj.aabbMin, proj.aabbMax, bossEnemy->getAABBMin(), bossEnemy->getAABBMax())) {
 					cout << "[DEBUG] Fireball HIT boss!" << endl;
-					float bossDamage = 100.0f;
+					// float bossDamage = 100.0f;
+					float bossDamage = bossEnemy->getHitpoints(); // just for testing
 					bossEnemy->takeDamage(bossDamage);
 					proj.active = false;
 					activeSpells.erase(activeSpells.begin() + i);
@@ -4730,6 +4770,10 @@ public:
 				lockHandle->Draw(shader); // Draw the lock handle model
 				Model->popMatrix();
 			} else {
+				if (!l.playUnlockSound) {
+					ma_sound_start(&key_unlock_sound);
+					l.playUnlockSound = true; // Ensure sound plays only once
+				}
 				// animate
 				float animationDuration = 1.5f;
 				float fallStartDelay = 0.5f;
@@ -5009,7 +5053,8 @@ public:
 	void drawKey(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 
 		// --- Collision Check Logic ---
-		for (auto& key : keyCollectibles) {
+		for (int i = 0; i < keyCollectibles.size(); ++i) {
+			Collectible& key = keyCollectibles[i];
 			// Perform collision check ONLY if not collected AND in the IDLE state
 			if (!key.collected && key.state == OrbState::IDLE && // <<<--- ADD STATE CHECK
 				//checkAABBCollision(manAABBmin, manAABBmax, key.AABBmin, key.AABBmax)
@@ -5020,6 +5065,7 @@ public:
 				key.collected = true;
 				// key.state = OrbState::COLLECTED; // Optionally set state
 				keysCollectedCount++;
+				lockOnDoors[i].keyIndex = i;
 				std::cout << "Collected a key! (" << keysCollectedCount << ")\n";
 			}
 		}
@@ -5027,6 +5073,7 @@ public:
 		int collectedKeyDrawIndex = 0;
 		shader->bind();
 		for (int i = 0; i < keyCollectibles.size(); ++i) {
+			if (lockOnDoors[i].animDone) continue; // Skip if the lock is already unlocked
 			Collectible& key = keyCollectibles[i];
 			glm::vec3 currentDrawPosition;
 			float currentScale = 1.0f;
@@ -5280,7 +5327,8 @@ public:
 
 		drawLock(prog, Model, (float)glfwGetTime());
 
-		drawDoor(prog, Model, CULL, 0.0);
+		drawBossEntrDoor(prog, Model, CULL, 0.0);
+		drawBossExitDoor(prog, Model, CULL, 0.0);
 		#endif
 
 		drawPlayer(prog, Model, 0.0);
@@ -5299,6 +5347,8 @@ public:
 		drawProjectiles(prog, Model);
 
 		drawBossProjectiles(prog, Model);
+
+		// drawBossDefeatParticles(0.0f);
 
 		//Test drawing cat model
 		//drawCat(assimptexProg, Model);
@@ -5338,7 +5388,8 @@ public:
 
 		drawLock(prog, Model, (float)glfwGetTime());
 
-		drawDoor(prog, Model, true, animTime);
+		drawBossEntrDoor(prog, Model, true, animTime);
+		drawBossExitDoor(prog, Model, true, animTime);
 		#endif
 
 		// disable color writes
@@ -5379,6 +5430,8 @@ public:
 		drawProjectiles(prog, Model);
 
 		drawBossProjectiles(prog, Model);
+
+		drawBossDefeatParticles(animTime);
 
 		//Test drawing cat model
 		//drawCat(assimptexProg, Model);
@@ -5449,6 +5502,8 @@ public:
 
 	void initCircularBorder() {
 		circularBookShelfMatrices.clear();
+		playDoorSound = false; // Reset door sound flag
+		playExitDoorSound = false; // Reset exit door sound flag
 
 		for (int z = 0; z < bossGrid.getSize().y; ++z) {
 			for (int x = 0; x < bossGrid.getSize().x; ++x) {
@@ -5457,7 +5512,8 @@ public:
 				float i = bossRoom->mapGridXtoWorldX(x);
 				float j = bossRoom->mapGridYtoWorldZ(z);
 				if ((bossGrid[gridPos].type != BossRoomGen::CellType::BORDER) &&
-					(bossGrid[gridPos].type != BossRoomGen::CellType::ENTRANCE)) {
+					(bossGrid[gridPos].type != BossRoomGen::CellType::ENTRANCE) &&
+					(bossGrid[gridPos].type != BossRoomGen::CellType::EXIT)) {
 					continue; // Skip non-border cells
 				}
 				glm::vec3 pos(i, libraryCenter.y, j);
@@ -5490,6 +5546,13 @@ public:
 							bossEntrancetransforms.position = pos;
 							bossEntrancetransforms.rotation = rotation; // Adjust rotation for entrance
 							bossEntrancetransforms.scale = scale;
+						}
+						break;
+					case CT::EXIT:
+						if (cell.borderType == BT::EXIT_MIDDLE) {
+							bossExittransforms.position = pos;
+							bossExittransforms.rotation = rotation; // Adjust rotation for exit
+							bossExittransforms.scale = scale;
 						}
 						break;
 
@@ -5545,6 +5608,9 @@ public:
 
 		door_animator->resetAnimation();
 		doorOpened = false; // Reset door opened state
+
+		exit_door_animator->resetAnimation();
+		doorExitOpened = false; // Reset exit door opened state
 	}
 
 	void interactWithLocks() {
@@ -5563,21 +5629,22 @@ public:
 					LocksOnDoor& lock = lockOnDoors[j];
 					if (lock.interacted) continue; // Skip if lock is already interacted with
 					if (checkSphereCollision(player->getPosition(), interactionRadius, e->aabb_min, e->aabb_max)) {
-						if (j < keyCollectibles.size() && j < keysneededToCollect && keyCollectibles[j].collected) {
-							std::cout << "Interacting with lock " << j + 1 << std::endl;
-						} else {
-							std::cout << "No key collected for lock " << j + 1 << std::endl;
-							std::cout << "Collect keys to unlock the door!" << std::endl;
-							continue; // Skip to next lock if no key is collected
-						}
+						// if (j < keyCollectibles.size() && j < keysneededToCollect && keyCollectibles[j].collected) {
+						// 	std::cout << "Interacting with lock " << j + 1 << std::endl;
+						// } else {
+						// 	std::cout << "No key collected for lock " << j + 1 << std::endl;
+						// 	std::cout << "Collect keys to unlock the door!" << std::endl;
+						// 	continue; // Skip to next lock if no key is collected
+						// }
 
 							// If the lock is locked and the key is collected, unlock it
-						if (lock.isLocked && keyCollectibles[j].collected) {
+						if (lock.isLocked && (lock.keyIndex != -1) && (lock.keyIndex == j)) {
 							lock.interacted = true; // Mark as interacted
 							lock.isLocked = false; // Unlock the lock
 							keyCollectibles[j].collected = false; // Remove the key from collectibles
 							keyCollectibles[j].keyUsed = true; // Mark the key as used
 							lock.unlockStartTime = (float)glfwGetTime(); // Start the unlock animation
+							keysCollectedCount--;
 							std::cout << "Lock " << j + 1 << " unlocked!" << std::endl;
 						} else {
 							std::cout << "Lock " << j + 1 << " is already unlocked." << std::endl;
@@ -5601,6 +5668,172 @@ public:
 		}
 	}
 
+	void drawBossDefeatParticles(float frametime) {
+		if (bossfightended && particleSystem && !bossDeathEffectTriggered) {
+			bossDeathEffectTriggered = true;
+			// bossEnemy->setBossDeathTimer(0.0f); // Reset death timer to prevent multiple triggers
+		}
+		if (bossDeathEffectTriggered) {
+			float currentTime = particleSystem->getCurrentTime();
+			vec3 bossPos = bossEnemy->getPosition() + vec3(0.0f, 0.4f, 0.0f);
+
+			bossEnemy->setBossDeathTimer(bossEnemy->getBossDeathTimer() + frametime);
+			if (bossEnemy->getBossDeathTimer() < bossEnemy->getBossDeathDuration()) {
+				vec4 color_start = vec4(1.0f, 0.5f, 0.0f, 1.0f); // Orange color for particles
+				vec4 color_end = vec4(1.0f, 0.5f, 0.0f, 0.0f); // Fading out to transparent
+
+				switch (bossEnemy->getBossSpellType()) {
+					case SpellType::FIRE:
+						color_start = glm::vec4(1.0f, 0.6f, 0.1f, 1.0f);
+						color_end = glm::vec4(0.9f, 0.2f, 0.0f, 0.5f);
+						break;
+					case SpellType::ICE:
+						color_start = glm::vec4(0.5f, 0.8f, 1.0f, 1.0f);
+						color_end = glm::vec4(0.2f, 0.5f, 0.8f, 0.5f);
+						break;
+					case SpellType::LIGHTNING:
+						color_start = glm::vec4(1.0f, 1.0f, 0.5f, 1.0f);
+						color_end = glm::vec4(0.8f, 0.8f, 0.2f, 0.3f);
+						break;
+					default:
+						break;
+				}
+
+				// Implosion burst
+				particleSystem->spawnParticleBurst(
+					bossPos + glm::vec3(Config::randFloat(-1.0f, 1.0f), Config::randFloat(0.5f, 1.5f), Config::randFloat(-1.0f, 1.0f)),
+					vec3(0.0f, 1.0f, 0.0f), // Upward direction
+					5, // Number of particles
+					currentTime, // Current time for particle system
+					1.5f, 3.5f, // Speed range
+					1.0f, // Spread
+					0.4f, 0.8f, // Lifespan range
+					color_start, // Start color
+					color_end, // End color
+					0.5f, 1.0f // Size range
+				);
+
+				// Swirl ring effect — spawn rising helix
+				for (int i = 0; i < 12; ++i) {
+					float angle = i * glm::two_pi<float>() / 12.0f;
+					vec3 dir = vec3(cos(angle), 1.0f, sin(angle)); // upward spiral
+					particleSystem->spawnParticleBurst(
+						bossPos + glm::vec3(Config::randFloat(-1.0f, 1.0f), Config::randFloat(bossEnemy->getBossDeathTimer() * 0.5f, bossEnemy->getBossDeathTimer()), Config::randFloat(-1.0f, 1.0f)),
+						dir,
+						10,
+						currentTime,
+						1.0f, 2.0f,
+						0.3f,
+						0.8f, 1.4f,
+						color_start, // Start color
+						color_end, // End color
+						0.3f, 0.6f
+					);
+				}
+
+				// Soul beam (wisp trail up)
+				particleSystem->spawnParticleBurst(
+					bossPos + glm::vec3(Config::randFloat(-1.0f, 1.0f), Config::randFloat(bossEnemy->getBossDeathTimer() * 0.5f, bossEnemy->getBossDeathTimer()), Config::randFloat(-1.0f, 1.0f)),
+					vec3(0.0f, 1.0f, 0.0f),
+					5,
+					currentTime,
+					0.5f, 1.0f,
+					0.2f,
+					1.2f, 2.0f,
+					color_start, // Start color
+					color_end, // End color
+					0.2f, 0.5f
+				);
+
+				// std::cout << "[DEBUG] Boss death particle effect triggered." << std::endl;
+			} else {
+			// std::cout << "[DEBUG] Boss death particle effect done" << std::endl;
+			bossDeathEffectTriggered = false; // Reset for next boss fight
+			}
+
+			// random fireworks in the area // should happen regardless of boss particle effect
+				float r = Config::randFloat(0.5f, 1.5f);
+				float g = Config::randFloat(0.5f, 1.5f);
+				float b = Config::randFloat(0.5f, 1.5f);
+				vec4 color_start = vec4(r, g, b, 1.0f); // Random start color
+				vec4 color_end = vec4(r * 0.5f, g * 0.5f, b * 0.5f, 0.0f); // Fading out to transparent
+				particleSystem->spawnParticleBurst(
+					bossPos + glm::vec3(Config::randFloat(-10.0f, 10.0f), Config::randFloat(0.5f, 1.5f), Config::randFloat(-10.0f, 10.0f)),
+					vec3(0.0f, 1.0f, 0.0f), // Upward direction
+					5, // Number of particles
+					currentTime,
+					1.0f, 2.0f, // Speed range
+					1.0f, // Spread
+					0.5f, 1.5f, // Lifespan range
+					color_start, // Start color
+					color_end, // End color
+					0.3f, 0.6f // Size range
+				);
+		}
+	}
+
+	void drawBossExitDoor(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model, bool cullFlag, float animTime) {
+		if (!shader || !Model || !exit_door_rig) return; // Need cube model
+
+		shader->bind();
+
+		if (animTime != 0.0) {
+			if (bossfightended && !doorExitOpened){
+				exit_door_animator->UpdateAnimationOnce(0.25 * animTime);
+				if (!playExitDoorSound) {
+					playExitDoorSound = true;
+					ma_sound_start(&door_sound);
+
+				}
+				if (exit_door_animator->IsFinished()) {
+					std::cout << "Door opened!" << std::endl;
+					doorExitOpened = true; // Mark the door as opened
+					doorOpenProgress = 0.25f * animTime; // Store the progress
+				}
+			} else if (bossfightended && doorExitOpened) {
+				exit_door_animator->UpdateAnimationOnce(0.0f); // Keep the door open
+			}
+			else {
+				exit_door_animator->UpdateAnimation(0.0f);
+			}
+		}
+
+		// Update bone matrices
+		vector<glm::mat4> transforms = exit_door_animator->GetFinalBoneMatrices();
+
+
+		if (shader->hasUniform("finalBonesMatrices[0]")) {
+			int numBones = std::min((int)transforms.size(), Config::MAX_BONES);
+			for (int i = 0; i < numBones; ++i) {
+				string uniformName = "finalBonesMatrices[" + std::to_string(i) + "]";
+				glUniformMatrix4fv(shader->getUniform(uniformName), 1, GL_FALSE, value_ptr(transforms[i]));
+			}
+		}
+		glm::vec3 doorPos = vec3(bossExittransforms.position.x, bossExittransforms.position.y, bossExittransforms.position.z);
+		if (!cullFlag || !ViewFrustCull(doorPos, 2.0f, planes)) {
+		Model->pushMatrix();
+		Model->loadIdentity();
+		Model->translate(vec3(bossExittransforms.position.x, bossExittransforms.position.y, bossExittransforms.position.z)); // Position set in class members
+		Model->rotate(glm::radians(bossExittransforms.rotation), vec3(0, 1, 0)); // Rotate for left/right walls
+		Model->rotate(glm::radians(-90.0f), vec3(1, 0, 0)); // Rotate to face up
+		Model->scale(bossExittransforms.scale); // Scale set in class members
+		// if (unlock == false) {
+		// 	door->Draw(shader); // Use the door model for the entrance
+
+
+
+		// }
+		if (shader->hasUniform("hasBones")) glUniform1i(shader->getUniform("hasBones"), GL_TRUE);
+		if (shader->hasUniform("texOnly")) glUniform1i(shader->getUniform("texOnly"), GL_TRUE);
+		setModel(shader, Model);
+		if (shader->hasUniform("texOnly")) glUniform1i(shader->getUniform("texOnly"), GL_FALSE);
+		exit_door_rig->Draw(shader); // Use the door model for the entrance
+		if (shader->hasUniform("hasBones")) glUniform1i(shader->getUniform("hasBones"), GL_FALSE);
+		Model->popMatrix();
+		}
+		shader->unbind();
+	}
+
 	void render(float frametime, float animTime) {
 		// Get current frame buffer size
 		int width, height;
@@ -5619,7 +5852,7 @@ public:
 		updateProjectiles(frametime);
 		updateFTimeout(frametime);
 		particleSystem->update(frametime); // Update particles
-		// checkAllEnemies();
+		checkAllEnemies();
 		checkBossfight();
 		BossEnemyAttacks(frametime);
 		restartGeneration();
@@ -5762,6 +5995,7 @@ public:
 			glUniformMatrix4fv(particleProg->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
 			glUniformMatrix4fv(particleProg->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
 			particleAlphaTex->bind(particleProg->getUniform("alphaTexture"));
+			glBlendFunc(GL_SRC_ALPHA, GL_ONE);
 			drawParticles(particleSystem, particleProg, Model); // draw particles if full scene render
 			particleAlphaTex->unbind();
 			particleProg->unbind();
@@ -5799,8 +6033,8 @@ public:
 		glEnable(GL_BLEND); // Enable blending for text rendering
 		// RenderText(textProg, "Cats are ok.  Cur time: " + to_string(glfwGetTime()), 10.0f, 265.0f, 1.0f, glm::vec3(1.0f, 1.0f, 0.9f),
 		// 		window_width, window_height);
-		RenderText(textProg, "Keys collected: x" + to_string(keysCollectedCount), 25.0f, 25.0f, 1.0f, glm::vec3(1.0f, 1.0f, 0.9f),
-				width, height);
+		// RenderText(textProg, "Keys collected: x" + to_string(keysCollectedCount), 25.0f, 25.0f, 1.0f, glm::vec3(1.0f, 1.0f, 0.9f),
+		// 		width, height);
 		float formattedfps = floor(getFPS() * 100) / 100; // Format FPS to 2 decimal places
 		RenderText(textProg, "FPS: " + to_string(formattedfps), width - 100.0f, height - 50.0f, 1.0f, glm::vec3(1.0f, 1.0f, 0.9f),
 				width, height);
@@ -5809,7 +6043,14 @@ public:
 				RenderText(textProg, "BOSS HP", width / 2.0f, height - 70.0f, 1.0f, glm::vec3(1.0f, 0.0f, 0.0f),
 				width, height);
 			}
+
+		// glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); // Set blending function for text rendering
+		DrawKeyHUD(keyHUDshader, keyScreenTexture->getID(), width, height, keysCollectedCount, glm::vec2(100.0f, 50.0f), glm::vec2(100.0f, 100.0f));
+
 		glDisable(GL_BLEND); // Disable blending after text rendering
+
+
 
 		if (Config::DRAW_MINIMAP) { // Draw the mini map
 			ShadowProg->bind();
@@ -5822,7 +6063,6 @@ public:
 			//drawScene(prog2, CULL);
 			/* draws */
 			// drawBorder(prog2, Model);
-			// drawDoor(prog2, Model);
 			// drawBooks(prog2, Model);
 			// drawEnemies(prog2, Model);
 			#if USE_INSTANCING
@@ -5831,7 +6071,8 @@ public:
 			drawCircularBorder(ShadowProg, false); // Draw the circular library shelves
 			drawLibrary(ShadowProg, Model, false);
 			drawBossRoom(ShadowProg, Model, false, 0.0);
-			drawDoor(ShadowProg, Model, false, 0.0);
+			drawBossEntrDoor(ShadowProg, Model, false, 0.0);
+			drawBossExitDoor(ShadowProg, Model, false, 0.0); // Draw the boss exit door
 			#endif
 			// drawLibInstancing(ShadowProg, false); // Draw the library shelves without culling
 			drawBossEnemy(ShadowProg, Model);
@@ -5844,6 +6085,8 @@ public:
 			drawEnemies(ShadowProg, Model);
 			ShadowProg->unbind();
 		}
+
+
 
 		// glEnable(GL_BLEND); // Enable blending for text rendering
 		// // RenderText(textProg, "Cats are ok.  Cur time: " + to_string(glfwGetTime()), 10.0f, 265.0f, 1.0f, glm::vec3(1.0f, 1.0f, 0.9f),
@@ -6140,6 +6383,27 @@ int main(int argc, char* argv[]) {
 		return -1;
 	}
 
+	if (ma_sound_init_from_file(&engine, "../resources/audio/door_open.mp3", 0, NULL, NULL, &door_sound) != MA_SUCCESS) {
+		printf("Failed to load title screen sound\n");
+		ma_engine_uninit(&engine);
+		return -1;
+	}
+
+	if (ma_sound_init_from_file(&engine, "../resources/audio/boss_music.mp3", 0, NULL, NULL, &boss_music) != MA_SUCCESS) {
+		printf("Failed to load title screen sound\n");
+		ma_engine_uninit(&engine);
+		return -1;
+	}
+
+	if (ma_sound_init_from_file(&engine, "../resources/audio/key_unlock.mp3", 0, NULL, NULL, &key_unlock_sound) != MA_SUCCESS) {
+		printf("Failed to load title screen sound\n");
+		ma_engine_uninit(&engine);
+		return -1;
+	}
+
+
+
+
 	// This is the code that will likely change program to program as you
 	// may need to initialize or set up different data and state
 
@@ -6170,8 +6434,11 @@ int main(int argc, char* argv[]) {
 		<< "[DEBUG] Press K To Enter Debug Camera Mode." << endl << "+/- Change Brightness, 1/2 Change Saturation"
 		<< endl << "While in Debug Camera mode, M toggles player movement and N toggles enemy movement" << endl;
 
+	int width, height;
+	glfwGetFramebufferSize(windowManager->getHandle(), &width, &height);
+	initKeyFBO(resourceDir, width, height); // Initialize the key FBO
+
 	// Title screen
-	// initTitleScreenFBO(resourceDir, width, height);
 	initTitleScreen(resourceDir); // Initialize the title screen
 	while (application->gameState == GameState::TITLE_SCREEN && !glfwWindowShouldClose(windowManager->getHandle()))
 	{
@@ -6218,6 +6485,9 @@ int main(int argc, char* argv[]) {
 
 	// Quit program
 	windowManager->shutdown();
+	ma_sound_uninit(&key_unlock_sound);
+	ma_sound_uninit(&boss_music);
+	ma_sound_uninit(&door_sound);
 	ma_sound_uninit(&sound);
 	ma_sound_uninit(&spell_sound);
 	ma_engine_uninit(&engine);
