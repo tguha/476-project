@@ -331,7 +331,7 @@ public:
 
 	std::vector<glm::mat4> vCircularBookShelfMatrices;
 	int activeEnemiesCount = 0; // Count of active enemies in the scene
-	int keysneededToCollect = 0; // Total number of keys to collect in the scene
+	int keysneededToCollect = 3; // Total number of keys to collect in the scene
 
 	SpellType spellSlots[4] = {
 		SpellType::LIGHTNING,
@@ -341,7 +341,7 @@ public:
 	};
 
 	GameState gameState = GameState::TITLE_SCREEN;
-  
+
 	int currentSpellSlotIndex = 0; // Current spell type in use
 	SpellType currentPlayerSpellType = spellSlots[currentSpellSlotIndex]; // Player starts with Fire spell by default
 
@@ -1976,11 +1976,11 @@ public:
 				delete enemy; // Free heap memory
 			}
 			enemies.clear();
-		keysneededToCollect = 0; // Reset key count
+		keysneededToCollect = 3; // Reset key count
 
 		for (const auto& spawnPos : enemySpawnPositions) {
 			// enemies.push_back(new IceElemental(vec3(spawnPos.x, Config::ICE_ELEMENTAL_TRANS_Y, spawnPos.z), ENEMY_HP_MAX, 2.0f, iceElemental, vec3(1.0f), vec3(0.0f)));
-			keysneededToCollect++; // Increment the key count for each enemy spawned
+			// keysneededToCollect++; // Increment the key count for each enemy spawned
 
 			// cout << " Enemy placed at: (" << spawnPos.x << ", " << spawnPos.y << ", " << spawnPos.z << ")" << endl;
 
@@ -2430,9 +2430,9 @@ public:
 
 				if (orb.spellType == currentPlayerSpellType && orb.collected) {
 					// SetMaterial(simpleShader, orb.color * 1.2f); // Highlight current spell type
-					
+
 					Material highlight = orb.color;
-					
+
 					switch (orb.spellType) {
 						case SpellType::ICE:
 							highlight = Material::orb_highlight_blue;
@@ -2548,7 +2548,6 @@ public:
 			libraryQuadTree->cleanup(); // Clean up the quad tree
 			bossRoomQuadTree->cleanup(); // Clean up the boss room quad tree
 			initQuadTree(); // Reinitialize the quad tree
-			keysneededToCollect = 0; // Reset key count
 
 			// Increase number of enemies based on time elapsed
 			float timeElapsed = glfwGetTime();
@@ -2609,7 +2608,7 @@ public:
 				// 	//enemyLastPos = true;
                 // }
 
-				if (!enemy->isDropSpawned()) {
+				if (!enemy->isDropSpawned() && (keyCollectibles.size() < keysneededToCollect)) {
 					glm::vec3 keyPos = enemy->getPosition();
 					keyPos.y -= 1.5f; // Adjust height for key position
 					keyCollectibles.emplace_back(key, keyPos, 0.1f, Material::gold, SpellType::NONE);
@@ -4040,8 +4039,8 @@ public:
 			if (canFightboss && bossEnemy && bossEnemy->isAlive()) {
 				if (checkAABBCollision(proj.aabbMin, proj.aabbMax, bossEnemy->getAABBMin(), bossEnemy->getAABBMax())) {
 					cout << "[DEBUG] Fireball HIT boss!" << endl;
-					// float bossDamage = 100.0f;
-					float bossDamage = bossEnemy->getHitpoints(); // just for testing
+					float bossDamage = 100.0f;
+					// float bossDamage = bossEnemy->getHitpoints(); // just for testing
 					bossEnemy->takeDamage(bossDamage);
 					proj.active = false;
 					activeSpells.erase(activeSpells.begin() + i);
