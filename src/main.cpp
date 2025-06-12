@@ -6742,7 +6742,7 @@ public:
 		View->lookAt(eye, lookAt, up); // Use updated eye/lookAt
 
 		currentSkyboxTex = skyboxTextures["day"]; // manual skybox setter
-		//drawSkybox(SkyboxProg, Projection, View);
+		drawSkybox(SkyboxProg, Projection, View);
 
 		ExtractVFPlanes(Projection->topMatrix(), View->topMatrix(), planes); // Update frustum planes
 
@@ -6952,32 +6952,35 @@ public:
 				}
 			}
 
-		// Needs to be before MiniMap rendering
-		glEnable(GL_BLEND); // Enable blending for text rendering
-		// RenderText(textProg, "Cats are ok.  Cur time: " + to_string(glfwGetTime()), 10.0f, 265.0f, 1.0f, glm::vec3(1.0f, 1.0f, 0.9f),
-		// 		window_width, window_height);
-		// RenderText(textProg, "Keys collected: x" + to_string(keysCollectedCount), 25.0f, 25.0f, 1.0f, glm::vec3(1.0f, 1.0f, 0.9f),
-		// 		width, height);
-		float formattedfps = floor(getFPS() * 100) / 100; // Format FPS to 2 decimal places
-		RenderText(textProg, "FPS: " + to_string(formattedfps), width - 100.0f, height - 50.0f, 1.0f, glm::vec3(1.0f, 1.0f, 0.9f),
+			// Needs to be before MiniMap rendering
+			glEnable(GL_BLEND); // Enable blending for text rendering
+			// RenderText(textProg, "Cats are ok.  Cur time: " + to_string(glfwGetTime()), 10.0f, 265.0f, 1.0f, glm::vec3(1.0f, 1.0f, 0.9f),
+			// 		window_width, window_height);
+			// RenderText(textProg, "Keys collected: x" + to_string(keysCollectedCount), 25.0f, 25.0f, 1.0f, glm::vec3(1.0f, 1.0f, 0.9f),
+			// 		width, height);
+			float formattedfps = floor(getFPS() * 100) / 100; // Format FPS to 2 decimal places
+			RenderText(textProg, "FPS: " + to_string(formattedfps), width - 100.0f, height - 50.0f, 1.0f, glm::vec3(1.0f, 1.0f, 0.9f),
 				width, height);
-		if (currentStringOutput != "") {
-			if (bossfightstarted) {
-				currentStringOutput = ""; // Clear the output if boss fight has started
-			} else {
-				if (currentStringOutput != prevStringOutput) {
-					stringOutputTimer = 0.0f; // Reset timer if the string output changes
-					prevStringOutput = currentStringOutput; // Update previous string output
-				} else {
-					stringOutputTimer += frametime; // Increment timer if the string output is the same
+			if (currentStringOutput != "") {
+				if (bossfightstarted) {
+					currentStringOutput = ""; // Clear the output if boss fight has started
 				}
-				if (stringOutputTimer < stringOutputDuration) {
-					RenderText(textProg, currentStringOutput, width / 2.0f - 400.0f, height / 2.0f + 300.0f, 1.5f, glm::vec3(1.0f, 1.0f, 0.9f), width, height);
-				} else {
-					currentStringOutput = ""; // Clear the output after duration
+				else {
+					if (currentStringOutput != prevStringOutput) {
+						stringOutputTimer = 0.0f; // Reset timer if the string output changes
+						prevStringOutput = currentStringOutput; // Update previous string output
+					}
+					else {
+						stringOutputTimer += frametime; // Increment timer if the string output is the same
+					}
+					if (stringOutputTimer < stringOutputDuration) {
+						RenderText(textProg, currentStringOutput, width / 2.0f - 400.0f, height / 2.0f + 300.0f, 1.5f, glm::vec3(1.0f, 1.0f, 0.9f), width, height);
+					}
+					else {
+						currentStringOutput = ""; // Clear the output after duration
+					}
 				}
 			}
-		}
 
 			if (bossfightstarted && !bossfightended) {
 				RenderText(textProg, "BOSS HP", width / 2.0f, height - 70.0f, 1.0f, glm::vec3(1.0f, 0.0f, 0.0f),
@@ -6999,12 +7002,72 @@ public:
 				// drawDoor(prog2, Model);
 				// drawBooks(prog2, Model);
 				// drawEnemies(prog2, Model);
+#if USE_INSTANCING
+				drawLibInstancing(ShadowProg, false); // Draw the library shelves without culling
+#else
+				drawCircularBorder(ShadowProg, false); // Draw the circular library shelves
+				drawLibrary(ShadowProg, Model, false);
+				drawBossRoom(ShadowProg, Model, false, animTime);
+#endif
+				// drawLibInstancing(ShadowProg, false); // Draw the library shelves without culling
+				drawBossEnemy(ShadowProg, Model);
+				// drawOrbs(prog2, Model);
+				drawMiniPlayer(ShadowProg, Model);
+				drawBorderWalls(ShadowProg, Model);
+				// SetMaterialMan(prog2,6 );
+				drawLibGrnd(ShadowProg, Model);
+				// drawBossRoom(ShadowProg, Model, false); //boss room not drawing
+				drawEnemies(ShadowProg, Model, frametime); // IS THIS SUPPOSED TO BE ANIMTIME OR FRAMETIME?
+				ShadowProg->unbind();
+			}
+
+			if (!player->isAlive() && !debugCamera) {
+				RenderText(textProg, "You Died!", width / 2.0f - 150.0f, height / 2.0f + 100.0f, 3.0f, glm::vec3(1.0f, 1.0f, 1.0f),
+					width, height);
+				RenderText(textProg, "Press R to Restart", width / 2.0f - 250.0f, height / 2.0f, 3.0f, glm::vec3(1.0f, 1.0f, 1.0f),
+					width, height);
+				if (!playGameOverSound) {
+					ma_sound_stop(&sound);
+					ma_sound_stop(&boss_music); // Stop boss music
+					ma_sound_start(&game_over_sound);
+					playGameOverSound = true; // Prevent multiple sound plays
+				}
+			}
+
+			// glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+			glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); // Set blending function for text rendering
+			DrawKeyHUD(keyHUDshader, keyScreenTexture->getID(), width, height, keysCollectedCount, glm::vec2(100.0f, 50.0f), glm::vec2(100.0f, 100.0f));
+
+			if (!player->isAlive() && !debugCamera) {
+				DrawTextoScreen(keyHUDshader, catSadScreenTexture->getID(), width, height, glm::vec2(900.0f, 200.0f), glm::vec2(500.0f, 500.0f));
+			}
+			glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); // Reset blending function for other rendering
+
+			glDisable(GL_BLEND); // Disable blending after text rendering
+
+
+
+			if (Config::DRAW_MINIMAP) { // Draw the mini map
+				ShadowProg->bind();
+				//cout << "Drawing minimap" << endl;
+				glClear(GL_DEPTH_BUFFER_BIT);
+				glViewport(0, height - 350, 350, 350);
+				SetOrthoMatrix(ShadowProg);
+				SetTopView(ShadowProg); /*MINI MAP*/
+				SetMaterial(ShadowProg, Material::brown);
+				//drawScene(prog2, CULL);
+				/* draws */
+				// drawBorder(prog2, Model);
+				// drawBooks(prog2, Model);
+				// drawEnemies(prog2, Model);
 				#if USE_INSTANCING
 				drawLibInstancing(ShadowProg, false); // Draw the library shelves without culling
 				#else
 				drawCircularBorder(ShadowProg, false); // Draw the circular library shelves
 				drawLibrary(ShadowProg, Model, false);
-				drawBossRoom(ShadowProg, Model, false);
+				drawBossRoom(ShadowProg, Model, false, 0.0);
+				drawBossEntrDoor(ShadowProg, Model, false, 0.0);
+				drawBossExitDoor(ShadowProg, Model, false, 0.0); // Draw the boss exit door
 				#endif
 				// drawLibInstancing(ShadowProg, false); // Draw the library shelves without culling
 				drawBossEnemy(ShadowProg, Model);
@@ -7014,71 +7077,11 @@ public:
 				// SetMaterialMan(prog2,6 );
 				drawLibGrnd(ShadowProg, Model);
 				// drawBossRoom(ShadowProg, Model, false); //boss room not drawing
-				drawEnemies(ShadowProg, Model);
+				drawEnemies(ShadowProg, Model, 0.0f);
 				ShadowProg->unbind();
 			}
 
-		if (!player->isAlive() && !debugCamera) {
-			RenderText(textProg, "You Died!", width / 2.0f - 150.0f, height / 2.0f + 100.0f, 3.0f, glm::vec3(1.0f, 1.0f, 1.0f),
-				width, height);
-			RenderText(textProg, "Press R to Restart", width / 2.0f - 250.0f, height / 2.0f, 3.0f, glm::vec3(1.0f, 1.0f, 1.0f),
-				width, height);
-			if (!playGameOverSound) {
-				ma_sound_stop(&sound);
-				ma_sound_stop(&boss_music); // Stop boss music
-				ma_sound_start(&game_over_sound);
-				playGameOverSound = true; // Prevent multiple sound plays
-			}
 		}
-
-		// glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); // Set blending function for text rendering
-		DrawKeyHUD(keyHUDshader, keyScreenTexture->getID(), width, height, keysCollectedCount, glm::vec2(100.0f, 50.0f), glm::vec2(100.0f, 100.0f));
-
-		if (!player->isAlive() && !debugCamera) {
-			DrawTextoScreen(keyHUDshader, catSadScreenTexture->getID(), width, height, glm::vec2(900.0f, 200.0f), glm::vec2(500.0f, 500.0f));
-		}
-		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); // Reset blending function for other rendering
-
-		glDisable(GL_BLEND); // Disable blending after text rendering
-
-
-
-		if (Config::DRAW_MINIMAP) { // Draw the mini map
-			ShadowProg->bind();
-			//cout << "Drawing minimap" << endl;
-			glClear(GL_DEPTH_BUFFER_BIT);
-			glViewport(0, height - 350, 350, 350);
-			SetOrthoMatrix(ShadowProg);
-			SetTopView(ShadowProg); /*MINI MAP*/
-			SetMaterial(ShadowProg, Material::brown);
-			//drawScene(prog2, CULL);
-			/* draws */
-			// drawBorder(prog2, Model);
-			// drawBooks(prog2, Model);
-			// drawEnemies(prog2, Model);
-			#if USE_INSTANCING
-			drawLibInstancing(ShadowProg, false); // Draw the library shelves without culling
-			#else
-			drawCircularBorder(ShadowProg, false); // Draw the circular library shelves
-			drawLibrary(ShadowProg, Model, false);
-			drawBossRoom(ShadowProg, Model, false, 0.0);
-			drawBossEntrDoor(ShadowProg, Model, false, 0.0);
-			drawBossExitDoor(ShadowProg, Model, false, 0.0); // Draw the boss exit door
-			#endif
-			// drawLibInstancing(ShadowProg, false); // Draw the library shelves without culling
-			drawBossEnemy(ShadowProg, Model);
-			// drawOrbs(prog2, Model);
-			drawMiniPlayer(ShadowProg, Model);
-			drawBorderWalls(ShadowProg, Model);
-			// SetMaterialMan(prog2,6 );
-			drawLibGrnd(ShadowProg, Model);
-			// drawBossRoom(ShadowProg, Model, false); //boss room not drawing
-			drawEnemies(ShadowProg, Model, 0.0f);
-			ShadowProg->unbind();
-		}
-
-
 
 		// glEnable(GL_BLEND); // Enable blending for text rendering
 		// // RenderText(textProg, "Cats are ok.  Cur time: " + to_string(glfwGetTime()), 10.0f, 265.0f, 1.0f, glm::vec3(1.0f, 1.0f, 0.9f),
@@ -7101,8 +7104,8 @@ public:
 	}
 
 	void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
-		if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) glfwSetWindowShouldClose(window, GL_TRUE);
-		if (key == GLFW_KEY_ENTER && action == GLFW_PRESS) gameState = GameState::IN_GAME;
+		if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) { glfwSetWindowShouldClose(window, GL_TRUE); }
+		if (key == GLFW_KEY_ENTER && action == GLFW_PRESS) { gameState = GameState::IN_GAME; }
 
 		//Debug
 		if (key == GLFW_KEY_K && action == GLFW_PRESS) {
