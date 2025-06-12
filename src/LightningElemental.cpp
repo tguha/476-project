@@ -3,21 +3,22 @@
 
 LightningElemental::LightningElemental(const glm::vec3& position, float hitpoints, float moveSpeed, AssimpModel* model, const glm::vec3& scale, const glm::vec3& rotation)
     : Enemy(position, hitpoints, moveSpeed, model, scale, rotation) {
-        meleeTimer = Config::LIGHTNING_ELEMENTAL_MELEE_SPEED; // Timer for melee attack cooldown
-        meleeRange = Config::LIGHTNING_ELEMENTAL_MELEE_RANGE; // Range for melee attack
-        meleeDamage = Config::LIGHTNING_ELEMENTAL_MELEE_DAMAGE; // Damage dealt by melee attack
-        aggroRange = Config::LIGHTNING_ELEMENTAL_AGGRO_RANGE; // Range for aggro detection
-        sightRange = Config::LIGHTNING_ELEMENTAL_SIGHT_RANGE; // Sight range for lightning elemental
-        territoryRadius = Config::LIGHTNING_ELEMENTAL_TERRITORY_RADIUS; // Territory radius for lightning elemental
-    }
+    meleeTimer = Config::LIGHTNING_ELEMENTAL_MELEE_SPEED; // Timer for melee attack cooldown
+    meleeRange = Config::LIGHTNING_ELEMENTAL_MELEE_RANGE; // Range for melee attack
+    meleeDamage = Config::LIGHTNING_ELEMENTAL_MELEE_DAMAGE; // Damage dealt by melee attack
+    aggroRange = Config::LIGHTNING_ELEMENTAL_AGGRO_RANGE; // Range for aggro detection
+    sightRange = Config::LIGHTNING_ELEMENTAL_SIGHT_RANGE; // Sight range for lightning elemental
+    territoryRadius = Config::LIGHTNING_ELEMENTAL_TERRITORY_RADIUS; // Territory radius for lightning elemental
+}
 
 void LightningElemental::moveTowardsPlayer(const glm::vec3& playerPosition, float deltaTime) {
+
     glm::vec3 direction = glm::normalize(playerPosition - this->getPosition());
     direction.y = 0; // Keep the enemy on the same Y level
     direction = glm::normalize(direction);
     // this->move(direction, deltaTime);
 
-    static float teleportTimer = 0.0f; // Static timer to track teleport intervals
+    float static teleportTimer = 0.0f; // Static timer to track teleport intervals
 
     // Check if enough time has passed since the last teleport
 
@@ -29,12 +30,15 @@ void LightningElemental::moveTowardsPlayer(const glm::vec3& playerPosition, floa
 
         // Random teleport distance
         float teleportDistance = glm::linearRand(3.0f, 5.0f);
-        glm::vec3 newPosition = this->getPosition() + warpedDirection * teleportDistance;
+        this->startPosition = this->getPosition();
+        this->newPosition = this->getPosition() + warpedDirection * teleportDistance;
 
-        this->setPosition(newPosition);
+        //this->setPosition(newPosition);
 
         // Add randomness to cooldown
         teleportTimer = Config::LIGHTNING_ELEMENTAL_TP_INTERVAL + glm::linearRand(-0.2f, 0.3f);
+        teleport_timing = teleportTimer;
+        teleport_clock = teleportTimer;
     }
     teleportTimer -= deltaTime; // Decrease teleport timer
 
@@ -60,6 +64,7 @@ void LightningElemental::moveTowardsPlayer(const glm::vec3& playerPosition, floa
     // this->setRotY(currentRotY);
 }
 
+
 void LightningElemental::update(Player* player, float deltaTime) {
     Enemy::update(player, deltaTime); // Call base class update
 
@@ -73,5 +78,16 @@ void LightningElemental::update(Player* player, float deltaTime) {
     // Move toward player if aggroed
     if (isAggro()) {
         moveTowardsPlayer(player->getPosition(), deltaTime);
+        tpInterp(deltaTime);
+    }
+}
+
+void LightningElemental::tpInterp(float deltaTime) {
+    if (teleport_clock >= 0.0f) {
+        glm::vec3 midstep = Bezier::quadErp(this->newPosition, this->startPosition, teleport_clock / teleport_timing);
+        setPosition(midstep);
+        //cout << "tt: " << teleport_timing << endl;
+        //cout << "dt: " << deltaTime << endl;
+        teleport_clock -= 10 * deltaTime;
     }
 }
