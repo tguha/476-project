@@ -78,7 +78,8 @@ enum class Material {
     orb_highlight_blue,
     orb_highlight_red,
     orb_highlight_yellow,
-    orb_highlight_green
+    orb_highlight_green,
+    sun
 };
 
 // Helper function to map each <Material> to a base color for particles (or fallback white)
@@ -113,6 +114,11 @@ inline glm::vec3 materialToColor(Material m) {
 };
 
 // --- Structs ---
+struct PointLight {
+    glm::vec3 position;
+    glm::vec3 color;
+};
+
 struct SpellProjectile {
     glm::vec3 position;
     glm::vec3 direction;

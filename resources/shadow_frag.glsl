@@ -11,6 +11,7 @@ uniform vec3 MatAlbedo;
 uniform float MatRough;
 uniform float MatMetal;
 uniform vec3 MatEmit;
+uniform float MatAO;
 
 uniform bool hasMaterial;
 
@@ -80,21 +81,30 @@ vec3 toneReinhard(vec3 x) {
 }
 
 float ShadowCalculation(vec4 LSfPos) {
-	float bias = .005;
-	vec3 shiftedCords = (LSfPos.xyz + vec3(1.0)) * 0.5; // shift the coordinates from -1, 1 to 0 ,1
-	float lightDepth = texture(shadowDepth, shiftedCords.xy).r; // read off the stored depth (.) from the ShadowDepth, using the shifted.xy
-	float currentDepth = shiftedCords.z - bias; // compare to the current depth (.z) of the projected depth
-	vec2 texelScale = 1.0 / textureSize(shadowDepth, 0);
-	float percentShadow = 0.0;
-	for (int i = -2; i <= 2; i++) {
-		for (int j = -2; j <= 2; j++) {
-			lightDepth = texture(shadowDepth, shiftedCords.xy + vec2(i, j) * texelScale).r;
-			if (currentDepth > lightDepth) {
-				percentShadow += 1.0;
-			}
-		}
-	}
-	return percentShadow / 25.0; // 5x5 = 25 samples
+    vec3 projCoords = LSfPos.xyz / LSfPos.w;
+    projCoords = projCoords * 0.5 + 0.5; // Convert to (0,1)
+
+    if (projCoords.z > 1.0)
+        return 0.0;
+
+    // Adaptive bias: increases when surface normal is grazing light
+    float bias = max(0.005 * (1.0 - dot(info_struct.fragNor, lightDir)), 0.001);
+
+    float currentDepth = projCoords.z - bias;
+    vec2 texelSize = 1.0 / textureSize(shadowDepth, 0);
+
+    float shadow = 0.0;
+    for (int x = -2; x <= 2; ++x) {
+        for (int y = -2; y <= 2; ++y) {
+            float pcfDepth = texture(shadowDepth, projCoords.xy + vec2(x, y) * texelSize).r;
+            shadow += (currentDepth > pcfDepth) ? 1.0 : 0.0;
+        }
+    }
+    shadow /= 25.0;
+
+    shadow = smoothstep(0.0, 1.0, shadow); // soft shadow fade at edges
+
+    return shadow;
 }
 
 

@@ -6,6 +6,10 @@
 
 #pragma comment(lib, "winmm.lib")
 
+#include "GLTextureWriter.h"
+//#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
+
 #include <iostream>
 #include <glad/glad.h>
 #include <chrono>
@@ -13,6 +17,7 @@
 #include <set>
 #include <algorithm>
 #include <limits>
+#include <cassert>
 
 #include "GLSL.h"
 #include "Program.h"
@@ -86,6 +91,9 @@ public:
 	shared_ptr<Program> SkyboxProg;
 	shared_ptr<Program> debugLineProg;
 	shared_ptr<Program> textProg;
+	shared_ptr<Program> sunProg;
+	shared_ptr<Program> buffProg;
+	shared_ptr<Program> lightProg;
 
 	std::vector<ColorFilter> colorFilters = {
     { "Classic",   glm::vec4(1.0f, 1.0f, 1.0f, 0.0f) }, // No filter
@@ -118,8 +126,9 @@ public:
 	shared_ptr<Texture> particleAlphaTex;
 	shared_ptr<Texture> pawTex;
 
-	// Skybox texture and VAO/VBO
-	GLuint skyboxCubemap;
+	// Skybox textures and VAO/VBO
+	unordered_map<string, GLuint> skyboxTextures;
+	GLuint currentSkyboxTex;
 	GLuint skyboxCubeVAO = 0;
 	GLuint skyboxCubeVBO = 0;
 
@@ -194,10 +203,6 @@ public:
 	// vec3 characterMovement = vec3(0, 0, 0);
 	glm::vec3 manScale = glm::vec3(0.01f, 0.01f, 0.01f);
 	glm::vec3 manMoveDir = glm::vec3(sin(radians(0.0f)), 0, cos(radians(0.0f)));
-
-	// initial position of light cycles
-	glm::vec3 start_lightcycle1_pos = glm::vec3(-384, -11, 31);
-	glm::vec3 start_lightcycle2_pos = glm::vec3(-365, -11, 9.1);
 
 	float theta = glm::radians(Config::CAMERA_DEFAULT_THETA_DEGREES); // controls yaw
 	float phi = glm::radians(Config::CAMERA_DEFAULT_PHI_DEGREES); // controls pitch
@@ -307,7 +312,7 @@ public:
 
 	// Shadows
 	GLuint depthMapFBO;
-	const GLuint S_WIDTH = 2048, S_HEIGHT = 2048;
+	const GLuint S_WIDTH = 8192, S_HEIGHT = 8192;
 	GLuint depthMap;
 
 	// Geometry for texture render
@@ -358,7 +363,119 @@ public:
 	int currentSpellSlotIndex = 0; // Current spell type in use
 	SpellType currentPlayerSpellType = spellSlots[currentSpellSlotIndex]; // Player starts with Fire spell by default
 
+	std::vector<vec3> sceneLightPos;
+	std::vector<vec3> sceneLightCol;
+
+	GLuint gBuffer;
+	GLuint gPosition, gNormal, gTangent, gBitangent, gAlbedo, gMRA, gEmission, gLSPosition;
+	GLuint depthBuf;
+	void initBuffers() {
+		// create the FBO + textures + rbo exactly once
+		glGenFramebuffers(1, &gBuffer);
+		glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
+
+		glGenTextures(1, &gPosition);
+		glGenTextures(1, &gNormal);
+		glGenTextures(1, &gAlbedo);
+		glGenTextures(1, &gMRA);
+		glGenTextures(1, &gEmission);
+		glGenTextures(1, &gLSPosition);
+
+		glGenRenderbuffers(1, &depthBuf);
+
+		// set up draw‐buffers array
+		GLenum DrawBuffers[6] = {
+			GL_COLOR_ATTACHMENT0,
+			GL_COLOR_ATTACHMENT1,
+			GL_COLOR_ATTACHMENT2,
+			GL_COLOR_ATTACHMENT3,
+			GL_COLOR_ATTACHMENT4,
+			GL_COLOR_ATTACHMENT5
+		};
+		glDrawBuffers(6, DrawBuffers);
+
+		// now immediately size them to the current window
+		int w, h;
+		glfwGetFramebufferSize(windowManager->getHandle(), &w, &h);
+
+		// attach all the textures + rbo
+		resizeGBuffer(w, h);
+
+		// hook them up to the FBO
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, gPosition, 0);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, gNormal, 0);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, gAlbedo, 0);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT3, GL_TEXTURE_2D, gMRA, 0);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT4, GL_TEXTURE_2D, gEmission, 0);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT5, GL_TEXTURE_2D, gLSPosition, 0);
+		glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depthBuf);
+
+		// finally unbind
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	}
+
+	void resizeGBuffer(int width, int height) {
+		//	// Position buffer (RGB16F for world-space position)
+		//glGenTextures(1, &gPosition);
+		glBindTexture(GL_TEXTURE_2D, gPosition);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, width, height, 0, GL_RGB, GL_FLOAT, NULL);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, gPosition, 0);
+
+	//	// Normal buffer (RGB16F for high-precision normals)
+	//	glGenTextures(1, &gNormal);
+		glBindTexture(GL_TEXTURE_2D, gNormal);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, width, height, 0, GL_RGB, GL_FLOAT, NULL);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, gNormal, 0);
+
+	//	// Albedo buffer (RGB8)
+	//	glGenTextures(1, &gAlbedo);
+		glBindTexture(GL_TEXTURE_2D, gAlbedo);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, gAlbedo, 0);
+
+	//	// Metalness, Roughness, AO buffer (RGB8)
+	//	glGenTextures(1, &gMRA);
+		glBindTexture(GL_TEXTURE_2D, gMRA);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT3, GL_TEXTURE_2D, gMRA, 0);
+
+		// Emission buffer (RGB8)
+		//glGenTextures(1, &gEmission);
+		glBindTexture(GL_TEXTURE_2D, gEmission);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT4, GL_TEXTURE_2D, gEmission, 0);
+
+		// Light Space Position buffer (RGB16)
+	    //glGenTextures(1, &gLSPosition);
+		glBindTexture(GL_TEXTURE_2D, gLSPosition);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT5, GL_TEXTURE_2D, gLSPosition, 0);
+	
+		// Depth buffer
+	    //glGenRenderbuffers(1, &depthBuf);
+		glBindRenderbuffer(GL_RENDERBUFFER, depthBuf);
+		glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, width, height);
+		glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depthBuf);
+
+		// cleanup binds
+		glBindTexture(GL_TEXTURE_2D, 0);
+		glBindRenderbuffer(GL_RENDERBUFFER, 0);
+	}
+  
 	std::vector<LocksOnDoor> lockOnDoors;
+
 
 	// --- Paw Prints ---
 	// CPU: record and upload a list of paw prints
@@ -493,29 +610,19 @@ public:
 		glBindVertexArray(0);
 	}
 
-	void initSkyboxTex(string resourceDirectory) {
-		glGenTextures(1, &skyboxCubemap);
-		glBindTexture(GL_TEXTURE_CUBE_MAP, skyboxCubemap);
+	GLuint initSkyboxTex(const vector<string>& faces) {
+		GLuint texID;
+		glGenTextures(1, &texID);
+		glBindTexture(GL_TEXTURE_CUBE_MAP, texID);
 
-		vector<string> faces = {
-			resourceDirectory + "/skyboxTex/px.png",
-			resourceDirectory + "/skyboxTex/nx.png",
-			resourceDirectory + "/skyboxTex/py.png",
-			resourceDirectory + "/skyboxTex/ny.png",
-			resourceDirectory + "/skyboxTex/pz.png",
-			resourceDirectory + "/skyboxTex/nz.png"
-		};
+		stbi_set_flip_vertically_on_load(false);
 
 		for (GLuint i = 0; i < faces.size(); i++) {
 			int w, h, n;
 			unsigned char* data = stbi_load(faces[i].c_str(), &w, &h, &n, 0);
 			if (data) {
 				GLenum format = (n == 4 ? GL_RGBA : GL_RGB);
-				glTexImage2D(
-					GL_TEXTURE_CUBE_MAP_POSITIVE_X + i,
-					0, format, w, h, 0,
-					format, GL_UNSIGNED_BYTE, data
-				);
+				glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, format, w, h, 0, format, GL_UNSIGNED_BYTE, data);
 				stbi_image_free(data);
 			}
 			else {
@@ -532,6 +639,50 @@ public:
 		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
 
 		glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
+
+		stbi_set_flip_vertically_on_load(true);
+
+		return texID;
+	}
+
+	void initSkyboxes(const string& resourceDir) {
+		initSkyboxCube();
+		skyboxTextures["day"] = initSkyboxTex({
+			resourceDir + "/skyboxTex/day/px.png",
+			resourceDir + "/skyboxTex/day/nx.png",
+			resourceDir + "/skyboxTex/day/py.png",
+			resourceDir + "/skyboxTex/day/ny.png",
+			resourceDir + "/skyboxTex/day/pz.png",
+			resourceDir + "/skyboxTex/day/nz.png"
+		});
+		skyboxTextures["noon"] = initSkyboxTex({
+			resourceDir + "/skyboxTex/noon/px.png",
+			resourceDir + "/skyboxTex/noon/nx.png",
+			resourceDir + "/skyboxTex/noon/py.png",
+			resourceDir + "/skyboxTex/noon/ny.png",
+			resourceDir + "/skyboxTex/noon/pz.png",
+			resourceDir + "/skyboxTex/noon/nz.png"
+		});
+		skyboxTextures["night"] = initSkyboxTex({
+			resourceDir + "/skyboxTex/night/px.png",
+			resourceDir + "/skyboxTex/night/nx.png",
+			resourceDir + "/skyboxTex/night/py.png",
+			resourceDir + "/skyboxTex/night/ny.png",
+			resourceDir + "/skyboxTex/night/pz.png",
+			resourceDir + "/skyboxTex/night/nz.png"
+		});
+		skyboxTextures["mystic"] = initSkyboxTex({
+			resourceDir + "/skyboxTex/mystic/px.png",
+			resourceDir + "/skyboxTex/mystic/nx.png",
+			resourceDir + "/skyboxTex/mystic/py.png",
+			resourceDir + "/skyboxTex/mystic/ny.png",
+			resourceDir + "/skyboxTex/mystic/pz.png",
+			resourceDir + "/skyboxTex/mystic/nz.png"
+		});
+	}
+
+	void setSkybox(const string& name) {
+		currentSkyboxTex = skyboxTextures[name];
 	}
 
 	void updateCameraVectors() {
@@ -668,7 +819,8 @@ public:
 		GLSL::checkVersion();
 
 		// Set background color and enable z-buffer test
-		glClearColor(.12f, .34f, .56f, 1.0f);
+		//glClearColor(.12f, .34f, .56f, 1.0f);
+		glClearColor(0.01, 0.01, 0.01, 1.0f);
 		glEnable(GL_DEPTH_TEST);
 
 		glEnable(GL_BLEND);
@@ -705,6 +857,21 @@ public:
 		debugLineProg->setShaderNames(resourceDirectory + "/line_vert.glsl", resourceDirectory + "/line_frag.glsl");
 		debugLineProg->init();
 
+		sunProg = make_shared<Program>();
+		sunProg->setVerbose(Config::DEBUG_SHADER);
+		sunProg->setShaderNames(resourceDirectory + "/sun_vert.glsl", resourceDirectory + "/sun_frag.glsl");
+		sunProg->init();
+
+		buffProg = make_shared<Program>();
+		buffProg->setVerbose(Config::DEBUG_SHADER);
+		buffProg->setShaderNames(resourceDirectory + "/buff_vert.glsl", resourceDirectory + "/buff_frag.glsl");
+		buffProg->init();
+
+		lightProg = make_shared<Program>();
+		lightProg->setVerbose(Config::DEBUG_SHADER);
+		lightProg->setShaderNames(resourceDirectory + "/pass_vert.glsl", resourceDirectory + "/light_frag.glsl");
+		lightProg->init();
+
 		// Add unfigorm and attrubutes to each of the programs
 		DepthProg->addUniform("LP");
 		DepthProg->addUniform("LV");
@@ -737,6 +904,7 @@ public:
 		ShadowProg->addUniform("MatRough");
 		ShadowProg->addUniform("MatMetal");
 		ShadowProg->addUniform("MatEmit");
+		ShadowProg->addUniform("MatAO");
 		ShadowProg->addUniform("enemyAlpha");
 		ShadowProg->addUniform("texOnly");
 		ShadowProg->addUniform("exposure");
@@ -746,13 +914,10 @@ public:
 		ShadowProg->addUniform("pawData");
 		ShadowProg->addUniform("pawTex");
 		ShadowProg->addUniform("curTime");
-		ShadowProg->addAttribute("vertPos");
-		ShadowProg->addAttribute("vertNor");
-		ShadowProg->addAttribute("vertTex");
 		ShadowProg->bind();
 		GLint loc = ShadowProg->getUniform("uMaps");
-		GLint units[6] = { 0,1,2,3,4,5 };
-		glUniform1iv(loc, 6, units);
+		GLint units[5] = { 0,1,2,3,4 };
+		glUniform1iv(loc, 5, units);
 		ShadowProg->unbind();
 
 		initShadow();
@@ -807,7 +972,79 @@ public:
 		textProg->addUniform("textTex");
 		textProg->addUniform("textColor");
 
+		sunProg->addUniform("P");
+		sunProg->addUniform("V");
+		sunProg->addUniform("M");
+		sunProg->addUniform("glowColor");
+		sunProg->addAttribute("vertPos");
+
+		// --- FBO shader setup ---
+		buffProg->addUniform("P");
+		buffProg->addUniform("V");
+		buffProg->addUniform("M");
+		buffProg->addUniform("LV");
+		buffProg->addAttribute("vertPos");
+		buffProg->addAttribute("vertNor");
+		buffProg->addAttribute("vertTex");
+		buffProg->addAttribute("vertTan");
+		//buffProg->addAttribute("vertBitan");
+		buffProg->addAttribute("InstancedOffset");
+
+		buffProg->addUniform("uMaps");
+		buffProg->bind();
+		GLint buffLoc = buffProg->getUniform("uMaps");
+		GLint buffUnits[6] = { 0,1,2,3,4,5 };
+		glUniform1iv(buffLoc, 6, buffUnits);
+		buffProg->unbind();
+		
+		buffProg->addUniform("hasBones");
+		buffProg->addAttribute("boneIds");
+		buffProg->addAttribute("weights");
+		for (int i = 0; i < Config::MAX_BONES; i++) buffProg->addUniform("finalBonesMatrices[" + to_string(i) + "]");
+
+		buffProg->addUniform("hasInstancing");
+
+		buffProg->addUniform("hasMaterial");
+		buffProg->addUniform("MatAlbedo");
+		buffProg->addUniform("MatRough");
+		buffProg->addUniform("MatMetal");
+		buffProg->addUniform("MatAO");
+		buffProg->addUniform("MatEmit");
+
+		buffProg->addUniform("enemyAlpha");
+		buffProg->addUniform("pawTex");
+		buffProg->addUniform("numPaws");
+		buffProg->addUniform("paws");
+		buffProg->addUniform("curTime");
+		// --- END FBO shader setup ---
+
+		// --- Lighting shader setup ---
+		lightProg->addAttribute("vertPos");
+
+		lightProg->addUniform("viewPos");
+		lightProg->addUniform("shadowLightDir");
+		lightProg->addUniform("numLights");
+		lightProg->addUniform("lightPos");
+		lightProg->addUniform("lightCol");
+		
+		lightProg->addUniform("exposure");
+		lightProg->addUniform("saturation");
+
+		lightProg->addUniform("positionBuf");
+		lightProg->addUniform("normalBuf");
+		lightProg->addUniform("albedoBuf");
+		lightProg->addUniform("mraBuf");
+		lightProg->addUniform("emissionBuf");
+		lightProg->addUniform("positionLSBuf");
+		lightProg->addUniform("shadowDepth");
+
+		lightProg->addUniform("sunPos");
+		lightProg->addUniform("sunCol");
+		// --- END Lighting shader setup ---
+		
 		updateCameraVectors();
+
+		// --- Textures ---
 
 		pawTex = make_shared<Texture>();
 		pawTex->setFilename(resourceDirectory + "/paw_print.png");
@@ -856,6 +1093,8 @@ public:
 		std::string fontPath = resourceDirectory + "/fonts/arial.ttf";
 		int fError = initFont(fontPath);
 		cout << "Font error? " << fError << endl;
+
+		initBuffers();
 	}
 
 	GLuint genSolidTexture(const unsigned char* pixel, GLenum format) {
@@ -874,32 +1113,32 @@ public:
 		grid = library->getGrid();
 
 		if (bossEntranceDir.y > 0) {
-			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(0)), vec3(-1, 0, 0), 10.0f, borderWallTex);
-			addWall(gridSize.x - 3, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 10.0f, borderWallTex);
-			addWall(gridSize.x - 1, vec3(library->mapGridXtoWorldX((gridSize.x - 1) / 2), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 10.0f, borderWallTex);
-			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(0), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
-			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
+			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(0)), vec3(-1, 0, 0), 7.0f, borderWallTex);
+			addWall(gridSize.x - 3, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 7.0f, borderWallTex);
+			addWall(gridSize.x - 1, vec3(library->mapGridXtoWorldX((gridSize.x - 1) / 2), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 7.0f, borderWallTex);
+			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(0), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 7.0f, borderWallTex);
+			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 7.0f, borderWallTex);
 		}
 		else if (bossEntranceDir.y < 0) {
-			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 10.0f, borderWallTex);
-			addWall(gridSize.x - 3, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(0)), vec3(-1, 0, 0), 10.0f, borderWallTex);
-			addWall(gridSize.x - 1, vec3(library->mapGridXtoWorldX((gridSize.x - 1) / 2), 0, library->mapGridYtoWorldZ(0)), vec3(-1, 0, 0), 10.0f, borderWallTex);
-			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(0), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
-			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
+			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 7.0f, borderWallTex);
+			addWall(gridSize.x - 3, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(0)), vec3(-1, 0, 0), 7.0f, borderWallTex);
+			addWall(gridSize.x - 1, vec3(library->mapGridXtoWorldX((gridSize.x - 1) / 2), 0, library->mapGridYtoWorldZ(0)), vec3(-1, 0, 0), 7.0f, borderWallTex);
+			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(0), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 7.0f, borderWallTex);
+			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 7.0f, borderWallTex);
 		}
 		else if (bossEntranceDir.x > 0) {
-			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 10.0f, borderWallTex);
-			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(0)), vec3(-1, 0, 0), 10.0f, borderWallTex);
-			addWall(gridSize.y - 3, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
-			addWall(gridSize.y - 1, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ((gridSize.y - 1) / 2)), vec3(0, 0, -1), 10.0f, borderWallTex);
-			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(0) , 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
+			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 7.0f, borderWallTex);
+			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(0)), vec3(-1, 0, 0), 7.0f, borderWallTex);
+			addWall(gridSize.y - 3, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 7.0f, borderWallTex);
+			addWall(gridSize.y - 1, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ((gridSize.y - 1) / 2)), vec3(0, 0, -1), 7.0f, borderWallTex);
+			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(0) , 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 7.0f, borderWallTex);
 		}
 		else if (bossEntranceDir.x < 0) {
-			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 10.0f, borderWallTex);
-			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(0)), vec3(-1, 0, 0), 10.0f, borderWallTex);
-			addWall(gridSize.y - 3, vec3(library->mapGridXtoWorldX(0), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
-			addWall(gridSize.y - 1, vec3(library->mapGridXtoWorldX(0), 0, library->mapGridYtoWorldZ((gridSize.y - 1) / 2)), vec3(0, 0, -1), 10.0f, borderWallTex);
-			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 10.0f, borderWallTex);
+			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(-1, 0, 0), 7.0f, borderWallTex);
+			addWall(gridSize.x * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(0)), vec3(-1, 0, 0), 7.0f, borderWallTex);
+			addWall(gridSize.y - 3, vec3(library->mapGridXtoWorldX(0), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 7.0f, borderWallTex);
+			addWall(gridSize.y - 1, vec3(library->mapGridXtoWorldX(0), 0, library->mapGridYtoWorldZ((gridSize.y - 1) / 2)), vec3(0, 0, -1), 7.0f, borderWallTex);
+			addWall(gridSize.y * 2, vec3(library->mapGridXtoWorldX(gridSize.x - 1), 0, library->mapGridYtoWorldZ(gridSize.y - 1)), vec3(0, 0, -1), 7.0f, borderWallTex);
 		}
 
 		addLibGrnd(gridSize.x * 2, gridSize.y * 2, 0.0f, vec3(0, 0, 0), libraryGroundTex);
@@ -908,6 +1147,9 @@ public:
 		bossGrid = bossRoom->getGrid();
 		addLibGrnd(bossGridSize.x * 2, bossGridSize.y * 2, 0.0f, bossRoom->getWorldOrigin(), libraryGroundTex);
 
+		sceneLightPos.clear();
+		sceneLightCol.clear();
+		genLibLights();
 	}
 
 	void initInstancingMatrices() {
@@ -921,7 +1163,6 @@ public:
 		candelabraMatrices.clear();
 		clockMatrices.clear();
 		doorMatrices.clear();
-
 
 		for (int z = 0; z < grid.getSize().y; ++z) {
 			for (int x = 0; x < grid.getSize().x; ++x) {
@@ -1259,7 +1500,7 @@ public:
 
 		// load the walking character moded
 		player_rig = new AssimpModel(resourceDirectory + "/CatWizard/CatWizardAnimation4.fbx");
-		player_rig->assignTexture("texture_diffuse", resourceDirectory + "/CatWizard/textures/ImphenziaPalette02-Albedo.png");
+		player_rig->assignTexture("texAlbedo", resourceDirectory + "/CatWizard/textures/ImphenziaPalette02-Albedo.png");
 
 		//Getting Player animations
 		player_walk = new Animation(resourceDirectory + "/CatWizard/CatWizardAnimation4.fbx", player_rig, 4);
@@ -1281,54 +1522,54 @@ public:
 		cube = new AssimpModel(resourceDirectory + "/cube.obj");
 
 		bookCover = new AssimpModel(resourceDirectory + "/cornerCube/sideCube.fbx");
-		bookCover->assignTexture("texture_diffuse", resourceDirectory + "/cornerCube/brown-leather-tex/brown-leather_albedo.png");
-		bookCover->assignTexture("texture_roughness", resourceDirectory + "/cornerCube/brown-leather-tex/brown-leather_roughness.png");
-		bookCover->assignTexture("texture_metalness", resourceDirectory + "/cornerCube/brown-leather-tex/brown-leather_metallic.png");
-		bookCover->assignTexture("texture_normal", resourceDirectory + "/cornerCube/brown-leather-tex/brown-leather_normal-ogl.png");
+		bookCover->assignTexture("texAlbedo", resourceDirectory + "/cornerCube/brown-leather-tex/brown-leather_albedo.png");
+		bookCover->assignTexture("texRoughness", resourceDirectory + "/cornerCube/brown-leather-tex/brown-leather_roughness.png");
+		bookCover->assignTexture("texMetalness", resourceDirectory + "/cornerCube/brown-leather-tex/brown-leather_metallic.png");
+		bookCover->assignTexture("texNormal", resourceDirectory + "/cornerCube/brown-leather-tex/brown-leather_normal-ogl.png");
 
 		bookPaper = new AssimpModel(resourceDirectory + "/cornerCube/sideCube.fbx");
-		bookPaper->assignTexture("texture_diffuse", resourceDirectory + "/cornerCube/wrinkled-paper-tex/wrinkled-paper-albedo.png");
-		bookPaper->assignTexture("texture_roughness", resourceDirectory + "/cornerCube/wrinkled-paper-tex/wrinkled-paper-roughness.png");
-		bookPaper->assignTexture("texture_metalness", resourceDirectory + "/cornerCube/wrinkled-paper-tex/wrinkled-paper-metalness.png");
-		bookPaper->assignTexture("texture_normal", resourceDirectory + "/cornerCube/wrinkled-paper-tex/wrinkled-paper-normal-ogl.png");
+		bookPaper->assignTexture("texAlbedo", resourceDirectory + "/cornerCube/wrinkled-paper-tex/wrinkled-paper-albedo.png");
+		bookPaper->assignTexture("texRoughness", resourceDirectory + "/cornerCube/wrinkled-paper-tex/wrinkled-paper-roughness.png");
+		bookPaper->assignTexture("texMetalness", resourceDirectory + "/cornerCube/wrinkled-paper-tex/wrinkled-paper-metalness.png");
+		bookPaper->assignTexture("texNormal", resourceDirectory + "/cornerCube/wrinkled-paper-tex/wrinkled-paper-normal-ogl.png");
 
 		book_shelf1 = new AssimpModel(resourceDirectory + "/cluster_assets/bookshelf_texture2.obj");
-		book_shelf1->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/darker_bookshelf_diffuse.png");
+		book_shelf1->assignTexture("texAlbedo", resourceDirectory + "/cluster_assets/darker_bookshelf_diffuse.png");
 
 		book_shelf2 = new AssimpModel(resourceDirectory + "/cluster_assets/bookshelf_texture2.obj");
-		book_shelf2->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/glowing_bookshelf_bake_diffuse.png");
+		book_shelf2->assignTexture("texAlbedo", resourceDirectory + "/cluster_assets/glowing_bookshelf_bake_diffuse.png");
 
 		candelabra = new AssimpModel(resourceDirectory + "/cluster_assets/candelabrum/Candelabrum.obj");
-		candelabra->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/candelabrum/textures/defaultobject_gold.jpg");
-		candelabra->assignTexture("texture_specular", resourceDirectory + "/cluster_assets/candelabrum/textures/defaultobject_specular.png");
-		candelabra->assignTexture("texture_normal", resourceDirectory + "/cluster_assets/candelabrum/textures/defaultobject_normal.png");
+		candelabra->assignTexture("texAlbedo", resourceDirectory + "/cluster_assets/candelabrum/textures/defaultobject_gold.jpg");
+		//candelabra->assignTexture("texture_specular", resourceDirectory + "/cluster_assets/candelabrum/textures/defaultobject_specular.png");
+		candelabra->assignTexture("texNormal", resourceDirectory + "/cluster_assets/candelabrum/textures/defaultobject_normal.png");
 
 		chest = new AssimpModel(resourceDirectory + "/cluster_assets/chest/Chest.obj");
-		chest->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/chest/textures/TreasureChestDiffuse_2.png");
-		chest->assignTexture("texture_roughness", resourceDirectory + "/cluster_assets/chest/textures/TreasureChestRoughness_2.png");
-		chest->assignTexture("texture_metalness", resourceDirectory + "/cluster_assets/chest/textures/TreasureChestMetal_2.png");
-		chest->assignTexture("texture_normal", resourceDirectory + "/cluster_assets/chest/textures/TreasureChestNormal_2.png");
+		chest->assignTexture("texAlbedo", resourceDirectory + "/cluster_assets/chest/textures/TreasureChestDiffuse_2.png");
+		chest->assignTexture("texRoughness", resourceDirectory + "/cluster_assets/chest/textures/TreasureChestRoughness_2.png");
+		chest->assignTexture("texMetalness", resourceDirectory + "/cluster_assets/chest/textures/TreasureChestMetal_2.png");
+		chest->assignTexture("texNormal", resourceDirectory + "/cluster_assets/chest/textures/TreasureChestNormal_2.png");
 
 		library_bench = new AssimpModel(resourceDirectory + "/cluster_assets/library_bench/library_bench.obj");
-		library_bench->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/library_bench/textures/bench_diffuse.png");
+		library_bench->assignTexture("texAlbedo", resourceDirectory + "/cluster_assets/library_bench/textures/bench_diffuse.png");
 
 		table_chairs1 = new AssimpModel(resourceDirectory + "/cluster_assets/table_chairs/table_chairs_3.obj");
-		table_chairs1->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/table_chairs/textures/table_chairs_3_diffuse.png");
+		table_chairs1->assignTexture("texAlbedo", resourceDirectory + "/cluster_assets/table_chairs/textures/table_chairs_3_diffuse.png");
 
 		table_chairs2 = new AssimpModel(resourceDirectory + "/cluster_assets/table_chairs/table_chairs_4.obj");
-		table_chairs2->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/table_chairs/textures/table_chairs_4_diffuse.png");
+		table_chairs2->assignTexture("texAlbedo", resourceDirectory + "/cluster_assets/table_chairs/textures/table_chairs_4_diffuse.png");
 
 		grandfather_clock = new AssimpModel(resourceDirectory + "/cluster_assets/grandfather_clock/grandfather_clock.obj");
-		grandfather_clock->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/grandfather_clock/textures/Clock_L_lambert1_BaseColor.tga.png");
-		grandfather_clock->assignTexture("texture_metalness", resourceDirectory + "/cluster_assets/grandfather_clock/textures/Clock_L_lambert1_Metallic.tga.png");
-		grandfather_clock->assignTexture("texture_roughness", resourceDirectory + "/cluster_assets/grandfather_clock/textures/Clock_L_lambert1_Roughness.tga.png");
-		grandfather_clock->assignTexture("texture_normal", resourceDirectory + "/cluster_assets/grandfather_clock/textures/Clock_L_lambert1_Normal.tga.jpg");
+		grandfather_clock->assignTexture("texAlbedo", resourceDirectory + "/cluster_assets/grandfather_clock/textures/Clock_L_lambert1_BaseColor.tga.png");
+		grandfather_clock->assignTexture("texMetalness", resourceDirectory + "/cluster_assets/grandfather_clock/textures/Clock_L_lambert1_Metallic.tga.png");
+		grandfather_clock->assignTexture("texRoughness", resourceDirectory + "/cluster_assets/grandfather_clock/textures/Clock_L_lambert1_Roughness.tga.png");
+		grandfather_clock->assignTexture("texNormal", resourceDirectory + "/cluster_assets/grandfather_clock/textures/Clock_L_lambert1_Normal.tga.jpg");
 
 		bookstand = new AssimpModel(resourceDirectory + "/cluster_assets/bookstand/bookstand.obj");
-		bookstand->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/bookstand/textures/bookstand_diffuse.png");
+		bookstand->assignTexture("texAlbedo", resourceDirectory + "/cluster_assets/bookstand/textures/bookstand_diffuse.png");
 
 		door = new AssimpModel(resourceDirectory + "/cluster_assets/door/door.obj");
-		door->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/door/Door_diffuse.png");
+		door->assignTexture("texAlbedo", resourceDirectory + "/cluster_assets/door/Door_diffuse.png");
 
 		sphere = new AssimpModel(resourceDirectory + "/SmoothSphere.obj");
 		sphereBB = make_shared<AABB>();
@@ -1340,10 +1581,10 @@ public:
 		lightningElemental = new AssimpModel(resourceDirectory + "/LightningElemental/LightningElem.fbx");
 
 		healthBar = new AssimpModel(resourceDirectory + "/Quad/hud_quad.obj");
-		healthBar->assignTexture("texture_diffuse", resourceDirectory + "/healthbar.bmp");
+		healthBar->assignTexture("texAlbedo", resourceDirectory + "/healthbar.bmp");
 
 		stoneGolem = new AssimpModel(resourceDirectory + "/StoneGolem/Stone.obj");
-		stoneGolem->assignTexture("texture_diffuse", resourceDirectory + "/StoneGolem/textures/diffuso.tif");
+		stoneGolem->assignTexture("texAlbedo", resourceDirectory + "/StoneGolem/textures/diffuso.tif");
 
 		door_rig = new AssimpModel(resourceDirectory + "/cluster_assets/door/door_anim.dae");
 		door_rig->assignTexture("texture_diffuse", resourceDirectory + "/cluster_assets/door/Door_diffuse.png");
@@ -1383,14 +1624,39 @@ public:
 
 		vec3 bossSpawnPos = bossRoom->getWorldOrigin();
 
-
-
 		initEnemies();
 		bossEnemy = new BossEnemy(bossSpawnPos, BOSS_HP_MAX, stoneGolem, vec3(1.3f, 0.8f, 1.0f), vec3(0, 1, 0), BOSS_SPECIAL_ATTACK_COOLDOWN, SpellType::ICE);
 
 		initTextQuad();
-		initCircularBorder();
+    
+    initCircularBorder();
 		initLocks();
+
+		initQuad2();
+	}
+
+	void initQuad2() {
+		glGenVertexArrays(1, &quad_VertexArrayID);
+		glBindVertexArray(quad_VertexArrayID); // bind VAO first
+
+		static const GLfloat g_quad_vertex_buffer_data[] = {
+			-1.0f, -1.0f, 0.0f,
+			 1.0f, -1.0f, 0.0f,
+			-1.0f,  1.0f, 0.0f,
+			-1.0f,  1.0f, 0.0f,
+			 1.0f, -1.0f, 0.0f,
+			 1.0f,  1.0f, 0.0f,
+		};
+
+		glGenBuffers(1, &quad_vertexbuffer);
+		glBindBuffer(GL_ARRAY_BUFFER, quad_vertexbuffer);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(g_quad_vertex_buffer_data), g_quad_vertex_buffer_data, GL_STATIC_DRAW);
+
+		// This is the critical part missing in your version:
+		glEnableVertexAttribArray(0); // enable attribute index 0
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (void*)0); // tell OpenGL how to interpret buffer
+
+		glBindVertexArray(0); // unbind VAO
 	}
 
 	void SetMaterial(shared_ptr<Program> shader, Material color) {
@@ -1428,138 +1694,168 @@ public:
 				glUniform1f(shader->getUniform("MatRough"), 0.7f);
 				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				glUniform1f(shader->getUniform("MatAO"), 0.5f);
 				break;
 			case Material::black:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.04f, 0.04f, 0.04f);
 				glUniform1f(shader->getUniform("MatRough"), 0.8f);
 				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				glUniform1f(shader->getUniform("MatAO"), 0.5f);
 				break;
 			case Material::eye_white:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.95f, 0.95f, 0.95f);
 				glUniform1f(shader->getUniform("MatRough"), 0.2f);
 				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				glUniform1f(shader->getUniform("MatAO"), 0.5f);
 				break;
 			case Material::pupil_white:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.85f, 0.85f, 0.9f);
 				glUniform1f(shader->getUniform("MatRough"), 0.1f);
 				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				glUniform1f(shader->getUniform("MatAO"), 0.5f);
 				break;
 			case Material::bronze:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.714f, 0.4284f, 0.181f);
 				glUniform1f(shader->getUniform("MatRough"), 0.4f);
 				glUniform1f(shader->getUniform("MatMetal"), 1.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				glUniform1f(shader->getUniform("MatAO"), 0.5f);
 				break;
 			case Material::silver:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.972f, 0.960f, 0.915f);
 				glUniform1f(shader->getUniform("MatRough"), 0.2f);
 				glUniform1f(shader->getUniform("MatMetal"), 1.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				glUniform1f(shader->getUniform("MatAO"), 0.5f);
 				break;
 			case Material::brown:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.25f, 0.15f, 0.08f);
 				glUniform1f(shader->getUniform("MatRough"), 0.7f);
 				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				glUniform1f(shader->getUniform("MatAO"), 0.5f);
 				break;
 			case Material::orb_glowing_blue:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.1f, 0.2f, 0.5f);
 				glUniform1f(shader->getUniform("MatRough"), 0.7f);
 				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.1f, 0.2f, 1.0f);
+				glUniform1f(shader->getUniform("MatAO"), 0.5f);
 				break;
 			case Material::orb_glowing_red:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.5f, 0.1f, 0.1f);
 				glUniform1f(shader->getUniform("MatRough"), 1.0f);
 				glUniform1f(shader->getUniform("MatMetal"), 1.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.9f, 0.3f, 0.2f);
+				glUniform1f(shader->getUniform("MatAO"), 0.5f);
 				break;
 			case Material::orb_glowing_yellow:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.5f, 0.4f, 0.1f);
 				glUniform1f(shader->getUniform("MatRough"), 1.0f);
 				glUniform1f(shader->getUniform("MatMetal"), 1.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.9f, 0.8f, 0.2f);
+				glUniform1f(shader->getUniform("MatAO"), 0.5f);
 				break;
 			case Material::orb_glowing_green:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.1f, 0.5f, 0.1f);
 				glUniform1f(shader->getUniform("MatRough"), 1.0f);
 				glUniform1f(shader->getUniform("MatMetal"), 1.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.2f, 0.9f, 0.2f);
+				glUniform1f(shader->getUniform("MatAO"), 0.5f);
 				break;
 			case Material::orb_highlight_red:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.8f, 0.1f, 0.1f);
 				glUniform1f(shader->getUniform("MatRough"), 0.5f);
 				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				glUniform1f(shader->getUniform("MatAO"), 0.5f);
 				break;
 			case Material::orb_highlight_blue:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.1f, 0.1f, 0.8f);
 				glUniform1f(shader->getUniform("MatRough"), 0.5f);
 				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				glUniform1f(shader->getUniform("MatAO"), 0.5f);
 				break;
 			case Material::orb_highlight_yellow:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.8f, 0.8f, 0.1f);
 				glUniform1f(shader->getUniform("MatRough"), 0.5f);
 				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				glUniform1f(shader->getUniform("MatAO"), 0.5f);
 				break;
 			case Material::orb_highlight_green:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.1f, 0.8f, 0.1f);
 				glUniform1f(shader->getUniform("MatRough"), 0.5f);
 				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				glUniform1f(shader->getUniform("MatAO"), 0.5f);
 				break;
 			case Material::grey:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.8f, 0.8f, 0.8f);
 				glUniform1f(shader->getUniform("MatRough"), 0.6f);
 				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				glUniform1f(shader->getUniform("MatAO"), 0.5f);
 				break;
 			case Material::wood:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.65f, 0.45f, 0.25f);
 				glUniform1f(shader->getUniform("MatRough"), 0.8f);
 				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				glUniform1f(shader->getUniform("MatAO"), 0.5f);
 				break;
 			case Material::mini_map:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.65f, 0.45f, 0.25f);
 				glUniform1f(shader->getUniform("MatRough"), 0.0f);
 				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 1.0f, 1.0f, 1.0f);
+				glUniform1f(shader->getUniform("MatAO"), 0.5f);
 				break;
 			case Material::defaultMaterial:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.5f, 0.5f, 0.5f);
 				glUniform1f(shader->getUniform("MatRough"), 0.0f);
 				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				glUniform1f(shader->getUniform("MatAO"), 0.5f);
 				break;
 			case Material::blue_body:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.35f, 0.4f, 0.914f);
 				glUniform1f(shader->getUniform("MatRough"), 0.8f);
 				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				glUniform1f(shader->getUniform("MatAO"), 0.5f);
 				break;
 			case Material::red_body:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.914f, 0.35f, 0.4f);
 				glUniform1f(shader->getUniform("MatRough"), 0.8f);
 				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				glUniform1f(shader->getUniform("MatAO"), 0.5f);
 				break;
 			case Material::yellow_body:
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.914f, 0.914f, 0.35f);
 				glUniform1f(shader->getUniform("MatRough"), 0.8f);
 				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				glUniform1f(shader->getUniform("MatAO"), 0.5f);
 				break;
 			case Material::gold:
 				glUniform3f(shader->getUniform("MatAlbedo"), 1.0f, 0.766f, 0.336f);
 				glUniform1f(shader->getUniform("MatRough"), 0.2f);
 				glUniform1f(shader->getUniform("MatMetal"), 1.0f);
 				glUniform3f(shader->getUniform("MatEmit"), 0.0f, 0.0f, 0.0f);
+				glUniform1f(shader->getUniform("MatAO"), 0.5f);
+				break;
+			case Material::sun:
+				glUniform3f(shader->getUniform("MatAlbedo"), 1.0f, 0.9f, 0.6f);
+				glUniform1f(shader->getUniform("MatRough"), 0.0f);
+				glUniform1f(shader->getUniform("MatMetal"), 0.0f);
+				glUniform3f(shader->getUniform("MatEmit"), 5.0f, 4.5f, 2.5f);
+				glUniform1f(shader->getUniform("MatAO"), 1.0f);
 				break;
 			case Material:: player_green: //add this to main
 				glUniform3f(shader->getUniform("MatAlbedo"), 0.35f, 0.914f, 0.4f);
@@ -1820,7 +2116,7 @@ public:
 
 		shader->bind(); // Bind the simple shader
 
-		if (shader == ShadowProg && Config::DRAW_PAW_PRINTS) {
+		if (shader == buffProg && Config::DRAW_PAW_PRINTS) {
 			int num = (int)prints.size(); // only draw as many paw prints as we have left (removed on timer)
 			vec4 pawArr[Config::PRINTS_MAX];
 			for (int i = 0; i < num; ++i) {
@@ -1830,8 +2126,8 @@ public:
 				pawArr[i].w = prints[i].spawnTime;
 			}
 
-			glUniform1i(shader->getUniform("pawCount"), num);
-			glUniform4fv(shader->getUniform("pawData"), num, value_ptr(pawArr[0]));
+			glUniform1i(shader->getUniform("numPaws"), num);
+			glUniform4fv(shader->getUniform("paws"), num, value_ptr(pawArr[0]));
 			glUniform1f(shader->getUniform("curTime"), (float)glfwGetTime());
 
 			glActiveTexture(GL_TEXTURE0 + pawTex->getUnit());
@@ -1842,7 +2138,7 @@ public:
 		for (const auto& libGrnd : libraryGrounds) {
 			glBindVertexArray(libGrnd.VAO); // Bind each library ground VAO
 
-			if (shader == ShadowProg) {
+			if (shader == buffProg) {
 				glActiveTexture(GL_TEXTURE0);
 				glBindTexture(GL_TEXTURE_2D, libGrnd.texture->getID());
 			}
@@ -1857,14 +2153,14 @@ public:
 			glDrawElements(GL_TRIANGLES, libGrnd.GiboLen, GL_UNSIGNED_SHORT, 0);
 			Model->popMatrix();
 
-			if (shader == ShadowProg) {
+			if (shader == buffProg) {
 				glActiveTexture(GL_TEXTURE0);
 				glBindTexture(GL_TEXTURE_2D, 0);
 				libGrnd.texture->unbind(); // Unbind the texture after drawing each border
 			}
 		}
 
-		if (shader->hasUniform("pawCount")) glUniform1i(shader->getUniform("pawCount"), 0);
+		if (shader->hasUniform("numPaws")) glUniform1i(shader->getUniform("numPaws"), 0);
 		glBindVertexArray(0); // Unbind VAO after drawing all library grounds
 
 		shader->unbind(); // Unbind the simple shader
@@ -2039,7 +2335,7 @@ public:
 		for (const auto& border : borderWalls) {
 			glBindVertexArray(border.WallVAID); // Bind each border VAO
 
-			if (shader == ShadowProg) {
+			if (shader == buffProg) {
 				glActiveTexture(GL_TEXTURE0);
 				glBindTexture(GL_TEXTURE_2D, border.texture->getID());
 			}
@@ -2051,7 +2347,7 @@ public:
 			glDrawElements(GL_TRIANGLES, border.GiboLen, GL_UNSIGNED_SHORT, 0);
 			Model->popMatrix();
 
-			if (shader == ShadowProg) {
+			if (shader == buffProg) {
 				glActiveTexture(GL_TEXTURE0);
 				glBindTexture(GL_TEXTURE_2D, 0);
 				border.texture->unbind(); // Unbind the texture after drawing each border
@@ -2137,10 +2433,10 @@ public:
 			playerBB->max);
 
 		// Set uniforms and draw
-		if (curS->hasUniform("texOnly")) glUniform1i(curS->getUniform("texOnly"), GL_TRUE);
+		//if (curS->hasUniform("texOnly")) glUniform1i(curS->getUniform("texOnly"), GL_TRUE);
 		if (curS->hasUniform("hasBones")) glUniform1i(curS->getUniform("hasBones"), GL_TRUE);
 		setModel(curS, Model);
-		if (curS->hasUniform("texOnly")) glUniform1i(curS->getUniform("texOnly"), GL_FALSE);
+		//if (curS->hasUniform("texOnly")) glUniform1i(curS->getUniform("texOnly"), GL_FALSE);
 		player_rig->Draw(curS);
 		if (curS->hasUniform("hasBones")) glUniform1i(curS->getUniform("hasBones"), GL_FALSE);
 		curS->unbind();
@@ -2149,7 +2445,7 @@ public:
 
 	void drawBooks(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model) {
 		shader->bind();
-		if (shader->hasUniform("texOnly")) glUniform1i(shader->getUniform("texOnly"), GL_TRUE);
+		//if (shader->hasUniform("texOnly")) glUniform1i(shader->getUniform("texOnly"), GL_TRUE);
 		for (const auto& book : books) {
 			// Common values for book halves
 			float bookThickness = book.scale.z * 0.15f;
@@ -2240,7 +2536,7 @@ public:
 				bookCover->Draw(shader);
 			} Model->popMatrix();
 		} // END draw books loop
-		if (shader->hasUniform("texOnly")) glUniform1i(shader->getUniform("texOnly"), GL_FALSE);
+		//if (shader->hasUniform("texOnly")) glUniform1i(shader->getUniform("texOnly"), GL_FALSE);
 		shader->unbind();
 	}
 
@@ -2250,19 +2546,14 @@ public:
 		glDepthFunc(GL_LEQUAL);
 
 		shader->bind();
-		glUniformMatrix4fv(shader->getUniform("P"),
-			1, GL_FALSE,
-			glm::value_ptr(Projection->topMatrix()));
+		glUniformMatrix4fv(shader->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
 
-		glm::mat4 view = View->topMatrix();
-		view[3] = glm::vec4(0, 0, 0, 1);
-		glUniformMatrix4fv(shader->getUniform("V"),
-			1, GL_FALSE,
-			glm::value_ptr(view));
+		mat4 skyView = mat4(mat3(View->topMatrix()));
+		glUniformMatrix4fv(shader->getUniform("V"), 1, GL_FALSE, value_ptr(skyView));
 
 		// bind cubemap
 		glActiveTexture(GL_TEXTURE0 + 12);
-		glBindTexture(GL_TEXTURE_CUBE_MAP, skyboxCubemap);
+		glBindTexture(GL_TEXTURE_CUBE_MAP, currentSkyboxTex);
 		glUniform1i(shader->getUniform("skyTex"), 12);
 
 		// draw cube VAO
@@ -2684,6 +2975,7 @@ public:
 				if (shader->hasUniform("enemyAlpha")) glUniform1f(shader->getUniform("enemyAlpha"), enemy->getDamageTimer() / Config::ENEMY_HIT_DURATION);
 				setModel(shader, Model);
 				(enemy->getModel())->Draw(shader); // Draw the scaled sphere as the body
+				if (shader->hasUniform("enemyAlpha")) glUniform1f(shader->getUniform("enemyAlpha"), 1.0f);
 			} Model->popMatrix();
 			shader->unbind();
 		} // End loop through enemies
@@ -3026,13 +3318,52 @@ public:
 		shader->unbind();
 	}
 
+	void genLibLights() {
+		if (grid.getSize().x == 0 || grid.getSize().y == 0) return; // Safety checks
+
+		float groundSize = Config::GROUND_SIZE;
+
+		float gridWorldWidth = groundSize * 2.0f; // The world space the grid should occupy (library floor width)
+		float gridWorldDepth = groundSize * 2.0f; // The world space the grid should occupy (library floor depth)
+		float cellWidth = gridWorldWidth / (float)grid.getSize().x;
+		float cellDepth = gridWorldDepth / (float)grid.getSize().y;
+
+		for (int z = 0; z < grid.getSize().y; ++z) {
+			for (int x = 0; x < grid.getSize().x; ++x) {
+				glm::ivec2 gridPos(x, z);
+				float i = library->mapGridXtoWorldX(x); // Center the shelf in the cell
+				float j = library->mapGridYtoWorldZ(z); // Center the shelf in the cell
+				if (grid[gridPos].type == LibraryGen::CellType::CLUSTER) {
+					if (grid[gridPos].clusterType == LibraryGen::ClusterType::ONLY_CANDELABRA) {
+						sceneLightPos.push_back(vec3(i, libraryCenter.y + 1.0f, j));
+						sceneLightCol.push_back(Config::CANDELABRA_L_COLOR);
+					}
+					else if (grid[gridPos].clusterType == LibraryGen::ClusterType::LAYOUT1) {
+						if (grid[gridPos].objectType == LibraryGen::CellObjType::CANDELABRA) {
+							sceneLightPos.push_back(vec3(i, libraryCenter.y + 1.0f, j));
+							sceneLightCol.push_back(Config::CANDELABRA_L_COLOR);
+						}
+					}
+					else if (grid[gridPos].clusterType == LibraryGen::ClusterType::GLOWING_SHELF1) {
+						if (grid[gridPos].objectType == LibraryGen::CellObjType::SHELF_WITH_ABILITY) {
+							sceneLightPos.push_back(vec3(i, libraryCenter.y + 2.0f, j));
+							sceneLightCol.push_back(Config::SHELF_L_COLOR);
+						}
+					}
+					else if (grid[gridPos].clusterType == LibraryGen::ClusterType::GLOWING_SHELF2) {
+						if (grid[gridPos].objectType == LibraryGen::CellObjType::SHELF_WITH_ABILITY_ROTATED) {
+							sceneLightPos.push_back(vec3(i, libraryCenter.y + 2.0f, j));
+							sceneLightCol.push_back(Config::SHELF_L_COLOR);
+						}
+					}
+				}
+			}
+		}
+	}
+
 	void drawBossRoom(shared_ptr<Program> shader, shared_ptr<MatrixStack> Model, bool cullFlag, float animTime) {
 		if (!shader || !Model) return;
 		shader->bind();
-
-		/*if (shader == ShadowProg) {
-			glUniform1i(shader->getUniform("hasMaterial"), 0);
-		}*/
 
 		for (int z = 0; z < bossGrid.getSize().y; ++z) {
 			for (int x = 0; x < bossGrid.getSize().x; ++x) {
@@ -4033,6 +4364,7 @@ public:
 				if (!debugCamera) orbsCollectedCount++; // Refund orb if not in debug mode
 				return;
 			}
+
 			cout << "[DEBUG] Firing " << spellTypeName << " spell." << endl;
 
 			particleSystem->spawnParticleBurst(spawnPos,       // Use initial spawnPos for particles
@@ -5727,7 +6059,6 @@ public:
 
 		//drawKey(prog2, Model);
 
-
 		drawBossEnemy(prog, Model);
 	}
 
@@ -5870,8 +6201,136 @@ public:
 
 		if (shader->hasUniform("hasInstancing")) glUniform1i(shader->getUniform("hasInstancing"), GL_FALSE);
 		shader->unbind();
+	}
 
+	void drawSunMoon(shared_ptr<Program>shader,  mat4 P, mat4 V) {
+		shader->bind();
 
+		glUniformMatrix4fv(shader->getUniform("P"), 1, GL_FALSE, value_ptr(P));
+		glUniformMatrix4fv(shader->getUniform("V"), 1, GL_FALSE, value_ptr(V));
+
+		mat4 M = glm::translate(mat4(1.0f), Config::sunPos);
+		M = glm::scale(M, vec3(2.5f)); // adjust sun/moon size here
+		glUniformMatrix4fv(shader->getUniform("M"), 1, GL_FALSE, value_ptr(M));
+
+		SetMaterial(shader, Material::sun);
+		sphere->Draw(shader);
+
+		if (shader->hasUniform("hasMaterial")) glUniform1i(shader->getUniform("hasMaterial"), GL_FALSE);
+		shader->unbind();
+	}
+
+	void updateSunMoon(float deltaTime) {
+
+		if (unlock) {
+			if (distance(Config::sunOrbitCenter, Config::targetOrbitCenter) < 0.01f) {
+				Config::sunOrbitCenter = Config::targetOrbitCenter;
+				Config::shadowTargetCenter = Config::targetOrbitCenter;
+			}
+			float interpolationSpeed = 0.5f; // tweak as needed for speed
+			Config::sunOrbitCenter = mix(Config::sunOrbitCenter, Config::targetOrbitCenter, interpolationSpeed * deltaTime);
+			Config::shadowTargetCenter = Config::sunOrbitCenter;
+		}
+
+		float sunSpeed = 0.01f;
+		float angle = Config::previousAngle + deltaTime * sunSpeed;
+		Config::previousAngle = angle;
+		Config::sunPos.x = Config::sunOrbitCenter.x + 40.0f * cos(angle);
+		Config::sunPos.y = Config::sunOrbitCenter.y + 20.0f;
+		Config::sunPos.z = Config::sunOrbitCenter.z + 40.0f * sin(angle);
+	}
+
+	void initQuad() {
+		// set up a simple quad for rendering FBO
+		glGenVertexArrays(1, &quad_VertexArrayID);
+		glBindVertexArray(quad_VertexArrayID);
+
+		static const GLfloat g_quad_vertex_buffer_data[] =
+		{
+			-1.0f, -1.0f, 0.0f,
+			1.0f, -1.0f, 0.0f,
+			-1.0f,  1.0f, 0.0f,
+			-1.0f,  1.0f, 0.0f,
+			1.0f, -1.0f, 0.0f,
+			1.0f,  1.0f, 0.0f,
+		};
+
+		glGenBuffers(1, &quad_vertexbuffer);
+		glBindBuffer(GL_ARRAY_BUFFER, quad_vertexbuffer);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(g_quad_vertex_buffer_data), g_quad_vertex_buffer_data, GL_STATIC_DRAW);
+	}
+
+	std::vector<vec3> getAllActiveSpellLightPos() {
+		std::vector<vec3> lights;
+
+		auto computeLightFromSpell = [](const SpellProjectile& proj) -> vec3 {
+			return proj.position;
+		};
+
+		for (const auto& p : activeSpells) {
+			if (!p.active) continue;
+			//if (ViewFrustCull(p.position, 4.0f, planes)) continue; // Using max radius as conservative cull
+
+			// spell type per projectile
+			lights.push_back(computeLightFromSpell(p));
+		}
+
+		for (const auto& p : bossActiveSpells) {
+			if (!p.active) continue;
+			//if (ViewFrustCull(p.position, 5.0f, planes)) continue;
+
+			// If boss spell type is not tracked per projectile, fallback to global:
+			SpellType type = bossEnemy ? bossEnemy->getBossSpellType() : SpellType::NONE;
+			lights.push_back(computeLightFromSpell(p));
+		}
+
+		return lights;
+	}
+
+	std::vector<vec3> getAllActiveSpellLightCol() {
+		std::vector<vec3> lights;
+
+		auto computeLightFromSpell = [](SpellType type) -> vec3 {
+			vec3 light;
+			switch (type) {
+			case SpellType::FIRE:
+				light = glm::vec3(1.0f, 0.5f, 0.1f);  // Warm orange
+				break;
+			case SpellType::ICE:
+				light = glm::vec3(0.4f, 0.8f, 1.0f);  // Cool blue
+				break;
+			case SpellType::LIGHTNING:
+				light = glm::vec3(1.0f, 1.0f, 0.6f);  // Yellowish white
+				break;
+			case SpellType::HEAL:
+				light = glm::vec3(0.2f, 1.0f, 0.2f);  // Green glow
+				break;
+			default:
+				light = glm::vec3(1.0f);  // fallback white
+				break;
+			}
+
+			return light;
+			};
+
+		for (const auto& p : activeSpells) {
+			if (!p.active) continue;
+			//if (ViewFrustCull(p.position, 4.0f, planes)) continue; // Using max radius as conservative cull
+
+			// spell type per projectile
+			lights.push_back(computeLightFromSpell(p.spellType));
+		}
+
+		for (const auto& p : bossActiveSpells) {
+			if (!p.active) continue;
+			//if (ViewFrustCull(p.position, 5.0f, planes)) continue;
+
+			// If boss spell type is not tracked per projectile, fallback to global:
+			SpellType type = bossEnemy ? bossEnemy->getBossSpellType() : SpellType::NONE;
+			lights.push_back(computeLightFromSpell(type));
+		}
+
+		return lights;
 	}
 
 	void initLocks() {
@@ -6209,6 +6668,7 @@ public:
 		checkAllEnemies();
 		checkBossfight();
 		BossEnemyAttacks(frametime);
+		updateSunMoon(frametime);
 		restartGeneration();
 		checkLocks();
 		//debugMessages();
@@ -6218,8 +6678,15 @@ public:
 		auto View = make_shared<MatrixStack>();
 		auto Model = make_shared<MatrixStack>();
 
-		vec3 lightPos = vec3(10); // Fixed light position above the scene
-		vec3 lightTarget = libraryCenter; // Light looks at library center
+		vec3 lightPos = Config::sunPos; // Fixed light position above the scene
+		float worldUnitsPerTexel = Config::ORTHO_SIZE / 8192.0f;
+		lightPos.x = floor(lightPos.x / worldUnitsPerTexel) * worldUnitsPerTexel;
+		lightPos.y = floor(lightPos.y / worldUnitsPerTexel) * worldUnitsPerTexel;
+		lightPos.z = floor(lightPos.z / worldUnitsPerTexel) * worldUnitsPerTexel;
+		vec3 lightTarget = Config::shadowTargetCenter; // Light looks at library center
+		float granularity = 0.25f; // world units per "step"
+		//vec3 snappedLightPos = floor(lightPos / granularity) * granularity;
+		//lightTarget = snappedLightPos;
 		vec3 lightDir = normalize(lightPos - lightTarget); // Light direction
 		vec3 lightUp = vec3(0, 1, 0);
 		vec3 lc = Config::LIGHT_COLOR;
@@ -6240,11 +6707,12 @@ public:
 
 			// Create a stable orthographic projection that covers the scene
 			float size = Config::ORTHO_SIZE;
-			LO = glm::ortho(-size, size, -size, size, 1.0f, 200.0f);
+			LO = glm::ortho(-size, size, -size, size, 0.1f, 200.0f);
 			glUniformMatrix4fv(DepthProg->getUniform("LP"), 1, GL_FALSE, value_ptr(LO));
 
 			// Create a stable light view matrix
 			LV = glm::lookAt(lightPos, lightTarget, lightUp);
+
 			glUniformMatrix4fv(DepthProg->getUniform("LV"), 1, GL_FALSE, value_ptr(LV));
 
 			CULL = false;
@@ -6260,8 +6728,11 @@ public:
 		// Prepare for Second Pass (Main Rendering to Screen)
 		// ===================================================
 		glViewport(0, 0, width, height); // Return viewport to screen size
+
+		if (Config::DEFER) { glBindFramebuffer(GL_FRAMEBUFFER, gBuffer); }
+		else { glBindFramebuffer(GL_FRAMEBUFFER, 0); }
+
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // Clear framebuffer
-		drawSkybox(SkyboxProg, Projection, View);
 
 		// Setup Camera
 		Projection->pushMatrix();
@@ -6270,11 +6741,14 @@ public:
 		View->loadIdentity();
 		View->lookAt(eye, lookAt, up); // Use updated eye/lookAt
 
+		currentSkyboxTex = skyboxTextures["day"]; // manual skybox setter
+		//drawSkybox(SkyboxProg, Projection, View);
+
 		ExtractVFPlanes(Projection->topMatrix(), View->topMatrix(), planes); // Update frustum planes
 
-		// ==============================
-		// Second Pass: Render to Screen
-		// ==============================
+		// ===============================
+		// Second Pass: Render to Buffers
+		// ===============================
 		if (Config::DEBUG_LIGHTING) { // Debugging light view from lights perspective
 			if (Config::DEBUG_GEOM) {
 				DepthProgDebug->bind();
@@ -6297,30 +6771,120 @@ public:
 			}
 		}
 		else { // Render the scene like normal with shadow mapping
-			ShadowProg->bind();
-			// Setup shadow mapping
-			glActiveTexture(GL_TEXTURE10);
-			glBindTexture(GL_TEXTURE_2D, depthMap); // Bind shadow map texture
-			glUniform1i(ShadowProg->getUniform("shadowDepth"), 10); // Set uniform for shadow map
+			buffProg->bind();
 			// Set light and camera uniforms
-			glUniform3f(ShadowProg->getUniform("lightDir"), lightDir.x, lightDir.y, lightDir.z); // Set light direction
-			glUniform3f(ShadowProg->getUniform("lightColor"), lc.x, lc.y, lc.z);
-			glUniform3fv(ShadowProg->getUniform("cameraPos"), 1, glm::value_ptr(eye));
-			glUniform1f(ShadowProg->getUniform("exposure"), Config::EXPOSURE);
-			glUniform1f(ShadowProg->getUniform("saturation"), Config::SATURATION * (player->getHitpoints() / Config::PLAYER_HP_MAX));
-			setCameraProjectionFromStack(ShadowProg, Projection);
-			setCameraViewFromStack(ShadowProg, View);
+			//glUniform3f(ShadowProg->getUniform("lightDir"), lightDir.x, lightDir.y, lightDir.z); // Set light direction
+			//glUniform3f(ShadowProg->getUniform("lightColor"), lc.x, lc.y, lc.z);
+			//glUniform3fv(ShadowProg->getUniform("cameraPos"), 1, glm::value_ptr(eye));
+			//glUniform1f(ShadowProg->getUniform("exposure"), Config::EXPOSURE);
+			//glUniform1f(ShadowProg->getUniform("saturation"), Config::SATURATION * (player->getHitpoints() / Config::PLAYER_HP_MAX));
+			setCameraProjectionFromStack(buffProg, Projection);
+			setCameraViewFromStack(buffProg, View);
 			LSpace = LO * LV;
-			glUniformMatrix4fv(ShadowProg->getUniform("LV"), 1, GL_FALSE, value_ptr(LSpace)); // Set light space matrix
-			drawMainScene(ShadowProg, Model, animTime); // Draw the entire scene with shadows
-			ShadowProg->unbind();
+			glUniformMatrix4fv(buffProg->getUniform("LV"), 1, GL_FALSE, value_ptr(LSpace)); // Set light space matrix
+			drawMainScene(buffProg, Model, animTime); // Render the screen to their respective buffers (will show up in build as png)
+
+			//drawSunMoon(buffProg, Projection->topMatrix(), View->topMatrix());
+
+			buffProg->unbind();
 		}
 
-		//===================
-		// Second Pass Cont.
-		//===================
+		//============================
+		// Third Pass: Render to Quad
+		//============================
 
-		if (Config::DEBUG_AABBS) {
+		if (Config::DEFER) { // here were drawing the actual scene output
+			glBindFramebuffer(GL_FRAMEBUFFER, 0);
+			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+			// Turn off depth-test & depth-writes so the quad always passes
+			glDisable(GL_DEPTH_TEST);
+			glDepthMask(GL_FALSE);
+
+			lightProg->bind();
+				
+				glActiveTexture(GL_TEXTURE0 + 20);
+				glBindTexture(GL_TEXTURE_2D, gPosition);
+
+				glActiveTexture(GL_TEXTURE0 + 21);
+				glBindTexture(GL_TEXTURE_2D, gNormal);
+
+				glActiveTexture(GL_TEXTURE0 + 22);
+				glBindTexture(GL_TEXTURE_2D, gAlbedo);
+
+				glActiveTexture(GL_TEXTURE0 + 23);
+				glBindTexture(GL_TEXTURE_2D, gMRA);
+
+				glActiveTexture(GL_TEXTURE0 + 24);
+				glBindTexture(GL_TEXTURE_2D, gEmission);
+
+				glActiveTexture(GL_TEXTURE0 + 25);
+				glBindTexture(GL_TEXTURE_2D, gLSPosition);
+
+				glActiveTexture(GL_TEXTURE0 + 10);
+				glBindTexture(GL_TEXTURE_2D, depthMap); // Bind shadow map texture
+
+				glUniform1i(lightProg->getUniform("positionBuf"), 20);
+				glUniform1i(lightProg->getUniform("normalBuf"), 21);
+				glUniform1i(lightProg->getUniform("albedoBuf"), 22);
+				glUniform1i(lightProg->getUniform("mraBuf"), 23);
+				glUniform1i(lightProg->getUniform("emissionBuf"), 24);
+				glUniform1i(lightProg->getUniform("positionLSBuf"), 25);
+				glUniform1i(lightProg->getUniform("shadowDepth"), 10);
+
+				glUniform3fv(lightProg->getUniform("shadowLightDir"), 1, value_ptr(lightDir)); // Set light direction
+
+				glUniform3fv(lightProg->getUniform("sunPos"), 1, value_ptr(Config::sunPos));
+				glUniform3fv(lightProg->getUniform("sunCol"), 1, value_ptr(Config::sunColor * 2.5f));
+
+				// Get all lights
+				std::vector<vec3> allLightPos = sceneLightPos;
+				std::vector<vec3> allLightCol = sceneLightCol;
+
+				// Append dynamic spell lights
+				std::vector<vec3> spellLightPos = getAllActiveSpellLightPos();
+				std::vector<vec3> spellLightCol = getAllActiveSpellLightCol();
+				allLightPos.insert(allLightPos.end(), spellLightPos.begin(), spellLightPos.end());
+				allLightCol.insert(allLightCol.end(), spellLightCol.begin(), spellLightCol.end());
+
+				int actualLightCount = std::min<int>(allLightPos.size(), Config::MAX_LIGHTS);
+
+				// Defensive: only proceed if we have lights
+				if (actualLightCount > 0) {
+					glUniform1i(lightProg->getUniform("numLights"), actualLightCount);
+					glUniform3fv(lightProg->getUniform("lightPos"), actualLightCount, value_ptr(allLightPos[0]));
+					glUniform3fv(lightProg->getUniform("lightCol"), actualLightCount, value_ptr(allLightCol[0]));
+				}
+				else {
+					glUniform1i(lightProg->getUniform("numLights"), 0);
+				}
+
+				glUniform3fv(lightProg->getUniform("viewPos"), 1, value_ptr(eye));
+				glUniform1f(lightProg->getUniform("exposure"), Config::EXPOSURE);
+				glUniform1f(lightProg->getUniform("saturation"), Config::SATURATION * (player->getHitpoints() / Config::PLAYER_HP_MAX));
+
+				glBindVertexArray(quad_VertexArrayID);
+				glDrawArrays(GL_TRIANGLES, 0, 6);
+				glBindVertexArray(0);
+			lightProg->unbind();
+
+			// Restore depth state
+			glDepthMask(GL_TRUE);
+			glEnable(GL_DEPTH_TEST);
+		}
+
+		//code to write out the FBO (texture) on key press
+		if (Config::DEFER && Config::WRITE_FBOS) {
+			assert(GLTextureWriter::WriteImage(gBuffer, "gBuf.png"));
+			assert(GLTextureWriter::WriteImage(gPosition, "gPos.png"));
+			assert(GLTextureWriter::WriteImage(gNormal, "gNorm.png"));
+			assert(GLTextureWriter::WriteImage(gAlbedo, "gAlb.png"));
+			assert(GLTextureWriter::WriteImage(gMRA, "gMRA.png"));
+			assert(GLTextureWriter::WriteImage(gEmission, "gEmit.png"));
+			assert(GLTextureWriter::WriteImage(gLSPosition, "gLSPos.png"));
+		}
+
+		if (Config::DEBUG_AABBS && !Config::FIRST_PASS) {
 			drawAABB(playerBB->min, playerBB->max, debugLineProg, Projection, View, { 1,0,0 });
 			//drawAABB(sphereBB->min, sphereBB->max, debugLineProg, Projection, View, { 0,1,0 });
 			for (int i = 0; i < bossActiveSpells.size(); i++) {
@@ -6338,54 +6902,55 @@ public:
 			}
 			for (const auto* enemy : enemies) {
 				if (enemy && enemy->isAlive()) {
-					drawAABB(enemy->getAABBMin(), enemy->getAABBMax(), debugLineProg, Projection, View, {0,0,1});
+					drawAABB(enemy->getAABBMin(), enemy->getAABBMax(), debugLineProg, Projection, View, { 0,0,1 });
 				}
 			}
 		}
 
-		if (Config::DRAW_PARTICLES) {
+		if (Config::DRAW_PARTICLES && !Config::FIRST_PASS) {
 			particleProg->bind();
-			// glPointSize(10.0f); // Remove this line, size is now per-particle in shader
 			glUniformMatrix4fv(particleProg->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
 			glUniformMatrix4fv(particleProg->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
 			particleAlphaTex->bind(particleProg->getUniform("alphaTexture"));
-			drawParticles(particleSystem, particleProg, Model); // draw particles if full scene render
+			drawParticles(particleSystem, particleProg, Model);
 			particleAlphaTex->unbind();
 			particleProg->unbind();
 		}
-		glDisable(GL_DEPTH_TEST);
-		drawColorFilter();
 
-		if (Config::DRAW_PLAYER_DAMAGE && player->getDamageTimer() > 0.0f) {
-			player->setDamageTimer(player->getDamageTimer() - frametime);
+		if (!Config::FIRST_PASS) {
+			glDisable(GL_DEPTH_TEST);
+			drawColorFilter();
 
-			float alpha = player->getDamageTimer() / Config::PLAYER_HIT_DURATION;
-			// cout << "Red flash alpha: " << alpha << endl;
-			// glEnable(GL_DEPTH_TEST);
+			if (Config::DRAW_PLAYER_DAMAGE && player->getDamageTimer() > 0.0f) {
+				player->setDamageTimer(player->getDamageTimer() - frametime);
 
-			drawDamageIndicator(alpha);
-		}
+				float alpha = player->getDamageTimer() / Config::PLAYER_HIT_DURATION;
+				// cout << "Red flash alpha: " << alpha << endl;
+				// glEnable(GL_DEPTH_TEST);
 
-		else if (Config::DRAW_PLAYER_DAMAGE && !player->isAlive() && !debugCamera) {
-			// If player is dead, show red flash
-			movingForward = false;
-			movingBackward = false;
-			movingLeft = false;
-			movingRight = false;
-			drawDamageIndicator(1.0f);
-		}
-
-		glEnable(GL_DEPTH_TEST);
-
-		if (Config::DRAW_HEALTHBAR) { // Draw the health bar
-			//cout << "Drawing healthbar" << endl;
-			drawHealthBar();
-			drawEnemyHealthBars(View->topMatrix(), Projection->topMatrix());
-
-			if (bossfightstarted && !bossfightended) {
-				drawBossHealthBar(View->topMatrix(), Projection->topMatrix(), static_cast<float>(width), static_cast<float>(height));
+				drawDamageIndicator(alpha);
 			}
-		}
+
+			else if (Config::DRAW_PLAYER_DAMAGE && !player->isAlive() && !debugCamera) {
+				// If player is dead, show red flash
+				movingForward = false;
+				movingBackward = false;
+				movingLeft = false;
+				movingRight = false;
+				drawDamageIndicator(1.0f);
+			}
+
+			glEnable(GL_DEPTH_TEST);
+
+			if (Config::DRAW_HEALTHBAR) { // Draw the health bar
+				//cout << "Drawing healthbar" << endl;
+				drawHealthBar();
+				drawEnemyHealthBars(View->topMatrix(), Projection->topMatrix());
+
+				if (bossfightstarted && !bossfightended) {
+					drawBossHealthBar(View->topMatrix(), Projection->topMatrix(), static_cast<float>(width), static_cast<float>(height));
+				}
+			}
 
 		// Needs to be before MiniMap rendering
 		glEnable(GL_BLEND); // Enable blending for text rendering
@@ -6414,9 +6979,43 @@ public:
 			}
 		}
 
-		if (bossfightstarted && !bossfightended) {
+			if (bossfightstarted && !bossfightended) {
 				RenderText(textProg, "BOSS HP", width / 2.0f, height - 70.0f, 1.0f, glm::vec3(1.0f, 0.0f, 0.0f),
-				width, height);
+					width, height);
+			}
+			glDisable(GL_BLEND); // Disable blending after text rendering
+
+			if (Config::DRAW_MINIMAP) { // Draw the mini map
+				ShadowProg->bind();
+				//cout << "Drawing minimap" << endl;
+				glClear(GL_DEPTH_BUFFER_BIT);
+				glViewport(0, height - 350, 350, 350);
+				SetOrthoMatrix(ShadowProg);
+				SetTopView(ShadowProg); /*MINI MAP*/
+				SetMaterial(ShadowProg, Material::brown);
+				//drawScene(prog2, CULL);
+				/* draws */
+				// drawBorder(prog2, Model);
+				// drawDoor(prog2, Model);
+				// drawBooks(prog2, Model);
+				// drawEnemies(prog2, Model);
+				#if USE_INSTANCING
+				drawLibInstancing(ShadowProg, false); // Draw the library shelves without culling
+				#else
+				drawCircularBorder(ShadowProg, false); // Draw the circular library shelves
+				drawLibrary(ShadowProg, Model, false);
+				drawBossRoom(ShadowProg, Model, false);
+				#endif
+				// drawLibInstancing(ShadowProg, false); // Draw the library shelves without culling
+				drawBossEnemy(ShadowProg, Model);
+				// drawOrbs(prog2, Model);
+				drawMiniPlayer(ShadowProg, Model);
+				drawBorderWalls(ShadowProg, Model);
+				// SetMaterialMan(prog2,6 );
+				drawLibGrnd(ShadowProg, Model);
+				// drawBossRoom(ShadowProg, Model, false); //boss room not drawing
+				drawEnemies(ShadowProg, Model);
+				ShadowProg->unbind();
 			}
 
 		if (!player->isAlive() && !debugCamera) {
@@ -6494,6 +7093,11 @@ public:
 		// Unbind any VAO or Program that might be lingering (belt-and-suspenders)
 		glBindVertexArray(0);
 		glUseProgram(0);
+
+		if (Config::FIRST_PASS) {
+			Config::DEFER = !Config::DEFER;
+			Config::FIRST_PASS = false;
+		}
 	}
 
 	void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
@@ -6504,36 +7108,35 @@ public:
 		if (key == GLFW_KEY_K && action == GLFW_PRESS) {
 			//Debug Camera
 			debugCamera = !debugCamera;
-
-			if (debugCamera) {
-				if (key == GLFW_KEY_L && action == GLFW_PRESS) {
-					cursor_visable = !cursor_visable;
-					if (cursor_visable) {
-						glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-					}
-					else {
-						glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-					}
+		}
+		if (debugCamera) {
+			if (key == GLFW_KEY_L && action == GLFW_PRESS) {
+				cursor_visable = !cursor_visable;
+				if (cursor_visable) {
+					glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+				}
+				else {
+					glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
 				}
 			}
-			if (debugCamera && key == GLFW_KEY_N && action == GLFW_PRESS) {
-				//Debug Enemy Movement
-				enemyActive = !enemyActive;
-			}
-			if (debugCamera && key == GLFW_KEY_M && action == GLFW_PRESS) {
-				//Debug Player Movement Toggle
-				playerActive = !playerActive;
-			}
-			// Lighting / Shader settings
-			if (key == GLFW_KEY_1 && action == GLFW_PRESS) Config::SATURATION -= 0.1f;
-			if (key == GLFW_KEY_2 && action == GLFW_PRESS) Config::SATURATION += 0.1f;
-			if (key == GLFW_KEY_3 && action == GLFW_PRESS) Config::EXPOSURE += 0.1f;
-			if (key == GLFW_KEY_4 && action == GLFW_PRESS) Config::EXPOSURE -= 0.1f;
-			if (key == GLFW_KEY_9 && action == GLFW_PRESS) Config::DEBUG_LIGHTING = !Config::DEBUG_LIGHTING;
-			if (key == GLFW_KEY_0 && action == GLFW_PRESS) Config::DEBUG_GEOM = !Config::DEBUG_GEOM;
-			if (key == GLFW_KEY_B && action == GLFW_PRESS) Config::DEBUG_AABBS = !Config::DEBUG_AABBS;
-
 		}
+		if (debugCamera && key == GLFW_KEY_N && action == GLFW_PRESS) {
+			//Debug Enemy Movement
+			enemyActive = !enemyActive;
+		}
+		if (debugCamera && key == GLFW_KEY_M && action == GLFW_PRESS) {
+			//Debug Player Movement Toggle
+			playerActive = !playerActive;
+		}
+		// Lighting / Shader settings
+		if (debugCamera && key == GLFW_KEY_1 && action == GLFW_PRESS) Config::SATURATION -= 0.1f;
+		if (debugCamera && key == GLFW_KEY_2 && action == GLFW_PRESS) Config::SATURATION += 0.1f;
+		if (debugCamera && key == GLFW_KEY_3 && action == GLFW_PRESS) Config::EXPOSURE += 0.1f;
+		if (debugCamera && key == GLFW_KEY_4 && action == GLFW_PRESS) Config::EXPOSURE -= 0.1f;
+		if (debugCamera && key == GLFW_KEY_9 && action == GLFW_PRESS) Config::DEBUG_LIGHTING = !Config::DEBUG_LIGHTING;
+		if (debugCamera && key == GLFW_KEY_0 && action == GLFW_PRESS) Config::DEBUG_GEOM = !Config::DEBUG_GEOM;
+		if (debugCamera && key == GLFW_KEY_B && action == GLFW_PRESS) Config::DEBUG_AABBS = !Config::DEBUG_AABBS;
+		if (key == GLFW_KEY_O && action == GLFW_PRESS) { Config::DEFER = !Config::DEFER; }
 
 		if (key == GLFW_KEY_GRAVE_ACCENT && action == GLFW_PRESS)
 		{
@@ -6667,11 +7270,13 @@ public:
 		}
 		if (key == GLFW_KEY_U && action == GLFW_PRESS && (allLocksUnlocked || debugCamera)) {
 			unlock = true;
+			Config::targetOrbitCenter = Config::BOSS_CENTER;
 			canFightboss = true;
 		}
 
 		if (key == GLFW_KEY_P && action == GLFW_PRESS) {
 			unlock = true;
+			Config::targetOrbitCenter = Config::BOSS_CENTER;
 			canFightboss = true;
 		}
 
@@ -6838,14 +7443,29 @@ int main(int argc, char* argv[]) {
 	// This is the code that will likely change program to program as you
 	// may need to initialize or set up different data and state
 
+	glfwMakeContextCurrent(windowManager->getHandle());
+	std::cout << "GL Version: " << glGetString(GL_VERSION) << std::endl;
+	std::cout << "GLSL Version: " << glGetString(GL_SHADING_LANGUAGE_VERSION) << std::endl;
+
+	glfwSetWindowUserPointer(windowManager->getHandle(), application);
+	glfwSetFramebufferSizeCallback(
+		windowManager->getHandle(), [](GLFWwindow* win, int newW, int newH) {
+			// Update the GL viewport
+			glViewport(0, 0, newW, newH);
+
+			// Tell our Application to resize its G-buffer
+			auto app = reinterpret_cast<Application*>(glfwGetWindowUserPointer(win));
+			app->resizeGBuffer(newW, newH);
+		}
+	);
+
 	application->init(resourceDir);
 	application->initMapGen();
 	application->initGeom(resourceDir);
 	application->initGround();
 	application->initQuadTree();
-	application->initSkyboxCube();
-	application->initSkyboxTex(resourceDir);
-	// application->initCircularBorder();
+	application->initSkyboxes(resourceDir);
+	application->initCircularBorder();
 	application->initAABBWireframe();
 
 	#if USE_INSTANCING
@@ -6905,7 +7525,7 @@ int main(int argc, char* argv[]) {
 		float AnimcurrFrame = glfwGetTime();
 		application->AnimDeltaTime = AnimcurrFrame - application->AnimLastFrame;
 		application->AnimLastFrame = AnimcurrFrame;
-		// Render scene.
+		// Render scene
 		application->render(deltaTime, application->AnimDeltaTime);
 
 		// Swap front and back buffers
