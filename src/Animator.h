@@ -20,11 +20,20 @@ class Animator
         void resetTime() { m_CurrentTime = 0.0f; }
         Animation* GetCurrentAnimation() { return m_CurrentAnimation; }
         std::vector<glm::mat4> GetFinalBoneMatrices() { return m_FinalBoneMatrices; }
+        bool IsAnimationFinished() const { return m_CurrentTime >= m_CurrentAnimation->GetDuration(); }
+        float GetCurrentTime() const { return m_CurrentTime; }
+        void Animator::UpdateAnimationOnce(float dt);
+        void resetAnimation() {
+            m_CurrentTime = 0.0f;
+            m_IsFinished = false;
+        }
+        bool IsFinished() const { return m_IsFinished; }
     private:
         std::vector<glm::mat4> m_FinalBoneMatrices;
         Animation* m_CurrentAnimation;
         float m_CurrentTime;
         float m_DeltaTime;
+        bool m_IsFinished = false;
 };
 
 #endif // ANIMATOR_H

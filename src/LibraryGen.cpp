@@ -73,6 +73,7 @@ void LibraryGen::placeClusters(int count) {
     int attempts = 0;
     int maxAttempts = grid.getSize().x * grid.getSize().y / 5; // Limit attempts to avoid infinite loop
     bool placedBookstand = false; // Flag to check if bookshelf is placed
+    bool hasPlacedGlowingShelf = false; // Flag to check if glowing shelf is placed
 
     for (auto& obj : objAmount) {
         obj.second = 0; // Reset object amounts
@@ -127,6 +128,9 @@ void LibraryGen::placeClusters(int count) {
             if (!placedBookstand) {
                 randomClusterType = ClusterType::ONLY_BOOKSTAND;
                 placedBookstand = true;
+            } else if (!hasPlacedGlowingShelf) {
+                randomClusterType = ClusterType::GLOWING_SHELF1; // ensures that glowing shelf is placed first
+                hasPlacedGlowingShelf = true;
             } else {
                 randomClusterType = clusterOptions[clusterTypeDist(seedGen)];
             }
